@@ -15,6 +15,14 @@
    ```
    Grafana reads the password only when it first initializes its database; later changes to the secret need `grafana cli admin reset-admin-password`.
 6. `kubectl apply -k platform/components/headlamp`.
+7. UniFi read-only login (a local *View Only* Network admin on the UDM Pro, kept out of git), then UnPoller:
+   ```sh
+   kubectl apply -f platform/components/unpoller/namespace.yaml
+   read -rp 'UniFi user: ' U && read -rsp 'UniFi password: ' P && echo
+   kubectl -n unpoller create secret generic unifi-readonly --from-literal=user="$U" --from-literal=pass="$P"
+   unset U P
+   kubectl apply -k platform/components/unpoller
+   ```
 
 Both scripts are idempotent. Re-run `install.sh` after editing `k3s/config.yaml`; bump `K3S_VERSION` in it to upgrade.
 
@@ -27,6 +35,7 @@ Cluster add-ons under `components/`, one kustomization each; apply with `kubectl
 | `local-path` | local-path-provisioner v0.0.37, replacing the k3s-bundled one (`disable: [local-storage]`). Volumes in `/var/lib/rancher/k3s/storage`. Helper pod runs with MCS range `s0-s0:c0.c1023`; without it, SELinux blocks deleting volumes written by other pods ([k3s#10130](https://github.com/k3s-io/k3s/issues/10130)). |
 | `monitoring` | kube-prometheus-stack 91.9.0 in namespace `monitoring`. Prometheus at http://prometheus.lab.internal (no auth, 15 days / 18 GB retention, 20 Gi volume), Grafana at http://grafana.lab.internal (`admin`; password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' \| base64 -d`). Picks up ServiceMonitors/PodMonitors/rules from all namespaces. Alertmanager and the controller-manager/scheduler/proxy/etcd monitors are off (no receivers; components are embedded in k3s). node-exporter runs as SELinux `spc_t` (confined, it cannot read `/proc/1`). Traefik is scraped through a PodMonitor. |
 | `headlamp` | Headlamp 0.45.0 at http://kube.lab.internal (the Kubernetes Dashboard project is archived). Its own service account has no cluster permissions; log in with a token for `headlamp-admin` (cluster-admin): `kubectl -n headlamp create token headlamp-admin --duration=720h`. Revoke all tokens by deleting and re-applying the `headlamp-admin` ServiceAccount. Tokens travel over plain HTTP on the LAN until TLS exists. |
+| `unpoller` | UnPoller v5.5.0 polling the UDM Pro (`https://192.168.1.1`) every 30 s; metrics prefixed `unpoller_` (gateway/WAN, switch ports, APs, clients, speed tests; DPI off). Grafana dashboards in `dashboards/` are grafana.com 11311-11315 with the datasource placeholders replaced by `Prometheus`; loaded as ConfigMaps labelled `grafana_dashboard: "1"`. Panels that stay empty: DPI categories, client-type breakdowns the UDM doesn't report, name-matched Echo/FireTV/camera panels. |
 
 k3s still provides Traefik, ServiceLB, CoreDNS and metrics-server.
 

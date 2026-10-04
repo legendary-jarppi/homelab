@@ -1,0 +1,32 @@
+# UnPoller: UniFi (UDM Pro) metrics for Prometheus.
+# Needs secret unifi-readonly (keys: user, pass) in namespace unpoller, not in git; see platform/README.md.
+# Apply: kubectl apply -k platform/components/unpoller
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: unpoller
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service.yaml
+  - servicemonitor.yaml
+
+# UnPoller's Grafana dashboards (grafana.com 11311-11315, latest revisions), with the
+# ${DS_PROMETHEUS}/${DS_UNIFI_POLLER} import placeholders replaced by the datasource
+# name "Prometheus". Grafana's sidecar loads ConfigMaps labelled grafana_dashboard=1
+# from all namespaces.
+generatorOptions:
+  # Stable names: hashed names would leave stale copies behind on change.
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+configMapGenerator:
+  - name: unpoller-dashboard-network-sites
+    files: [dashboards/network-sites.json]
+  - name: unpoller-dashboard-usg-insights
+    files: [dashboards/usg-insights.json]
+  - name: unpoller-dashboard-usw-insights
+    files: [dashboards/usw-insights.json]
+  - name: unpoller-dashboard-uap-insights
+    files: [dashboards/uap-insights.json]
+  - name: unpoller-dashboard-client-insights
+    files: [dashboards/client-insights.json]
