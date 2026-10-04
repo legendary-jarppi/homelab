@@ -15,7 +15,11 @@ configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
     literals:
-      - ORIGIN=http://dashboard.lab.internal
+      # Origin per request from Traefik's headers, not a fixed ORIGIN: Safari opens
+      # https://dashboard.lab.internal on its own, and a fixed http origin made SvelteKit's
+      # CSRF check reject those logins (403). Traefik is the only way in, so these are trusted.
+      - PROTOCOL_HEADER=x-forwarded-proto
+      - HOST_HEADER=x-forwarded-host
       # Traefik appends the client address; used for login rate limiting.
       - ADDRESS_HEADER=X-Forwarded-For
       - XFF_DEPTH=1
