@@ -1,0 +1,12 @@
+# Installed to /etc/rancher/k3s/config.yaml by install.sh.
+# Changes take effect on: sudo ./platform/k3s/install.sh
+node-name: shilly-shally-lab-01
+selinux: true
+disable:
+  # Replaced by platform/components/local-path (bundled helper pod breaks under SELinux MCS).
+  - local-storage
+kubelet-arg:
+  # Host keeps its swap for dev workloads; pods do not use it (kubelet swapBehavior NoSwap).
+  - fail-swap-on=false
+  # Keep headroom for the host (dev tools, AI agents) out of pod allocatable.
+  - system-reserved=cpu=1,memory=4Gi

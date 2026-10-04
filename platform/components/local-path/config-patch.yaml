@@ -1,0 +1,46 @@
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: local-path-config
+  namespace: local-path-storage
+data:
+  # Same path as k3s's bundled provisioner; k3s-selinux labels it container_file_t.
+  # /var/lib/rancher is a bind mount of /home/rancher (see platform/host/prepare.sh).
+  config.json: |-
+    {
+      "nodePathMap":[
+      {
+        "node":"DEFAULT_PATH_FOR_NON_LISTED_NODES",
+        "paths":["/var/lib/rancher/k3s/storage"]
+      }
+      ]
+    }
+  setup: |-
+    #!/bin/sh
+    set -eu
+    mkdir -m 0777 -p "$VOL_DIR"
+    chmod 700 "$VOL_DIR/.."
+  # Each pod gets random MCS categories and volume contents carry the last user's
+  # categories, so the helper needs the full range to remove them
+  # (k3s-io/k3s#10130, rancher/local-path-provisioner#460).
+  helperPod.yaml: |-
+    apiVersion: v1
+    kind: Pod
+    metadata:
+      name: helper-pod
+    spec:
+      priorityClassName: system-node-critical
+      tolerations:
+        - key: node.kubernetes.io/disk-pressure
+          operator: Exists
+          effect: NoSchedule
+      securityContext:
+        seLinuxOptions:
+          level: s0-s0:c0.c1023
+      containers:
+      - name: helper-pod
+        image: docker.io/library/busybox:1.37.0
+        imagePullPolicy: IfNotPresent
+        securityContext:
+          seLinuxOptions:
+            level: s0-s0:c0.c1023

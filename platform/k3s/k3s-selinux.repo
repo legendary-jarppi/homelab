@@ -1,0 +1,9 @@
+# k3s-selinux for EL10 is only published in the testing channel (stable stops at el9).
+# Switch to https://rpm.rancher.io/k3s/stable/common/centos/10/noarch once that exists.
+[rancher-k3s-common-testing]
+name=Rancher k3s common (testing)
+baseurl=https://rpm-testing.rancher.io/k3s/testing/common/centos/10/noarch
+enabled=1
+gpgcheck=1
+repo_gpgcheck=0
+gpgkey=https://rpm-testing.rancher.io/public.key
