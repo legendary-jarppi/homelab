@@ -1,0 +1,25 @@
+# go2rtc config, locked down: anyone reaching the API could otherwise add exec/echo
+# sources and run commands in the pod (see go2rtc README "Security").
+# ${name} is read from $CREDENTIALS_DIRECTORY/<name>, i.e. the camera-tokens secret.
+app:
+  # Only what viewing needs: ws + mp4 (MSE player), mjpeg (frame.jpeg), rtsp (camera source).
+  modules: [api, ws, rtsp, mp4, mjpeg]
+
+api:
+  listen: ":1984"
+  # "/" serves the static player (stream.html, video-stream.js); no stream/config editing API.
+  allow_paths: ["/", "/api/ws", "/api/frame.jpeg"]
+
+rtsp:
+  # Client only; no RTSP server.
+  listen: ""
+
+log:
+  format: text
+
+# UniFi Protect RTSPS streams from the UDM Pro. rtspx:// = RTSPS without certificate
+# verification (self-signed UDM); Protect's "?enableSrtp" suffix must not be used.
+streams:
+  front-door: rtspx://192.168.1.1:7441/${front-door}
+  backyard: rtspx://192.168.1.1:7441/${backyard}
+  carport: rtspx://192.168.1.1:7441/${carport}

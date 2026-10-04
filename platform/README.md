@@ -23,6 +23,16 @@
    unset U P
    kubectl apply -k platform/components/unpoller
    ```
+8. Camera stream tokens (kept out of git), then go2rtc. In UniFi Protect, enable RTSPS per camera (*Settings > Advanced*); the token is the URL part after the last `/` and before `?`. One secret key per stream name in `components/go2rtc/go2rtc.yaml`:
+   ```sh
+   kubectl apply -f platform/components/go2rtc/namespace.yaml
+   args=(); for cam in front-door backyard carport; do
+     read -rsp "$cam RTSPS URL: " url && echo; t=${url##*/}; t=${t%%\?*}; args+=(--from-literal="$cam=$t")
+   done
+   kubectl -n go2rtc create secret generic camera-tokens "${args[@]}"; unset url t args
+   kubectl apply -k platform/components/go2rtc
+   ```
+   go2rtc reads tokens at start: after changing the secret, `kubectl -n go2rtc rollout restart deploy/go2rtc`.
 
 Both scripts are idempotent. Re-run `install.sh` after editing `k3s/config.yaml`; bump `K3S_VERSION` in it to upgrade.
 
@@ -36,6 +46,7 @@ Cluster add-ons under `components/`, one kustomization each; apply with `kubectl
 | `monitoring` | kube-prometheus-stack 91.9.0 in namespace `monitoring`. Prometheus at http://prometheus.lab.internal (no auth, 15 days / 18 GB retention, 20 Gi volume), Grafana at http://grafana.lab.internal (`admin`; password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' \| base64 -d`). Picks up ServiceMonitors/PodMonitors/rules from all namespaces. Alertmanager and the controller-manager/scheduler/proxy/etcd monitors are off (no receivers; components are embedded in k3s). node-exporter runs as SELinux `spc_t` (confined, it cannot read `/proc/1`). Traefik is scraped through a PodMonitor. |
 | `headlamp` | Headlamp 0.45.0 at http://kube.lab.internal (the Kubernetes Dashboard project is archived). Its own service account has no cluster permissions; log in with a token for `headlamp-admin` (cluster-admin): `kubectl -n headlamp create token headlamp-admin --duration=720h`. Revoke all tokens by deleting and re-applying the `headlamp-admin` ServiceAccount. Tokens travel over plain HTTP on the LAN until TLS exists. |
 | `unpoller` | UnPoller v5.5.0 polling the UDM Pro (`https://192.168.1.1`) every 30 s; metrics prefixed `unpoller_` (gateway/WAN, switch ports, APs, clients, speed tests; DPI off). Grafana dashboards in `dashboards/` are grafana.com 11311-11315 with the datasource placeholders replaced by `Prometheus`; loaded as ConfigMaps labelled `grafana_dashboard: "1"`. Panels that stay empty: DPI categories, client-type breakdowns the UDM doesn't report, name-matched Echo/FireTV/camera panels. |
+| `go2rtc` | go2rtc 1.9.14 at http://cameras.lab.internal: UniFi Protect RTSPS (`rtspx://192.168.1.1:7441/<token>`) repackaged without transcoding for browsers. Embed: `http://cameras.lab.internal/stream.html?src=<name>` (MSE over WebSocket) or `/api/frame.jpeg?src=<name>` for stills; streams `front-door`, `backyard`, `carport`. Connects to Protect only while someone watches. Locked down: modules `api, ws, rtsp, mp4, mjpeg` only, API limited to `/`, `/api/ws`, `/api/frame.jpeg` (no stream/config editing, no exec). **No viewer authentication: anyone on the LAN (later the VPN) can watch.** Tokens come from secret `camera-tokens`, mounted as credential files. |
 
 k3s still provides Traefik, ServiceLB, CoreDNS and metrics-server.
 

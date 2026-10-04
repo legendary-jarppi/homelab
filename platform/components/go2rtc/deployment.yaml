@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go2rtc
+  labels:
+    app.kubernetes.io/name: go2rtc
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: go2rtc
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: go2rtc
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        runAsGroup: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: go2rtc
+          image: alexxit/go2rtc:1.9.14
+          command: [go2rtc, -config, /etc/go2rtc/go2rtc.yaml]
+          env:
+            - name: CREDENTIALS_DIRECTORY
+              value: /run/credentials
+          ports:
+            - name: http
+              containerPort: 1984
+          readinessProbe:
+            tcpSocket:
+              port: http
+          resources:
+            requests:
+              cpu: 20m
+              memory: 32Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /etc/go2rtc
+              readOnly: true
+            - name: camera-tokens
+              mountPath: /run/credentials
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          configMap:
+            name: go2rtc-config
+        - name: camera-tokens
+          secret:
+            secretName: camera-tokens
+        - name: tmp
+          emptyDir: {}

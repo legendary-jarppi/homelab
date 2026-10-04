@@ -1,0 +1,15 @@
+# go2rtc: UniFi Protect camera streams for browsers at http://cameras.lab.internal
+# Needs secret camera-tokens (one key per stream name, value = Protect RTSPS token), not in git;
+# see platform/README.md.
+# Apply: kubectl apply -k platform/components/go2rtc
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: go2rtc
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service-ingress.yaml
+configMapGenerator:
+  # Hashed name: config changes roll the pod.
+  - name: go2rtc-config
+    files: [go2rtc.yaml]
