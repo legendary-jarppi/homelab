@@ -131,6 +131,10 @@ spec:
                 name: news-config
             - secretRef:
                 name: news-llm
+            # Subscriber sessions, COOKIES_<SLUG> (e.g. COOKIES_HS); optional. See apps/news/README.md.
+            - secretRef:
+                name: news-outlet-auth
+                optional: true
           env:
             - name: DB_PASSWORD
               valueFrom:

@@ -5,6 +5,7 @@ import { parseHTML } from 'linkedom';
 import type { z } from 'zod';
 import type { Block, ExtractedArticle, ExtractedImage } from '../blocks.ts';
 import { getText } from '../http.ts';
+import type { CookieJar } from '../sessions.ts';
 import { ExtractError, type Discovered } from './types.ts';
 
 export type Article = ExtractedArticle & { meta?: Record<string, unknown> };
@@ -251,8 +252,8 @@ export function resolveReactStream(doc: Document, html: string): void {
 	}
 }
 
-export async function fetchPage(url: string): Promise<{ url: string; html: string }> {
-	const { url: finalUrl, text } = await getText(url, { accept: 'text/html,application/xhtml+xml' });
+export async function fetchPage(url: string, cookies?: CookieJar): Promise<{ url: string; html: string }> {
+	const { url: finalUrl, text } = await getText(url, { accept: 'text/html,application/xhtml+xml', cookies });
 	return { url: finalUrl, html: text };
 }
 

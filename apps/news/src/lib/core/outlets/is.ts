@@ -11,5 +11,5 @@ export const is: OutletDef = {
 	enabledByDefault: true,
 	discoveryIntervalMin: 15,
 	discover: () => discoverSanoma('www.is.fi'),
-	extract: (url) => extractSanoma(url, 'fi')
+	extract: (url) => extractSanoma(url, 'fi', 'is')
 };

@@ -1,4 +1,5 @@
-// Helsingin Sanomat: free and metered articles only (Sanoma platform, see sanoma.ts).
+// Helsingin Sanomat (Sanoma platform, see sanoma.ts): free and metered articles, and paid ones
+// with a subscriber session (COOKIES_HS).
 import { discoverSanoma, extractSanoma } from './sanoma.ts';
 import type { OutletDef } from './types.ts';
 
@@ -11,5 +12,5 @@ export const hs: OutletDef = {
 	enabledByDefault: true,
 	discoveryIntervalMin: 15,
 	discover: () => discoverSanoma('www.hs.fi'),
-	extract: (url) => extractSanoma(url, 'fi')
+	extract: (url) => extractSanoma(url, 'fi', 'hs')
 };

@@ -9,7 +9,8 @@ change and why, and the design we actually build. Where the two disagree, this d
 2. It looks and reads like a traditional newspaper.
 3. Every article is readable in full on our site, text and photos, without visiting the outlet.
 4. Discovery uses RSS and also news sitemaps, outlet APIs and page scraping.
-5. Paywalled articles are skipped for now; credentialed retrieval comes soon after.
+5. Paywalled articles are skipped unless the household subscribes; HS paid articles are read through
+   a subscriber session (§4).
 
 Plus one rule that follows from them: **a reader never sees what they asked not to see**, anywhere
 (lists, search, article pages, photos, cluster "also in" lines), and nothing on screen hints at what was
@@ -57,7 +58,8 @@ flowchart LR
 - Photos are downloaded once, stored as WebP under the image volume and served by the web app. The
   reader's browser never contacts an outlet.
 - The worker is the only component with internet egress (NetworkPolicy); web reaches only Postgres.
-- Schema: versioned SQL migrations (`migrations/NNN_*.sql`), applied by the web pod at start.
+- Schema: versioned SQL migrations (`migrations/NNN_*.sql`), applied at start by whichever of web
+  and worker starts first (advisory-locked runner).
 
 ## 4. Ingestion
 
@@ -72,6 +74,13 @@ Iltalehti) or server-rendered HTML (MTV, Seiska, NPR); never the JSON-LD `articl
 - **Paywall**: the outlet's own lock flag decides, never text length. A locked article is stored as
   `paywalled` with no body, **even when the page ships the full text in its state JSON** (Alma Talent
   does this; reading it would be circumvention).
+- **Subscriber sessions** (`sessions.ts`): for outlets the household subscribes to, the worker sends
+  the cookies of a logged-in browser (secret `COOKIES_<SLUG>`), only to that outlet's own hosts, over
+  https, also across redirects; Set-Cookie updates are kept in `outlet_sessions`. Automating the
+  login itself was rejected: the Sanoma login runs behind DataDome bot detection, and a scripted
+  login risks the account. With a session, the outlet's per-request flag still decides (Sanoma
+  `showPaywall`); every paid article doubles as a session check shown on the admin Outlets page.
+  The site is household-only, which keeps this within a personal subscription.
 - **Crawler manners**: single hardened client (`http.ts`): robots.txt per host, per-host pacing and
   crawl-delay, identifying User-Agent plus `From`, size and time caps, private address ranges blocked
   (also by NetworkPolicy).
@@ -188,7 +197,7 @@ first** puts every photo behind the button; **no photos** removes them.
 
 ## 10. Phases
 1. **Now**: everything above, for the seven initial outlets.
-2. **Next**: credentialed retrieval for HS, IS and Iltalehti paid articles (system-level secrets), then
-   Kauppalehti and Uusi Suomi; few-shot examples from `tag_corrections` in the prompt.
+2. **Next**: subscriber sessions for Iltalehti; few-shot examples from `tag_corrections` in the
+   prompt. HS (and IS) subscriber sessions are in place.
 3. **Later**: public exposure through Cloudflare Tunnel only if licensing allows (it currently does
    not), English-language outlets with a licence.

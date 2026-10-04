@@ -6,6 +6,7 @@ import { FetchError } from '../http.ts';
 import { deleteArticleImages, storeArticleImages } from '../images.ts';
 import { outletBySlug } from '../outlets/index.ts';
 import { ExtractError } from '../outlets/types.ts';
+import { persistSessions, recordSessionCheck } from '../sessions.ts';
 import { errorText, log } from './log.ts';
 
 const MAX_ATTEMPTS = Number(process.env.CONTENT_MAX_ATTEMPTS ?? 5);
@@ -56,6 +57,10 @@ async function extractOne(sql: Sql, job: ContentJob): Promise<ExtractOutcome> {
 	if (!def) return { state: 'failed', reason: `no extractor for outlet ${job.slug}` };
 	const article = await def.extract(job.url);
 	const meta = article.meta ?? {};
+	if (meta.subscriberCheck === 'ok' || meta.subscriberCheck === 'rejected') {
+		await recordSessionCheck(sql, job.slug, meta.subscriberCheck === 'ok', job.url);
+		if (meta.subscriberCheck === 'rejected') log.warn('subscriber-session-rejected', { id: job.id, outlet: job.slug });
+	}
 	if (article.paywalled) {
 		await sql`
 			UPDATE articles SET content_state = 'paywalled', content_reason = 'paywalled', source_meta = ${sql.json(meta as never)},
@@ -110,6 +115,11 @@ export async function processContent(sql: Sql, job: ContentJob): Promise<void> {
 		outcome = classifyError(e);
 	}
 	const ms = Date.now() - started;
+	try {
+		await persistSessions(sql);
+	} catch (e) {
+		log.error('session-persist-failed', { error: errorText(e) });
+	}
 	try {
 		if ('retry' in outcome) {
 			const attempts = job.attempts + 1;

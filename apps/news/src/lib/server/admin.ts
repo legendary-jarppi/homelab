@@ -43,6 +43,8 @@ export interface OutletRow {
 	last_discovery_new: number | null;
 	windows: { '24h': WindowStats; '7d': WindowStats };
 	failedReasons: { reason: string; n: number }[];
+	/** Subscriber session (worker secret COOKIES_<SLUG>); null = none configured. */
+	session: { state: 'unknown' | 'ok' | 'rejected'; stateAt: Date | null; updatedAt: Date } | null;
 }
 
 const emptyWindow = (): WindowStats => ({
@@ -53,8 +55,8 @@ const emptyWindow = (): WindowStats => ({
 });
 
 export async function outletRows(sql: Sql): Promise<OutletRow[]> {
-	const [outlets, counts, reasons] = await Promise.all([
-		sql<Omit<OutletRow, 'windows' | 'failedReasons'>[]>`
+	const [outlets, counts, reasons, sessions] = await Promise.all([
+		sql<Omit<OutletRow, 'windows' | 'failedReasons' | 'session'>[]>`
 			SELECT id, slug, name, language, enabled, priority, requires_auth, last_discovery_at, last_discovery_error,
 				last_discovery_found, last_discovery_new
 			FROM outlets ORDER BY enabled DESC, priority DESC, name`,
@@ -78,7 +80,9 @@ export async function outletRows(sql: Sql): Promise<OutletRow[]> {
 				GROUP BY outlet_id, reason
 			) ranked
 			WHERE rn <= 5
-			ORDER BY outlet_id, n DESC`
+			ORDER BY outlet_id, n DESC`,
+		sql<{ slug: string; state: 'unknown' | 'ok' | 'rejected'; state_at: Date | null; updated_at: Date }[]>`
+			SELECT slug, state, state_at, updated_at FROM outlet_sessions`
 	]);
 
 	return outlets.map((o) => {
@@ -90,7 +94,13 @@ export async function outletRows(sql: Sql): Promise<OutletRow[]> {
 			if (c.content_state === 'extracted') w.classify[c.classify_state as keyof WindowStats['classify']] += c.n;
 		}
 		for (const w of Object.values(windows)) w.paywalledShare = w.total > 0 ? w.content.paywalled / w.total : null;
-		return { ...o, windows, failedReasons: reasons.filter((r) => r.outlet_id === o.id).map(({ reason, n }) => ({ reason, n })) };
+		const s = sessions.find((s) => s.slug === o.slug);
+		return {
+			...o,
+			windows,
+			failedReasons: reasons.filter((r) => r.outlet_id === o.id).map(({ reason, n }) => ({ reason, n })),
+			session: s ? { state: s.state, stateAt: s.state_at, updatedAt: s.updated_at } : null
+		};
 	});
 }
 
@@ -112,6 +122,18 @@ export async function reextractFailed(sql: Sql, outletId: number): Promise<numbe
 	const rows = await sql`
 		UPDATE articles SET content_state = 'pending', content_attempts = 0, content_next_at = now()
 		WHERE outlet_id = ${outletId} AND content_state = 'failed' AND body_purged_at IS NULL
+		RETURNING id`;
+	return rows.length;
+}
+
+export const REFETCH_PAYWALLED_DAYS = 3;
+
+/** Re-queues recent paywalled articles, e.g. after renewing a subscriber session. Returns the count. */
+export async function refetchPaywalled(sql: Sql, outletId: number): Promise<number> {
+	const rows = await sql`
+		UPDATE articles SET content_state = 'pending', content_attempts = 0, content_next_at = now()
+		WHERE outlet_id = ${outletId} AND content_state = 'paywalled' AND body_purged_at IS NULL
+			AND published_at > now() - make_interval(days => ${REFETCH_PAYWALLED_DAYS})
 		RETURNING id`;
 	return rows.length;
 }

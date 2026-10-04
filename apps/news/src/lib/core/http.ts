@@ -3,6 +3,7 @@
 // blocked for the worker by a NetworkPolicy (deploy/networkpolicy.yaml).
 import robotsParser from 'robots-parser';
 import { setTimeout as sleep } from 'node:timers/promises';
+import type { CookieJar } from './sessions.ts';
 
 // No "+http://…" in the UA: npr.org resets connections for UAs containing a URL. The contact
 // address goes in the From header instead.
@@ -36,7 +37,11 @@ export interface GetOptions {
 	timeoutMs?: number;
 	/** false: skip the robots.txt check (only for robots-exempt resources such as images on CDNs we already reached). */
 	robots?: boolean;
+	/** Subscriber session: sent only to the jar's own hosts (also across redirects), updated from Set-Cookie. */
+	cookies?: CookieJar;
 }
+
+const MAX_REDIRECTS = 5;
 
 /** The part of robots-parser's (unexported) Robot interface this client uses. */
 interface RobotsRules {
@@ -102,13 +107,32 @@ export async function get(url: string, options: GetOptions = {}): Promise<FetchR
 	await pace(parsed.host, Math.max(MIN_HOST_INTERVAL_MS, crawlDelayMs));
 
 	let response: Response;
+	let current = parsed;
 	try {
-		response = await fetch(url, {
-			headers: { 'user-agent': USER_AGENT, from: FROM, accept: options.accept ?? '*/*', 'accept-language': 'fi,en;q=0.8' },
-			redirect: 'follow',
-			signal: AbortSignal.timeout(options.timeoutMs ?? 30_000)
-		});
+		for (let hop = 0; ; hop++) {
+			const cookie = options.cookies?.header(current);
+			response = await fetch(current, {
+				headers: {
+					'user-agent': USER_AGENT,
+					from: FROM,
+					accept: options.accept ?? '*/*',
+					'accept-language': 'fi,en;q=0.8',
+					...(cookie ? { cookie } : {})
+				},
+				// With a session, redirects are followed here so the cookie never reaches another host.
+				redirect: options.cookies ? 'manual' : 'follow',
+				signal: AbortSignal.timeout(options.timeoutMs ?? 30_000)
+			});
+			options.cookies?.store(current, response.headers.getSetCookie());
+			const location = response.headers.get('location');
+			if (!options.cookies || response.status < 300 || response.status > 399 || !location) break;
+			await response.body?.cancel();
+			if (hop >= MAX_REDIRECTS) throw new FetchError(`too many redirects for ${url}`, 'protocol');
+			current = new URL(location, current);
+			if (current.protocol !== 'http:' && current.protocol !== 'https:') throw new FetchError(`unsupported redirect to ${current.protocol}`, 'protocol');
+		}
 	} catch (e) {
+		if (e instanceof FetchError) throw e;
 		throw new FetchError(`network error for ${url}: ${(e as Error).message}`, 'network');
 	}
 	if (!response.ok) {
@@ -128,7 +152,7 @@ export async function get(url: string, options: GetOptions = {}): Promise<FetchR
 		if (total > maxBytes) throw new FetchError(`response exceeded ${maxBytes} bytes for ${url}`, 'too-large');
 		chunks.push(chunk);
 	}
-	return { url: response.url || url, status: response.status, headers: response.headers, body: Buffer.concat(chunks) };
+	return { url: options.cookies ? current.href : response.url || url, status: response.status, headers: response.headers, body: Buffer.concat(chunks) };
 }
 
 export async function getText(url: string, options: GetOptions = {}): Promise<{ url: string; text: string }> {

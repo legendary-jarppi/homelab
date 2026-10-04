@@ -1,7 +1,10 @@
 // Sanoma platform (Helsingin Sanomat, Ilta-Sanomat): news sitemap + RSS discovery; body from
 // `__NEXT_DATA__` props.pageProps.page.assetData.splitBody. The lock flags (`showPaywall`,
 // `paidType`, JSON-LD isAccessibleForFree) decide; a locked article's body is never read.
+// With a subscriber session (COOKIES_<SLUG>, sessions.ts) the server computes `showPaywall` for
+// that subscriber, so it alone decides; JSON-LD keeps describing anonymous access.
 import { z } from 'zod';
+import { sessionFor } from '../sessions.ts';
 import { Body, discoverFrom, fetchPage, ldArticle, ldFree, nextData, paywalled, parseDate, parseDoc, pick, validate, type Article, type ImageInput } from './common.ts';
 import { ExtractError, type Discovered } from './types.ts';
 
@@ -94,7 +97,11 @@ function addBody(body: Body, blocks: z.infer<typeof Typed>[]): void {
 	}
 }
 
-export function parseSanoma(html: string, url: string, language: string): Article {
+/**
+ * `authenticated`: the page was fetched with a subscriber session. Paid articles then carry
+ * `meta.subscriberCheck` ('ok' = opened, 'rejected' = still locked: the session no longer works).
+ */
+export function parseSanoma(html: string, url: string, language: string, authenticated = false): Article {
 	const page = validate(Page, nextData(html), 'Sanoma page').props.pageProps.page;
 	const a = page?.assetData;
 	if (!a) throw new ExtractError(`not an article page: ${url}`, 'skipped');
@@ -116,10 +123,12 @@ export function parseSanoma(html: string, url: string, language: string): Articl
 			paidType: a.paidType,
 			tags: (a.tags ?? []).map((t) => t.title).filter(Boolean),
 			userNeed: a.editorialUserNeed ?? undefined
-		}
+		} as Record<string, unknown>
 	};
 	// Missing flags count as locked: only an explicit "no paywall" opens the body.
-	const open = a.showPaywall === false && (a.paidType === 'free' || a.paidType === 'metered') && ldFree(pick(ld, 'isAccessibleForFree')) !== false;
+	const anonymousOpen = a.showPaywall === false && (a.paidType === 'free' || a.paidType === 'metered') && ldFree(pick(ld, 'isAccessibleForFree')) !== false;
+	const open = authenticated ? a.showPaywall === false : anonymousOpen;
+	if (authenticated && a.paidType === 'paid') fields.meta.subscriberCheck = open ? 'ok' : 'rejected';
 	if (!open) return paywalled(fields);
 
 	const blocks = a.splitBody ?? [];
@@ -133,9 +142,10 @@ export function parseSanoma(html: string, url: string, language: string): Articl
 	return body.article(fields);
 }
 
-export async function extractSanoma(url: string, language: string): Promise<Article> {
-	const page = await fetchPage(url);
-	return parseSanoma(page.html, page.url, language);
+export async function extractSanoma(url: string, language: string, slug: string): Promise<Article> {
+	const session = sessionFor(slug) ?? undefined;
+	const page = await fetchPage(url, session);
+	return parseSanoma(page.html, page.url, language, session !== undefined);
 }
 
 /** Sitemap first: its titles lack the RSS "Section | " prefix. */

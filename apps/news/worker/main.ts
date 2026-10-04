@@ -24,10 +24,11 @@
 import { createServer } from 'node:http';
 import type { ReservedSql } from 'postgres';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { db } from '../src/lib/core/db.ts';
+import { db, migrate } from '../src/lib/core/db.ts';
 import { ensureEdition } from '../src/lib/core/editions.ts';
 import { llmConfigFromEnv } from '../src/lib/core/llm.ts';
-import { seedOutlets } from '../src/lib/core/outlets/index.ts';
+import { OUTLETS, seedOutlets } from '../src/lib/core/outlets/index.ts';
+import { initSessions } from '../src/lib/core/sessions.ts';
 import { nextClassifyJob, processClassify, type ClassifyJob } from '../src/lib/core/pipeline/classification.ts';
 import { EMBEDDING_MODEL, embedPending } from '../src/lib/core/pipeline/clustering.ts';
 import { nextContentJob, processContent, type ContentJob } from '../src/lib/core/pipeline/content.ts';
@@ -224,8 +225,12 @@ async function main(): Promise<void> {
 	}
 	if (!stop.signal.aborted) {
 		state = 'running';
+		// Same advisory-locked runner as the web pod: whichever starts first applies new migrations.
+		const migrated = await migrate(sql, process.env.MIGRATIONS_DIR ?? 'migrations');
+		if (migrated.length > 0) log.info('migrated', { files: migrated.join(',') });
 		await seedOutlets(sql);
-		log.info('started', { model: llm.model, content_concurrency: CONTENT_CONCURRENCY, classify_concurrency: CLASSIFY_CONCURRENCY, health_port: HEALTH_PORT });
+		const sessions = await initSessions(sql, OUTLETS);
+		log.info('started', { model: llm.model, content_concurrency: CONTENT_CONCURRENCY, classify_concurrency: CLASSIFY_CONCURRENCY, health_port: HEALTH_PORT, subscriber_sessions: sessions.join(',') || 'none' });
 		await Promise.all([
 			every('discovery', 30_000, async () => {
 				await discoverDue(sql);

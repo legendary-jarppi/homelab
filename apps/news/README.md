@@ -46,6 +46,33 @@ python3 -c "import yaml,os; print(yaml.safe_load(open(os.path.expanduser('~/.omp
   && kubectl -n news create secret generic news-llm --from-file=LLM_API_KEY=/tmp/llmkey; shred -u /tmp/llmkey
 ```
 
+### Subscriber login (Helsingin Sanomat)
+
+Paid HS articles are fetched with your own HS session: the worker sends the cookies of a browser
+where you are logged in, only to `hs.fi` hosts, and keeps the cookies HS updates. No password is
+stored. Everyone on this site (the household) then sees paid HS articles. The same mechanism works
+for Ilta-Sanomat with `COOKIES_IS`.
+
+1. In a desktop browser, log in at https://www.hs.fi (keep "Pidä minut kirjautuneena" ticked) and
+   open any article.
+2. Developer tools → *Network* → reload → select the first request (the article page) → *Request
+   Headers* → copy the whole value of `Cookie`.
+3. Store it and restart the worker (the value is read at start):
+
+   ```sh
+   read -rsp 'HS Cookie header: ' C && echo
+   kubectl -n news create secret generic news-outlet-auth --from-literal=COOKIES_HS="$C" \
+     --dry-run=client -o yaml | kubectl apply -f -
+   unset C
+   kubectl -n news rollout restart deploy/worker
+   ```
+4. Admin → *Outlets* → Helsingin Sanomat → *Re-fetch paywalled*.
+
+The *Subscriber login* line on the Outlets page shows whether the latest paid article opened. When
+it says *Expired*, repeat steps 1-4. Logging out in that browser may end the copied session too;
+just close the tab instead. Remove the secret to stop: `kubectl -n news delete secret
+news-outlet-auth && kubectl -n news rollout restart deploy/worker`.
+
 ## Develop
 
 ```sh

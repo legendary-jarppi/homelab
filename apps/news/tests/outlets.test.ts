@@ -85,6 +85,24 @@ test('hs: paid article is paywalled and empty', () => {
 	assert.equal(a.title, 'Taiteilijapari elää jatkuvassa rahapulassa, mutta juuri tällaista elämää he haluavat');
 });
 
+test('hs: with a subscriber session the server flag alone decides, and paid articles report the session check', () => {
+	const url = 'https://www.hs.fi/popkulttuuri/art-2000012219129.html';
+	const locked = fixture('hs-paid.html');
+	const rejected = parseSanoma(locked, url, 'fi', true);
+	assertLocked(rejected, locked, 'pihalla vanhojen omenapuiden katveessa seisova Volvo');
+	assert.equal(pick(rejected.meta, 'subscriberCheck'), 'rejected');
+
+	// The same paid page as the server renders it for a subscriber (showPaywall false).
+	const unlocked = locked.replace('"showPaywall":true', '"showPaywall":false');
+	assert.notEqual(unlocked, locked);
+	const opened = parseSanoma(unlocked, url, 'fi', true);
+	assert.equal(opened.paywalled, false);
+	assert.ok(opened.blocks.length > 0);
+	assert.equal(pick(opened.meta, 'subscriberCheck'), 'ok');
+	// Without a session the paid type and JSON-LD still lock it, whatever showPaywall says.
+	assert.equal(parseSanoma(unlocked, url, 'fi').paywalled, true);
+});
+
 test('is: free article', () => {
 	const a = parseSanoma(fixture('is-free.html'), 'https://www.is.fi/kotimaa/art-2000012310475.html', 'fi');
 	assertWellFormed(a);

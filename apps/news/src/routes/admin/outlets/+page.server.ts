@@ -1,9 +1,9 @@
 import { fail } from '@sveltejs/kit';
 import { db } from '$lib/core/db';
-import { adminIdOf, discoverNow, outletRows, RECLASSIFY_DAYS, reclassifyOutlet, reextractFailed, setOutletEnabled, setOutletPriority } from '$lib/server/admin';
+import { adminIdOf, discoverNow, outletRows, RECLASSIFY_DAYS, reclassifyOutlet, reextractFailed, REFETCH_PAYWALLED_DAYS, refetchPaywalled, setOutletEnabled, setOutletPriority } from '$lib/server/admin';
 import type { Actions, PageServerLoad } from './$types';
 
-export const load: PageServerLoad = async () => ({ outlets: await outletRows(db()), reclassifyDays: RECLASSIFY_DAYS });
+export const load: PageServerLoad = async () => ({ outlets: await outletRows(db()), reclassifyDays: RECLASSIFY_DAYS, refetchDays: REFETCH_PAYWALLED_DAYS });
 
 async function outletIdFrom(request: Request): Promise<{ id: number; form: FormData }> {
 	const form = await request.formData();
@@ -36,6 +36,12 @@ export const actions = {
 		const { id } = await outletIdFrom(request);
 		const n = await reextractFailed(db(), id);
 		return { outletId: id, message: `${n} failed article(s) queued for extraction.` };
+	},
+	refetchPaywalled: async ({ request, locals }) => {
+		adminIdOf(locals);
+		const { id } = await outletIdFrom(request);
+		const n = await refetchPaywalled(db(), id);
+		return { outletId: id, message: `${n} paywalled article(s) queued for fetching again.` };
 	},
 	reclassify: async ({ request, locals }) => {
 		adminIdOf(locals);

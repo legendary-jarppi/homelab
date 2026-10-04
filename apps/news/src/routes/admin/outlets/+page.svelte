@@ -39,6 +39,16 @@
 			{/if}
 			<dt>Paywalled share</dt>
 			<dd>24 h {percent(outlet.windows['24h'].paywalledShare)} · 7 d {percent(outlet.windows['7d'].paywalledShare)}</dd>
+			{#if outlet.session}
+				<dt>Subscriber login</dt>
+				{#if outlet.session.state === 'ok'}
+					<dd>Working · a subscriber article opened {when(outlet.session.stateAt)}</dd>
+				{:else if outlet.session.state === 'rejected'}
+					<dd class="warn">Expired · a subscriber article was still locked {when(outlet.session.stateAt)}. Renew the cookies (see apps/news/README.md), then re-fetch paywalled articles.</dd>
+				{:else}
+					<dd>Not yet tested · waits for the next subscriber article</dd>
+				{/if}
+			{/if}
 		</dl>
 
 		<div class="table-wrap">
@@ -98,6 +108,10 @@
 			<form class="inline-form" method="POST" action="?/reextract" use:enhance>
 				<input type="hidden" name="id" value={outlet.id} />
 				<button class="button">Re-extract failed</button>
+			</form>
+			<form class="inline-form" method="POST" action="?/refetchPaywalled" use:enhance>
+				<input type="hidden" name="id" value={outlet.id} />
+				<button class="button">Re-fetch paywalled, last {data.refetchDays} days</button>
 			</form>
 			<form class="inline-form" method="POST" action="?/reclassify" use:enhance>
 				<input type="hidden" name="id" value={outlet.id} />
