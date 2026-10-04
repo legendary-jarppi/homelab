@@ -85,22 +85,28 @@ test('hs: paid article is paywalled and empty', () => {
 	assert.equal(a.title, 'Taiteilijapari elää jatkuvassa rahapulassa, mutta juuri tällaista elämää he haluavat');
 });
 
-test('hs: with a subscriber session the server flag alone decides, and paid articles report the session check', () => {
+test('hs: subscriber access opens a paid article with the access service body, without repeating the free part', () => {
 	const url = 'https://www.hs.fi/popkulttuuri/art-2000012219129.html';
 	const locked = fixture('hs-paid.html');
-	const rejected = parseSanoma(locked, url, 'fi', true);
-	assertLocked(rejected, locked, 'pihalla vanhojen omenapuiden katveessa seisova Volvo');
-	assert.equal(pick(rejected.meta, 'subscriberCheck'), 'rejected');
+	const p = (text: string) => ({ type: 'paragraph', crumbs: [{ type: 'text', content: text }] });
 
-	// The same paid page as the server renders it for a subscriber (showPaywall false).
-	const unlocked = locked.replace('"showPaywall":true', '"showPaywall":false');
-	assert.notEqual(unlocked, locked);
-	const opened = parseSanoma(unlocked, url, 'fi', true);
-	assert.equal(opened.paywalled, false);
-	assert.ok(opened.blocks.length > 0);
-	assert.equal(pick(opened.meta, 'subscriberCheck'), 'ok');
-	// Without a session the paid type and JSON-LD still lock it, whatever showPaywall says.
-	assert.equal(parseSanoma(unlocked, url, 'fi').paywalled, true);
+	const denied = parseSanoma(locked, url, 'fi', { granted: false, reason: 'No session token provided' });
+	assertLocked(denied, locked, 'pihalla vanhojen omenapuiden katveessa seisova Volvo');
+	assert.equal(pick(denied.meta, 'subscriberCheck'), 'rejected');
+	assert.equal(pick(denied.meta, 'subscriberReason'), 'No session token provided');
+
+	const freePart = paragraphs(parseSanoma(locked, url, 'fi', { granted: true, splitBody: [] }));
+	assert.ok(freePart.length > 0, 'fixture page carries the free opening');
+
+	// The service returns only what follows the free part: appended.
+	const continued = parseSanoma(locked, url, 'fi', { granted: true, splitBody: [p('Toinen osa.'), p('Kolmas osa.')] });
+	assert.equal(continued.paywalled, false);
+	assert.deepEqual(paragraphs(continued), [...freePart, 'Toinen osa.', 'Kolmas osa.']);
+	assert.equal(pick(continued.meta, 'subscriberCheck'), 'ok');
+
+	// The service returns the whole body: used as is, the opening appears once.
+	const whole = parseSanoma(locked, url, 'fi', { granted: true, splitBody: [p(freePart[0]), p('Toinen osa.')] });
+	assert.deepEqual(paragraphs(whole), [freePart[0], 'Toinen osa.']);
 });
 
 test('is: free article', () => {

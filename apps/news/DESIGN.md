@@ -74,13 +74,18 @@ Iltalehti) or server-rendered HTML (MTV, Seiska, NPR); never the JSON-LD `articl
 - **Paywall**: the outlet's own lock flag decides, never text length. A locked article is stored as
   `paywalled` with no body, **even when the page ships the full text in its state JSON** (Alma Talent
   does this; reading it would be circumvention).
-- **Subscriber sessions** (`sessions.ts`): for outlets the household subscribes to, the worker sends
-  the cookies of a logged-in browser (secret `COOKIES_<SLUG>`), only to that outlet's own hosts, over
-  https, also across redirects; Set-Cookie updates are kept in `outlet_sessions`. Automating the
-  login itself was rejected: the Sanoma login runs behind DataDome bot detection, and a scripted
-  login risks the account. With a session, the outlet's per-request flag still decides (Sanoma
-  `showPaywall`); every paid article doubles as a session check shown on the admin Outlets page.
-  The site is household-only, which keeps this within a personal subscription.
+- **Subscriber sessions** (`sessions.ts`, Sanoma flow in `outlets/sanoma.ts`): for outlets the
+  household subscribes to, the worker owns a dedicated login (secret `COOKIES_<SLUG>`: the outlet's
+  login cookie copied from a private browser window). Sanoma serves one shared CDN copy of every
+  article page, so the worker follows the HS web app: login cookie → short-lived session token
+  (`/api/safe/v2/web/session-token`; single-flight, cached until expiry, because the login cookie
+  rotates on every exchange) → Sanoma's access service, whose `access-granted` answer carries the
+  subscriber body in the same `splitBody` format. Cookies go only to the outlet's own https hosts and
+  the token only to the access service, never across redirects; the newest login cookie is kept in
+  `outlet_sessions`. The access service decides, as the paywall flag does for anonymous pages; every
+  paid article doubles as a session check shown on the admin Outlets page. Automating the login
+  itself was rejected: it runs behind DataDome bot detection and a scripted login risks the account.
+  The site is household-only, which keeps this within the personal subscription.
 - **Crawler manners**: single hardened client (`http.ts`): robots.txt per host, per-host pacing and
   crawl-delay, identifying User-Agent plus `From`, size and time caps, private address ranges blocked
   (also by NetworkPolicy).

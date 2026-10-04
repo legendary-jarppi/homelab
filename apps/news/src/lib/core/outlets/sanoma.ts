@@ -1,10 +1,14 @@
 // Sanoma platform (Helsingin Sanomat, Ilta-Sanomat): news sitemap + RSS discovery; body from
 // `__NEXT_DATA__` props.pageProps.page.assetData.splitBody. The lock flags (`showPaywall`,
 // `paidType`, JSON-LD isAccessibleForFree) decide; a locked article's body is never read.
-// With a subscriber session (COOKIES_<SLUG>, sessions.ts) the server computes `showPaywall` for
-// that subscriber, so it alone decides; JSON-LD keeps describing anonymous access.
+//
+// Subscriber access (session cookie COOKIES_<SLUG>, see sessions.ts) follows the outlet's own web
+// app, because the article HTML is one shared CDN copy for everyone: the login cookie buys a
+// short-lived session token from `<host>/api/safe/v2/web/session-token` (the cookie rotates on every
+// call), and Sanoma's access service answers with the subscriber's part of the body.
 import { z } from 'zod';
-import { sessionFor } from '../sessions.ts';
+import { getText } from '../http.ts';
+import { sessionFor, type CookieJar } from '../sessions.ts';
 import { Body, discoverFrom, fetchPage, ldArticle, ldFree, nextData, paywalled, parseDate, parseDoc, pick, validate, type Article, type ImageInput } from './common.ts';
 import { ExtractError, type Discovered } from './types.ts';
 
@@ -97,11 +101,22 @@ function addBody(body: Body, blocks: z.infer<typeof Typed>[]): void {
 	}
 }
 
+/** The access service's verdict for one article with a subscriber session. */
+export type SubscriberAccess = { granted: true; splitBody: z.infer<typeof Typed>[] } | { granted: false; reason: string };
+
+const blockText = (b: z.infer<typeof Typed>) => (b.type === 'paragraph' ? crumbText(Paragraph.safeParse(b).data?.crumbs) : '');
+
+/** The access service may return the whole body or only what follows the free part; never repeat it. */
+function mergeSplitBody(free: z.infer<typeof Typed>[], subscriber: z.infer<typeof Typed>[]): z.infer<typeof Typed>[] {
+	const first = subscriber.map(blockText).find(Boolean);
+	return first && free.some((b) => blockText(b) === first) ? subscriber : [...free, ...subscriber];
+}
+
 /**
- * `authenticated`: the page was fetched with a subscriber session. Paid articles then carry
- * `meta.subscriberCheck` ('ok' = opened, 'rejected' = still locked: the session no longer works).
+ * `subscriber`: the access service's answer, when the page is locked and a session exists. Then
+ * `meta.subscriberCheck` records whether the session still works ('ok' / 'rejected').
  */
-export function parseSanoma(html: string, url: string, language: string, authenticated = false): Article {
+export function parseSanoma(html: string, url: string, language: string, subscriber?: SubscriberAccess): Article {
 	const page = validate(Page, nextData(html), 'Sanoma page').props.pageProps.page;
 	const a = page?.assetData;
 	if (!a) throw new ExtractError(`not an article page: ${url}`, 'skipped');
@@ -127,11 +142,11 @@ export function parseSanoma(html: string, url: string, language: string, authent
 	};
 	// Missing flags count as locked: only an explicit "no paywall" opens the body.
 	const anonymousOpen = a.showPaywall === false && (a.paidType === 'free' || a.paidType === 'metered') && ldFree(pick(ld, 'isAccessibleForFree')) !== false;
-	const open = authenticated ? a.showPaywall === false : anonymousOpen;
-	if (authenticated && a.paidType === 'paid') fields.meta.subscriberCheck = open ? 'ok' : 'rejected';
-	if (!open) return paywalled(fields);
+	if (subscriber) fields.meta.subscriberCheck = subscriber.granted ? 'ok' : 'rejected';
+	if (subscriber && !subscriber.granted) fields.meta.subscriberReason = subscriber.reason;
+	if (!anonymousOpen && !subscriber?.granted) return paywalled(fields);
 
-	const blocks = a.splitBody ?? [];
+	const blocks = subscriber?.granted ? mergeSplitBody(a.splitBody ?? [], subscriber.splitBody) : (a.splitBody ?? []);
 	const body = new Body();
 	if (a.mainPicture) body.lead(picture(a.mainPicture), a.mainPicture.url);
 	addBody(body, blocks);
@@ -142,10 +157,68 @@ export function parseSanoma(html: string, url: string, language: string, authent
 	return body.article(fields);
 }
 
+const SessionToken = z.looseObject({ action: Str, sessionToken: Str });
+const Access = z.looseObject({ type: z.string(), reason: Str, partialArticle: z.looseObject({ splitBody: z.array(Typed) }).nullish() });
+
+const tokens = new Map<string, { token: string; expiresAt: number }>();
+const inflight = new Map<string, Promise<string | null>>();
+
+function jwtExpiry(token: string): number {
+	try {
+		const { exp } = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString());
+		if (typeof exp === 'number') return exp * 1000;
+	} catch {
+		// Not a JWT: fall through to a short default.
+	}
+	return Date.now() + 5 * 60_000;
+}
+
+/**
+ * One session token per host, reused until shortly before it expires. Single-flight: the login
+ * cookie rotates on every call, so two parallel calls would invalidate each other.
+ */
+function sessionToken(host: string, jar: CookieJar): Promise<string | null> {
+	const cached = tokens.get(host);
+	if (cached && cached.expiresAt > Date.now() + 60_000) return Promise.resolve(cached.token);
+	let pending = inflight.get(host);
+	if (!pending) {
+		pending = (async () => {
+			// robots.txt keeps crawlers off /api/; this is the subscriber's own session endpoint, called
+			// as the outlet's web app calls it, about once per token lifetime.
+			const { text } = await getText(`https://${host}/api/safe/v2/web/session-token`, { cookies: jar, accept: 'text/plain', robots: false, headers: { 'cache-control': 'no-cache' } });
+			const parsed = SessionToken.safeParse(JSON.parse(text));
+			const token = parsed.success && parsed.data.action === 'continue' ? parsed.data.sessionToken : null;
+			if (token) tokens.set(host, { token, expiresAt: jwtExpiry(token) });
+			else tokens.delete(host);
+			return token ?? null;
+		})().finally(() => inflight.delete(host));
+		inflight.set(host, pending);
+	}
+	return pending;
+}
+
+async function subscriberAccess(host: string, brand: string, url: string, jar: CookieJar): Promise<SubscriberAccess> {
+	const id = /\/art-(\d+)\.html$/.exec(new URL(url).pathname)?.[1];
+	if (!id) return { granted: false, reason: 'no article id in URL' };
+	const token = await sessionToken(host, jar);
+	if (!token) return { granted: false, reason: 'session token refused (login expired)' };
+	const { text } = await getText(`https://puomi.sanoma-sndp.fi/api/v1/has-article-access/${brand}/${id}?nodeType=normal&platform=web`, {
+		accept: 'application/json',
+		headers: { 'SNDP-Authorization': token }
+	});
+	const access = validate(Access, JSON.parse(text), 'Sanoma access check');
+	if (access.type === 'access-granted' && access.partialArticle) return { granted: true, splitBody: access.partialArticle.splitBody };
+	tokens.delete(host);
+	return { granted: false, reason: access.reason ?? access.type };
+}
+
 export async function extractSanoma(url: string, language: string, slug: string): Promise<Article> {
-	const session = sessionFor(slug) ?? undefined;
-	const page = await fetchPage(url, session);
-	return parseSanoma(page.html, page.url, language, session !== undefined);
+	const page = await fetchPage(url);
+	const article = parseSanoma(page.html, page.url, language);
+	const session = sessionFor(slug);
+	if (!article.paywalled || !session) return article;
+	const access = await subscriberAccess(new URL(page.url).host, slug, page.url, session);
+	return parseSanoma(page.html, page.url, language, access);
 }
 
 /** Sitemap first: its titles lack the RSS "Section | " prefix. */

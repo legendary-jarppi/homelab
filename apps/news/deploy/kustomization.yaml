@@ -11,7 +11,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/news
-    newTag: "20261004-210133"
+    newTag: "20261004-213743"
 configMapGenerator:
   # Hashed name: changes roll the pods.
   - name: news-config

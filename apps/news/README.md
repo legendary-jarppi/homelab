@@ -48,30 +48,34 @@ python3 -c "import yaml,os; print(yaml.safe_load(open(os.path.expanduser('~/.omp
 
 ### Subscriber login (Helsingin Sanomat)
 
-Paid HS articles are fetched with your own HS session: the worker sends the cookies of a browser
-where you are logged in, only to `hs.fi` hosts, and keeps the cookies HS updates. No password is
-stored. Everyone on this site (the household) then sees paid HS articles. The same mechanism works
-for Ilta-Sanomat with `COOKIES_IS`.
+Paid HS articles are read with a dedicated HS login owned by the worker. The article page itself is
+one shared CDN copy, so the worker does what the HS web app does: it exchanges the login cookie
+`__Secure-sndp-refresh` for a short-lived session token at `www.hs.fi/api/safe/v2/web/session-token`
+and asks Sanoma's access service (`puomi.sanoma-sndp.fi`) for the subscriber part of the body. HS
+replaces the login cookie on every exchange; the worker keeps the newest one in `outlet_sessions`,
+so **a copied login must never be used by a browser again**. No password is stored. Everyone on
+this site (the household) sees paid HS articles. Ilta-Sanomat works the same way with `COOKIES_IS`.
 
-1. In a desktop browser, log in at https://www.hs.fi (keep "Pidä minut kirjautuneena" ticked) and
-   open any article.
-2. Developer tools → *Network* → reload → select the first request (the article page) → *Request
-   Headers* → copy the whole value of `Cookie`.
-3. Store it and restart the worker (the value is read at start):
+1. Open a private window, log in at https://www.hs.fi and open any article; let it finish loading.
+2. Developer tools → cookie storage for `https://www.hs.fi` (Chrome *Application*, Safari and
+   Firefox *Storage*) → copy the **Value** of `__Secure-sndp-refresh`. (Not the `Cookie` request
+   header: it carries the previous cookie, which the page replaces right after loading.)
+3. Close the private window at once, without logging out.
+4. Store it and restart the worker (the value is read at start; a new value replaces the stored login):
 
    ```sh
-   read -rsp 'HS Cookie header: ' C && echo
-   kubectl -n news create secret generic news-outlet-auth --from-literal=COOKIES_HS="$C" \
+   read -rsp 'Value of __Secure-sndp-refresh: ' C && echo
+   kubectl -n news create secret generic news-outlet-auth --from-literal=COOKIES_HS="__Secure-sndp-refresh=$C" \
      --dry-run=client -o yaml | kubectl apply -f -
    unset C
    kubectl -n news rollout restart deploy/worker
    ```
-4. Admin → *Outlets* → Helsingin Sanomat → *Re-fetch paywalled*.
+5. Admin → *Outlets* → Helsingin Sanomat → *Re-fetch paywalled*.
 
 The *Subscriber login* line on the Outlets page shows whether the latest paid article opened. When
-it says *Expired*, repeat steps 1-4. Logging out in that browser may end the copied session too;
-just close the tab instead. Remove the secret to stop: `kubectl -n news delete secret
-news-outlet-auth && kubectl -n news rollout restart deploy/worker`.
+it says *Expired*, repeat steps 1-5. Only one worker may use the login: a local worker run while
+the cluster worker holds the lock waits, which is safe. Remove the secret to stop: `kubectl -n news
+delete secret news-outlet-auth && kubectl -n news rollout restart deploy/worker`.
 
 ## Develop
 

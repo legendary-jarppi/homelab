@@ -39,6 +39,8 @@ export interface GetOptions {
 	robots?: boolean;
 	/** Subscriber session: sent only to the jar's own hosts (also across redirects), updated from Set-Cookie. */
 	cookies?: CookieJar;
+	/** Extra request headers (e.g. an outlet's session token for its own API). */
+	headers?: Record<string, string>;
 }
 
 const MAX_REDIRECTS = 5;
@@ -108,6 +110,9 @@ export async function get(url: string, options: GetOptions = {}): Promise<FetchR
 
 	let response: Response;
 	let current = parsed;
+	// Credentials (session cookies, extra headers) never follow a redirect to another host, so with
+	// either of them redirects are followed here instead of by fetch.
+	const manual = Boolean(options.cookies || options.headers);
 	try {
 		for (let hop = 0; ; hop++) {
 			const cookie = options.cookies?.header(current);
@@ -117,15 +122,15 @@ export async function get(url: string, options: GetOptions = {}): Promise<FetchR
 					from: FROM,
 					accept: options.accept ?? '*/*',
 					'accept-language': 'fi,en;q=0.8',
+					...(current.host === parsed.host ? options.headers : {}),
 					...(cookie ? { cookie } : {})
 				},
-				// With a session, redirects are followed here so the cookie never reaches another host.
-				redirect: options.cookies ? 'manual' : 'follow',
+				redirect: manual ? 'manual' : 'follow',
 				signal: AbortSignal.timeout(options.timeoutMs ?? 30_000)
 			});
 			options.cookies?.store(current, response.headers.getSetCookie());
 			const location = response.headers.get('location');
-			if (!options.cookies || response.status < 300 || response.status > 399 || !location) break;
+			if (!manual || response.status < 300 || response.status > 399 || !location) break;
 			await response.body?.cancel();
 			if (hop >= MAX_REDIRECTS) throw new FetchError(`too many redirects for ${url}`, 'protocol');
 			current = new URL(location, current);
@@ -152,7 +157,7 @@ export async function get(url: string, options: GetOptions = {}): Promise<FetchR
 		if (total > maxBytes) throw new FetchError(`response exceeded ${maxBytes} bytes for ${url}`, 'too-large');
 		chunks.push(chunk);
 	}
-	return { url: options.cookies ? current.href : response.url || url, status: response.status, headers: response.headers, body: Buffer.concat(chunks) };
+	return { url: manual ? current.href : response.url || url, status: response.status, headers: response.headers, body: Buffer.concat(chunks) };
 }
 
 export async function getText(url: string, options: GetOptions = {}): Promise<{ url: string; text: string }> {
