@@ -1,0 +1,8 @@
+# Prometheus + Grafana (kube-prometheus-stack), installed by k3s's helm-controller.
+# Bootstrap the Grafana admin secret first (not in git), see platform/README.md.
+# Apply: kubectl apply -k platform/components/monitoring
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - helmchart.yaml

@@ -6,16 +6,27 @@
 2. `sudo ./platform/host/prepare.sh`: hostname, packages, k3s data dir, firewalld.
 3. `sudo ./platform/k3s/install.sh [user...]`: SELinux policy, `/etc/rancher/k3s/config.yaml`, k3s. Gives each user (default: the sudo caller) `~/.kube/config` plus `~/.bashrc.d/kubeconfig.sh` exporting `KUBECONFIG`; k3s's `kubectl` otherwise reads the root-only `/etc/rancher/k3s/k3s.yaml`. Via the agent account: `sudo -u omp sudo ./platform/k3s/install.sh jari`.
 4. `kubectl apply -k platform/components/local-path`: default StorageClass `local-path`.
+5. Grafana admin secret (kept out of git), then monitoring:
+   ```sh
+   kubectl apply -f platform/components/monitoring/namespace.yaml
+   kubectl -n monitoring create secret generic grafana-admin --from-literal=admin-user=admin \
+     --from-literal=admin-password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+   kubectl apply -k platform/components/monitoring
+   ```
+   Grafana reads the password only when it first initializes its database; later changes to the secret need `grafana cli admin reset-admin-password`.
+6. `kubectl apply -k platform/components/headlamp`.
 
 Both scripts are idempotent. Re-run `install.sh` after editing `k3s/config.yaml`; bump `K3S_VERSION` in it to upgrade.
 
 ## Components
 
-Cluster add-ons under `components/`, one kustomization each; apply with `kubectl apply -k`.
+Cluster add-ons under `components/`, one kustomization each; apply with `kubectl apply -k`. Helm charts are declared as k3s `HelmChart` resources (installed by k3s's helm-controller; install logs: `kubectl -n kube-system logs job/helm-install-<name>`), so no `helm` CLI is needed.
 
 | Component | Notes |
 |---|---|
 | `local-path` | local-path-provisioner v0.0.37, replacing the k3s-bundled one (`disable: [local-storage]`). Volumes in `/var/lib/rancher/k3s/storage`. Helper pod runs with MCS range `s0-s0:c0.c1023`; without it, SELinux blocks deleting volumes written by other pods ([k3s#10130](https://github.com/k3s-io/k3s/issues/10130)). |
+| `monitoring` | kube-prometheus-stack 91.9.0 in namespace `monitoring`. Prometheus at http://prometheus.lab.internal (no auth, 15 days / 18 GB retention, 20 Gi volume), Grafana at http://grafana.lab.internal (`admin`; password: `kubectl -n monitoring get secret grafana-admin -o jsonpath='{.data.admin-password}' \| base64 -d`). Picks up ServiceMonitors/PodMonitors/rules from all namespaces. Alertmanager and the controller-manager/scheduler/proxy/etcd monitors are off (no receivers; components are embedded in k3s). node-exporter runs as SELinux `spc_t` (confined, it cannot read `/proc/1`). Traefik is scraped through a PodMonitor. |
+| `headlamp` | Headlamp 0.45.0 at http://kube.lab.internal (the Kubernetes Dashboard project is archived). Its own service account has no cluster permissions; log in with a token for `headlamp-admin` (cluster-admin): `kubectl -n headlamp create token headlamp-admin --duration=720h`. Revoke all tokens by deleting and re-applying the `headlamp-admin` ServiceAccount. Tokens travel over plain HTTP on the LAN until TLS exists. |
 
 k3s still provides Traefik, ServiceLB, CoreDNS and metrics-server.
 

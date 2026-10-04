@@ -1,0 +1,9 @@
+# Headlamp: Kubernetes web UI at kube.lab.internal (successor of the archived Kubernetes Dashboard).
+# Apply: kubectl apply -k platform/components/headlamp
+# Login token: kubectl -n headlamp create token headlamp-admin --duration=720h
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - namespace.yaml
+  - helmchart.yaml
+  - admin-serviceaccount.yaml

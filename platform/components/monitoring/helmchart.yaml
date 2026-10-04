@@ -1,0 +1,92 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: kube-prometheus-stack
+  namespace: kube-system
+spec:
+  repo: https://prometheus-community.github.io/helm-charts
+  chart: kube-prometheus-stack
+  version: 91.9.0
+  targetNamespace: monitoring
+  values:
+    # No receivers configured yet; enable when alerting is wanted.
+    alertmanager:
+      enabled: false
+
+    # Embedded in the k3s process; not reachable as separate components.
+    kubeControllerManager:
+      enabled: false
+    kubeScheduler:
+      enabled: false
+    kubeProxy:
+      enabled: false
+    kubeEtcd:
+      enabled: false
+
+    # Already host PID/network with / mounted read-only; confined container_t is
+    # denied /proc/1 (init_t), which breaks the filesystem collector.
+    prometheus-node-exporter:
+      containerSecurityContext:
+        seLinuxOptions:
+          type: spc_t
+
+    grafana:
+      admin:
+        existingSecret: grafana-admin
+      defaultDashboardsTimezone: browser
+      # Alertmanager is disabled above; drop its datasource and delete provisioned
+      # datasources that are no longer configured.
+      sidecar:
+        datasources:
+          alertmanager:
+            enabled: false
+      prune: true
+      persistence:
+        enabled: true
+        size: 2Gi
+      ingress:
+        enabled: true
+        ingressClassName: traefik
+        hosts:
+          - grafana.lab.internal
+
+    prometheus:
+      ingress:
+        enabled: true
+        ingressClassName: traefik
+        hosts:
+          - prometheus.lab.internal
+        paths:
+          - /
+        pathType: Prefix
+      prometheusSpec:
+        # Pick up ServiceMonitors/PodMonitors/rules from every namespace, not only
+        # those labelled for this Helm release, so apps can ship their own.
+        serviceMonitorSelectorNilUsesHelmValues: false
+        podMonitorSelectorNilUsesHelmValues: false
+        ruleSelectorNilUsesHelmValues: false
+        probeSelectorNilUsesHelmValues: false
+        scrapeConfigSelectorNilUsesHelmValues: false
+        retention: 15d
+        retentionSize: 18GB
+        storageSpec:
+          volumeClaimTemplate:
+            spec:
+              accessModes: [ReadWriteOnce]
+              resources:
+                requests:
+                  storage: 20Gi
+
+    extraManifests:
+      # k3s's bundled Traefik exposes request metrics on its "metrics" port (9100).
+      - apiVersion: monitoring.coreos.com/v1
+        kind: PodMonitor
+        metadata:
+          name: traefik
+          namespace: kube-system
+        spec:
+          selector:
+            matchLabels:
+              app.kubernetes.io/name: traefik
+          podMetricsEndpoints:
+            - port: metrics

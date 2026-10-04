@@ -1,0 +1,23 @@
+apiVersion: helm.cattle.io/v1
+kind: HelmChart
+metadata:
+  name: headlamp
+  namespace: kube-system
+spec:
+  repo: https://kubernetes-sigs.github.io/headlamp/
+  chart: headlamp
+  version: 0.45.0
+  targetNamespace: headlamp
+  values:
+    # The Headlamp server only proxies with the user's login token; its own
+    # service account needs no cluster permissions (chart default: cluster-admin).
+    clusterRoleBinding:
+      create: false
+    ingress:
+      enabled: true
+      ingressClassName: traefik
+      hosts:
+        - host: kube.lab.internal
+          paths:
+            - path: /
+              type: Prefix
