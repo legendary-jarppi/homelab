@@ -15,3 +15,28 @@ export function describeWeather(code: number): { kind: WeatherKind; label: strin
 	if (code >= 95) return { kind: 'thunder', label: 'Thunderstorm' };
 	return { kind: 'cloudy', label: 'Cloudy' };
 }
+
+/** °C -> color stops for temperature-range bars (cold blue … hot red). */
+const TEMPERATURE_STOPS: [number, [number, number, number]][] = [
+	[-20, [165, 180, 252]],
+	[-10, [96, 165, 250]],
+	[0, [34, 211, 238]],
+	[10, [52, 211, 153]],
+	[17, [250, 204, 21]],
+	[24, [251, 146, 60]],
+	[30, [248, 113, 113]]
+];
+
+export function temperatureColor(celsius: number): string {
+	const stops = TEMPERATURE_STOPS;
+	if (celsius <= stops[0][0]) return `rgb(${stops[0][1].join(',')})`;
+	for (let i = 1; i < stops.length; i++) {
+		const [t1, c1] = stops[i];
+		if (celsius <= t1) {
+			const [t0, c0] = stops[i - 1];
+			const f = (celsius - t0) / (t1 - t0);
+			return `rgb(${c0.map((v, k) => Math.round(v + (c1[k] - v) * f)).join(',')})`;
+		}
+	}
+	return `rgb(${stops[stops.length - 1][1].join(',')})`;
+}

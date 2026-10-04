@@ -1,6 +1,6 @@
 # dashboard
 
-Home dashboard at http://dashboard.lab.internal: cameras, live internet traffic, network status, top devices, speed tests, homelab health, clock and weather, night mode. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
+Home dashboard at http://dashboard.lab.internal: cameras, live internet traffic, network status, top devices, speed tests, homelab health, clock and weather (tap a location for its 10-day forecast), night mode. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
 
 SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler and relays live camera WebSockets; `session.js` is shared by both.
 

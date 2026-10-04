@@ -51,5 +51,15 @@ export interface WeatherData {
 	current: { temperature: number; feelsLike: number; code: number; isDay: boolean; windMs: number; humidity: number };
 	today: { max: number; min: number; sunrise: string; sunset: string; precipitationChance: number | null };
 	hours: { time: string; temperature: number; code: number; precipitationChance: number | null }[];
+	/** 10 days starting today; `date` is local "YYYY-MM-DD". */
+	days: {
+		date: string;
+		code: number;
+		max: number;
+		min: number;
+		precipitationChance: number | null;
+		precipitationMm: number | null;
+		windMaxMs: number | null;
+	}[];
 	updatedAt: number;
 }

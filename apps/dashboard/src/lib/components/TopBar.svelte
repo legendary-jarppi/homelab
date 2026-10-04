@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { fade } from 'svelte/transition';
+	import WeatherForecast from './WeatherForecast.svelte';
 	import WeatherIcon from './WeatherIcon.svelte';
 	import { night, type NightMode } from '$lib/night.svelte';
 	import { describeWeather } from '$lib/weather';
@@ -22,6 +23,8 @@
 
 	let menuOpen = $state(false);
 	let menu: HTMLDivElement;
+	/** Index into `weather` of the location whose forecast popup is open. */
+	let forecast = $state<number | null>(null);
 
 	function onWindowClick(event: MouseEvent) {
 		if (menuOpen && !menu.contains(event.target as Node)) menuOpen = false;
@@ -41,14 +44,14 @@
 		<div class="weather">
 			{#each weather as place, i (place.name)}
 				{@const c = describeWeather(place.current.code)}
-				<div class="place" class:secondary={i > 0}>
+				<button class="place" class:secondary={i > 0} onclick={() => (forecast = i)} aria-label="{place.name}: 10-day forecast">
 					<WeatherIcon kind={c.kind} day={place.current.isDay} size={i === 0 ? 46 : 38} />
 					<span class="temp num">{Math.round(place.current.temperature)}°</span>
 					<span class="desc">
 						<span class="name">{place.name}</span>
 						<span class="muted num">{c.label} · H {Math.round(place.today.max)}° L {Math.round(place.today.min)}°</span>
 					</span>
-				</div>
+				</button>
 			{/each}
 			<ol class="hours" aria-label="{primary.name} next hours">
 				{#each primary.hours.slice(0, 6) as hour (hour.time)}
@@ -96,6 +99,10 @@
 	</div>
 </header>
 
+{#if forecast !== null && weather?.[forecast]}
+	<WeatherForecast place={weather[forecast]} onclose={() => (forecast = null)} />
+{/if}
+
 <style>
 	.bar {
 		display: flex;
@@ -130,9 +137,34 @@
 		align-items: center;
 		gap: 9px;
 		min-width: 0;
+		padding: 4px 10px;
+		margin: -4px 0;
+		border: 0;
+		border-radius: 16px;
+		background: transparent;
+		text-align: left;
+		cursor: pointer;
+		transition: background 0.2s, transform 0.1s;
+	}
+	.place:active {
+		transform: scale(0.98);
+		background: var(--surface-strong);
+	}
+	@media (hover: hover) {
+		.place:hover {
+			background: var(--surface);
+		}
 	}
 	.place.secondary {
-		padding-left: 18px;
+		position: relative;
+	}
+	/* Divider between locations. */
+	.place.secondary::before {
+		content: '';
+		position: absolute;
+		left: -9px;
+		top: 10%;
+		bottom: 10%;
 		border-left: 1px solid var(--border);
 	}
 	.temp {

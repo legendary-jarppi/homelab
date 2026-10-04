@@ -18,10 +18,11 @@ export const GET: RequestHandler = async () => {
 			longitude: locations.map((l) => l.longitude).join(','),
 			current: 'temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m,relative_humidity_2m',
 			hourly: 'temperature_2m,weather_code,precipitation_probability',
-			daily: 'temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max',
+			daily:
+				'weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,precipitation_sum,wind_speed_10m_max',
 			wind_speed_unit: 'ms',
 			timezone: 'auto',
-			forecast_days: '2'
+			forecast_days: '10'
 		}).toString();
 		const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
 		if (!response.ok) error(502, `Open-Meteo: ${response.status}`);
@@ -58,6 +59,15 @@ export const GET: RequestHandler = async () => {
 						temperature: w.hourly.temperature_2m[start + 1 + i],
 						code: w.hourly.weather_code[start + 1 + i],
 						precipitationChance: w.hourly.precipitation_probability[start + 1 + i] ?? null
+					})),
+					days: (w.daily.time as string[]).map((date, i) => ({
+						date,
+						code: w.daily.weather_code[i],
+						max: w.daily.temperature_2m_max[i],
+						min: w.daily.temperature_2m_min[i],
+						precipitationChance: w.daily.precipitation_probability_max[i] ?? null,
+						precipitationMm: w.daily.precipitation_sum[i] ?? null,
+						windMaxMs: w.daily.wind_speed_10m_max[i] ?? null
 					})),
 					updatedAt: now
 				};
