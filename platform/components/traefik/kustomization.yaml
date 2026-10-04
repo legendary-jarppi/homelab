@@ -1,0 +1,6 @@
+# Overrides for k3s's bundled Traefik (ingress for *.lab.internal).
+# Apply: kubectl apply -k platform/components/traefik
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - helmchartconfig.yaml

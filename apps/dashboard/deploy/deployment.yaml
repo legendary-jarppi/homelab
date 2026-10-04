@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dashboard
+  labels:
+    app.kubernetes.io/name: dashboard
+spec:
+  # One replica: login rate limiting is in memory.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: dashboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: dashboard
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dashboard
+          # Built locally and imported into k3s (deploy.sh); never pulled.
+          image: localhost/home-dashboard
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: dashboard-config
+            - secretRef:
+                name: dashboard-auth
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /manifest.webmanifest
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /manifest.webmanifest
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

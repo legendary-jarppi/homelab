@@ -1,0 +1,17 @@
+# Build: podman build -t localhost/home-dashboard:<tag> apps/dashboard  (see deploy.sh)
+FROM docker.io/library/node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-fund --no-audit
+COPY . .
+RUN npm run build
+
+# adapter-node bundles all dependencies into build/; the runtime needs no node_modules.
+FROM docker.io/library/node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000
+COPY --from=build /app/build ./build
+COPY package.json server.js session.js ./
+USER node
+EXPOSE 3000
+CMD ["node", "server.js"]

@@ -1,0 +1,30 @@
+# Home dashboard at http://dashboard.lab.internal
+# Needs secret dashboard-auth (PASSCODE, SESSION_SECRET), not in git; see apps/dashboard/README.md.
+# Build + apply: apps/dashboard/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: dashboard
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - service-ingress.yaml
+images:
+  - name: localhost/home-dashboard
+    newTag: "20261004-185303"
+configMapGenerator:
+  # Hashed name: changes roll the pod.
+  - name: dashboard-config
+    literals:
+      - ORIGIN=http://dashboard.lab.internal
+      # Traefik appends the client address; used for login rate limiting.
+      - ADDRESS_HEADER=X-Forwarded-For
+      - XFF_DEPTH=1
+      - PROMETHEUS_URL=http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+      - GO2RTC_URL=http://go2rtc.go2rtc.svc:1984
+      # id:label pairs; ids are go2rtc stream names.
+      - CAMERAS=front-door:Front door,backyard:Backyard,carport:Carport
+      - UNIFI_SOURCE=https://192.168.1.1
+      # Weather (Open-Meteo); the tile shows "not set" while these are empty.
+      - WEATHER_LATITUDE=
+      - WEATHER_LONGITUDE=
+      - WEATHER_NAME=

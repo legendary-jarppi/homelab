@@ -22,7 +22,7 @@ Records live on the UDM Pro (*Settings > Policy Table > DNS*). UniFi rejects wil
 | `ingress.lab.internal` | A | `192.168.1.10` (Traefik via ServiceLB) |
 | `<app>.lab.internal` | CNAME | `ingress.lab.internal` |
 
-Existing: `news`, `dashboard` (both not deployed yet), `grafana`, `prometheus`, `kube` (Headlamp), `cameras` (go2rtc).
+Existing: `dashboard` ([apps/dashboard](dashboard/)), `news` (not deployed yet), `grafana`, `prometheus`, `kube` (Headlamp). `cameras` is no longer used (go2rtc is cluster-internal); delete its record.
 
 For other sites over site-to-site VPN: a *Forward Domain* record for `lab.internal` → `192.168.1.1`.
 

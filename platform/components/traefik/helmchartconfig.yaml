@@ -1,0 +1,13 @@
+# Settings merged into k3s's bundled Traefik chart.
+apiVersion: helm.cattle.io/v1
+kind: HelmChartConfig
+metadata:
+  name: traefik
+  namespace: kube-system
+spec:
+  valuesContent: |-
+    service:
+      spec:
+        # Keep client source addresses (ServiceLB + Cluster policy SNATs every client to
+        # 10.42.0.1), so X-Forwarded-For is real: per-device login rate limiting, logs.
+        externalTrafficPolicy: Local

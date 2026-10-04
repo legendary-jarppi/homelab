@@ -1,0 +1,17 @@
+# Only the dashboard may reach go2rtc (enforced by k3s's embedded network policy controller).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: go2rtc-from-dashboard
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: go2rtc
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dashboard
+      ports:
+        - port: http

@@ -8,6 +8,6 @@ spec:
       app.kubernetes.io/name: unpoller
   endpoints:
     - port: metrics
-      interval: 30s
-      # A full controller poll can take several seconds.
-      scrapeTimeout: 25s
+      interval: 10s
+      # Cached poll is served in ~15 ms (measured).
+      scrapeTimeout: 9s
