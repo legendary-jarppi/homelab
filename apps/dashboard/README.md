@@ -10,7 +10,7 @@ SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler an
 |---|---|
 | Prometheus (`PROMETHEUS_URL`) | UnPoller (`unpoller_*`, home site via `UNIFI_SOURCE`), node-exporter, kube-state-metrics |
 | go2rtc (`GO2RTC_URL`, cluster-internal) | Snapshots (`/cameras/<id>/frame`) and live video (`/cameras/live?src=<id>`, MSE over WebSocket) |
-| Open-Meteo | Weather, cached 10 min server-side; needs `WEATHER_LATITUDE`/`WEATHER_LONGITUDE` |
+| Open-Meteo | Weather for `WEATHER_LOCATIONS` (`name:lat:lon,…`; currently Espoo and Ristiina), one request for all, cached 10 min server-side |
 
 Browser refresh: live data 10 s, homelab/speed test 60 s, weather 10 min, snapshots 5 s (paused at night and while live video is open).
 

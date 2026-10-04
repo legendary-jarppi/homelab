@@ -3,5 +3,5 @@ import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = () => ({
 	cameras: config.cameras,
-	weatherConfigured: config.weather.latitude !== null && config.weather.longitude !== null
+	weatherConfigured: config.weatherLocations.length > 0
 });

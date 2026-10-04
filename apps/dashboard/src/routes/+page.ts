@@ -16,7 +16,7 @@ export const load: PageLoad = async ({ data, fetch }) => {
 	const [live, slow, weather] = await Promise.all([
 		get<LiveData>('/api/live'),
 		get<SlowData>('/api/slow'),
-		data.weatherConfigured ? get<WeatherData>('/api/weather') : null
+		data.weatherConfigured ? get<WeatherData[]>('/api/weather') : null
 	]);
 	return { ...data, live, slow, weather };
 };

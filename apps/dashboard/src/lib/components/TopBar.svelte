@@ -10,11 +10,10 @@
 		weatherConfigured,
 		live,
 		liveStale
-	}: { weather: WeatherData | null; weatherConfigured: boolean; live: LiveData | null; liveStale: boolean } = $props();
+	}: { weather: WeatherData[] | null; weatherConfigured: boolean; live: LiveData | null; liveStale: boolean } = $props();
 
 	const time = $derived(night.now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
 	const date = $derived(night.now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }));
-	const condition = $derived(weather ? describeWeather(weather.current.code) : null);
 	const NIGHT_OPTIONS: { mode: NightMode; label: string }[] = [
 		{ mode: 'auto', label: 'Auto' },
 		{ mode: 'on', label: 'On' },
@@ -37,32 +36,34 @@
 		<span class="date">{date}</span>
 	</div>
 
-	{#if weather && condition}
+	{#if weather && weather.length > 0}
+		{@const primary = weather[0]}
 		<div class="weather">
-			<WeatherIcon kind={condition.kind} day={weather.current.isDay} size={50} />
-			<div class="now">
-				<span class="temp num">{Math.round(weather.current.temperature)}°</span>
-				<span class="desc">
-					<span>{condition.label}{weather.name ? ` · ${weather.name}` : ''}</span>
-					<span class="muted num">
-						H {Math.round(weather.today.max)}° L {Math.round(weather.today.min)}° · {Math.round(weather.current.windMs)} m/s
+			{#each weather as place, i (place.name)}
+				{@const c = describeWeather(place.current.code)}
+				<div class="place" class:secondary={i > 0}>
+					<WeatherIcon kind={c.kind} day={place.current.isDay} size={i === 0 ? 46 : 38} />
+					<span class="temp num">{Math.round(place.current.temperature)}°</span>
+					<span class="desc">
+						<span class="name">{place.name}</span>
+						<span class="muted num">{c.label} · H {Math.round(place.today.max)}° L {Math.round(place.today.min)}°</span>
 					</span>
-				</span>
-			</div>
-			<ol class="hours">
-				{#each weather.hours.slice(0, 6) as hour (hour.time)}
+				</div>
+			{/each}
+			<ol class="hours" aria-label="{primary.name} next hours">
+				{#each primary.hours.slice(0, 6) as hour (hour.time)}
 					{@const h = describeWeather(hour.code)}
 					{@const hhmm = hour.time.slice(11, 16)}
 					<li>
 						<span class="muted num">{hour.time.slice(11, 13)}</span>
-						<WeatherIcon kind={h.kind} size={22} day={hhmm > weather.today.sunrise.slice(11, 16) && hhmm < weather.today.sunset.slice(11, 16)} />
+						<WeatherIcon kind={h.kind} size={22} day={hhmm > primary.today.sunrise.slice(11, 16) && hhmm < primary.today.sunset.slice(11, 16)} />
 						<span class="num">{Math.round(hour.temperature)}°</span>
 					</li>
 				{/each}
 			</ol>
 		</div>
 	{:else if !weatherConfigured}
-		<div class="weather muted">Weather location not set</div>
+		<div class="weather muted">Weather locations not set</div>
 	{:else}
 		<div class="weather"></div>
 	{/if}
@@ -122,29 +123,39 @@
 		min-width: 0;
 		display: flex;
 		align-items: center;
-		gap: 12px;
+		gap: 18px;
 	}
-	.now {
+	.place {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 9px;
 		min-width: 0;
 	}
+	.place.secondary {
+		padding-left: 18px;
+		border-left: 1px solid var(--border);
+	}
 	.temp {
-		font-size: 42px;
+		font-size: 40px;
 		font-weight: 600;
 		letter-spacing: -0.03em;
 	}
+	.secondary .temp {
+		font-size: 32px;
+	}
 	.desc {
 		display: grid;
-		font-size: 15px;
-		font-weight: 550;
 		min-width: 0;
 		white-space: nowrap;
 	}
+	.name {
+		font-size: 15px;
+		font-weight: 600;
+	}
 	.desc .muted {
 		font-size: 13px;
-		font-weight: 400;
+		overflow: hidden;
+		text-overflow: ellipsis;
 	}
 	.hours {
 		list-style: none;
@@ -270,13 +281,14 @@
 		color: var(--bad);
 		cursor: pointer;
 	}
-	/* Hourly strip only where it fits beside the clock and controls. */
-	@media (max-width: 1060px) {
+	/* Hourly strip only where it fits beside both locations, the clock and controls. */
+	@media (max-width: 1299px) {
 		.hours {
 			display: none;
 		}
 	}
-	@media (max-width: 760px) {
+	/* Weather gets its own row under the clock. */
+	@media (max-width: 1000px) {
 		.bar {
 			flex-wrap: wrap;
 			gap: 12px 18px;
@@ -287,6 +299,16 @@
 		.weather {
 			order: 3;
 			flex-basis: 100%;
+		}
+	}
+	/* Phones: drop the condition line, keep name + temperature. */
+	@media (max-width: 480px) {
+		.desc .muted {
+			display: none;
+		}
+		.temp,
+		.secondary .temp {
+			font-size: 30px;
 		}
 	}
 </style>

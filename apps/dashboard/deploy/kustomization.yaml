@@ -10,7 +10,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261004-185303"
+    newTag: "20261004-190233"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -24,7 +24,5 @@ configMapGenerator:
       # id:label pairs; ids are go2rtc stream names.
       - CAMERAS=front-door:Front door,backyard:Backyard,carport:Carport
       - UNIFI_SOURCE=https://192.168.1.1
-      # Weather (Open-Meteo); the tile shows "not set" while these are empty.
-      - WEATHER_LATITUDE=
-      - WEATHER_LONGITUDE=
-      - WEATHER_NAME=
+      # Weather (Open-Meteo), name:latitude:longitude; the first gets the hourly forecast.
+      - WEATHER_LOCATIONS=Espoo:60.2052:24.6522,Ristiina:61.5058:27.2464

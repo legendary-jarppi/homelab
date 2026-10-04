@@ -18,7 +18,7 @@
 	// Seeded from the server render, then refreshed by polling.
 	let live = $state<LiveData | null>(untrack(() => data.live));
 	let slow = $state<SlowData | null>(untrack(() => data.slow));
-	let weather = $state<WeatherData | null>(untrack(() => data.weather));
+	let weather = $state<WeatherData[] | null>(untrack(() => data.weather));
 	let viewer = $state<number | null>(null);
 
 	/** Live data older than three refresh intervals counts as stale. */
@@ -39,7 +39,7 @@
 			{ url: '/api/slow', everyMs: 60_000, apply: (b) => (slow = b as SlowData), due: slow ? start + 60_000 : 0 }
 		];
 		if (data.weatherConfigured) {
-			pollers.push({ url: '/api/weather', everyMs: 10 * 60_000, apply: (b) => (weather = b as WeatherData), due: weather ? start + 10 * 60_000 : 0 });
+			pollers.push({ url: '/api/weather', everyMs: 10 * 60_000, apply: (b) => (weather = b as WeatherData[]), due: weather ? start + 10 * 60_000 : 0 });
 		}
 
 		const tick = async (force = false) => {

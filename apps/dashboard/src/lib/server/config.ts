@@ -5,10 +5,10 @@ export interface Camera {
 	label: string;
 }
 
-function optionalNumber(value: string | undefined): number | null {
-	if (!value) return null;
-	const n = Number(value);
-	return Number.isFinite(n) ? n : null;
+export interface WeatherLocation {
+	name: string;
+	latitude: number;
+	longitude: number;
 }
 
 export const config = {
@@ -25,10 +25,16 @@ export const config = {
 		}),
 	/** `source` label of the home site's UniFi controller in UnPoller metrics. */
 	unifiSource: env.UNIFI_SOURCE ?? 'https://192.168.1.1',
-	weather: {
-		latitude: optionalNumber(env.WEATHER_LATITUDE),
-		longitude: optionalNumber(env.WEATHER_LONGITUDE),
-		name: env.WEATHER_NAME ?? ''
-	},
+	/**
+	 * WEATHER_LOCATIONS="Espoo:60.2052:24.6522,Ristiina:61.5058:27.2464" (name:latitude:longitude).
+	 * The first is the primary location (hourly forecast); entries with bad coordinates are skipped.
+	 */
+	weatherLocations: (env.WEATHER_LOCATIONS ?? '')
+		.split(',')
+		.map((entry) => entry.split(':').map((part) => part.trim()))
+		// Empty parts would become 0 (Number('') === 0), i.e. a location at 0°, 0°.
+		.filter(([name, lat, lon]) => name && lat && lon)
+		.map(([name, lat, lon]): WeatherLocation => ({ name, latitude: Number(lat), longitude: Number(lon) }))
+		.filter((l) => Number.isFinite(l.latitude) && Number.isFinite(l.longitude)),
 	passcode: env.PASSCODE ?? ''
 };
