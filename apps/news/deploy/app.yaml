@@ -1,0 +1,205 @@
+# Web (SvelteKit) and worker (ingestion + classification): same image, shared photo volume.
+# Both pods use one fixed SELinux MCS level: files on the shared local-path volume carry the
+# writer's categories, and with per-pod random categories the web pod could not read photos
+# the worker stored.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: images
+spec:
+  # Single node: both pods mount it on the same node, which ReadWriteOnce allows.
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  # One replica: login rate limiting is in memory.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seLinuxOptions:
+          level: "s0:c311,c742"
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          # Built locally and imported into k3s (deploy.sh); never pulled.
+          image: localhost/news
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: news-config
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: news-db
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgres://news:$(DB_PASSWORD)@postgres:5432/news
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: images
+              mountPath: /data/images
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: images
+          persistentVolumeClaim:
+            claimName: images
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+  labels:
+    app.kubernetes.io/name: worker
+spec:
+  # Exactly one: the worker also holds a Postgres advisory lock.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: worker
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 120
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seLinuxOptions:
+          level: "s0:c311,c742"
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: worker
+          image: localhost/news
+          imagePullPolicy: Never
+          command: [node, build/worker.js]
+          envFrom:
+            - configMapRef:
+                name: news-config
+            - secretRef:
+                name: news-llm
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: news-db
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgres://news:$(DB_PASSWORD)@postgres:5432/news
+          ports:
+            - name: health
+              containerPort: 9000
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: health
+            initialDelaySeconds: 60
+            periodSeconds: 60
+            failureThreshold: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: images
+              mountPath: /data/images
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: images
+          persistentVolumeClaim:
+            claimName: images
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: news.lab.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  name: http

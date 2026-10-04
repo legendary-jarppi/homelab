@@ -1,0 +1,21 @@
+# One image, two entrypoints: web (default) and worker (`node build/worker.js`).
+# Build: apps/news/deploy.sh
+FROM docker.io/library/node:22-alpine AS build
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-fund --no-audit
+COPY . .
+RUN npm run build && npm prune --omit=dev --no-fund --no-audit
+
+# adapter-node and the esbuild worker bundle keep npm dependencies external (sharp is native),
+# so the runtime needs the production node_modules.
+FROM docker.io/library/node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000 MIGRATIONS_DIR=/app/migrations IMAGE_DIR=/data/images
+COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /app/build ./build
+COPY package.json ./
+COPY migrations ./migrations
+USER node
+EXPOSE 3000
+CMD ["node", "build/index.js"]

@@ -1,0 +1,510 @@
+/* Shilly Shally News design system: a calm modern broadsheet.
+   Tokens first; components use only these. Theme: <html class="light|dark|system">. */
+
+:root {
+	color-scheme: light;
+
+	/* Newsprint and ink; dark is the "Late Edition". */
+	--paper: light-dark(#f7f4ec, #14120f);
+	--paper-2: light-dark(#efeadd, #1d1a16);
+	--ink: light-dark(#16130f, #ede7da);
+	--ink-2: light-dark(#4a443b, #c9c1b2);
+	--ink-3: light-dark(#6b6357, #9d9587);
+	--rule: light-dark(#c9c1b0, #3d3830);
+	--accent: light-dark(#a32020, #e8857a);
+
+	--font-masthead: 'UnifrakturMaguntia', 'Old English Text MT', 'Times New Roman', serif;
+	--font-head: 'Playfair Display Variable', 'Playfair Display', Georgia, 'Times New Roman', serif;
+	--font-body: 'Source Serif 4 Variable', 'Source Serif Pro', Georgia, Cambria, 'Times New Roman', serif;
+	--font-ui: 'Libre Franklin Variable', 'Libre Franklin', 'Franklin Gothic Medium', 'Helvetica Neue', Arial, sans-serif;
+
+	/* Fluid modular scale: 17px x1.2 at 360px wide to 19px x1.25 at 1440px. */
+	--step--2: clamp(0.7378rem, 0.7305rem + 0.0328vw, 0.76rem);
+	--step--1: clamp(0.8854rem, 0.8639rem + 0.0957vw, 0.95rem);
+	--step-0: clamp(1.0625rem, 1.0208rem + 0.1852vw, 1.1875rem);
+	--step-1: clamp(1.275rem, 1.2052rem + 0.3102vw, 1.4844rem);
+	--step-2: clamp(1.53rem, 1.4215rem + 0.4822vw, 1.8555rem);
+	--step-3: clamp(1.836rem, 1.6749rem + 0.7161vw, 2.3193rem);
+	--step-4: clamp(2.2032rem, 1.9712rem + 1.0311vw, 2.8992rem);
+	--step-5: clamp(2.6438rem, 2.3171rem + 1.452vw, 3.624rem);
+	--step-6: clamp(3.1726rem, 2.7202rem + 2.0109vw, 4.53rem);
+
+	--space-1: 0.25rem;
+	--space-2: 0.5rem;
+	--space-3: 0.75rem;
+	--space-4: 1rem;
+	--space-5: 1.5rem;
+	--space-6: 2rem;
+	--space-7: 3rem;
+	--space-8: 4rem;
+
+	--measure: 66ch;
+	--page-max: 90rem;
+	--gutter: clamp(1rem, 0.6rem + 1.8vw, 2rem);
+	--hairline: 1px solid var(--rule);
+	--touch: 44px;
+}
+
+html.dark {
+	color-scheme: dark;
+}
+html.system {
+	color-scheme: light dark;
+}
+
+/* ---------------------------------------------------------------------------------------- */
+/* Base */
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html {
+	-webkit-text-size-adjust: 100%;
+	text-size-adjust: 100%;
+	background: var(--paper);
+}
+
+body {
+	margin: 0;
+	min-height: 100dvh;
+	background: var(--paper);
+	color: var(--ink);
+	font-family: var(--font-body);
+	font-size: var(--step-0);
+	line-height: 1.55;
+	font-optical-sizing: auto;
+	font-kerning: normal;
+	font-variant-numeric: oldstyle-nums proportional-nums;
+	-webkit-font-smoothing: antialiased;
+	text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	font-family: var(--font-head);
+	font-weight: 700;
+	line-height: 1.12;
+	margin: 0;
+	text-wrap: balance;
+	font-variant-numeric: lining-nums;
+}
+
+p {
+	margin: 0;
+	text-wrap: pretty;
+}
+
+a {
+	color: inherit;
+	text-decoration-thickness: 1px;
+	text-underline-offset: 0.18em;
+}
+
+a:hover {
+	text-decoration-color: var(--accent);
+}
+
+img {
+	display: block;
+	max-width: 100%;
+	height: auto;
+}
+
+button,
+input,
+select,
+textarea {
+	font: inherit;
+	color: inherit;
+}
+
+:focus-visible {
+	outline: 2px solid var(--ink);
+	outline-offset: 3px;
+	border-radius: 0;
+}
+
+::selection {
+	background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+hr {
+	border: 0;
+	border-top: var(--hairline);
+	margin: var(--space-5) 0;
+}
+
+/* ---------------------------------------------------------------------------------------- */
+/* Utilities (shared contract with the account pages) */
+
+.kicker {
+	display: inline-block;
+	font-family: var(--font-ui);
+	font-size: var(--step--2);
+	font-weight: 600;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+	color: var(--accent);
+	line-height: 1.3;
+}
+
+.byline {
+	font-family: var(--font-ui);
+	font-size: var(--step--1);
+	font-variant-caps: all-small-caps;
+	font-variant-numeric: lining-nums tabular-nums;
+	letter-spacing: 0.06em;
+	color: var(--ink-2);
+	line-height: 1.4;
+}
+
+.rule {
+	border: 0;
+	border-top: var(--hairline);
+	margin: var(--space-4) 0;
+}
+
+.rule-double {
+	border: 0;
+	border-top: 3px double var(--ink);
+	margin: var(--space-5) 0;
+}
+
+.section-head {
+	display: flex;
+	align-items: baseline;
+	gap: var(--space-3);
+	margin: 0 0 var(--space-4);
+	padding-top: var(--space-2);
+	border-top: 2px solid var(--ink);
+	font-family: var(--font-ui);
+	font-size: var(--step--1);
+	font-weight: 700;
+	letter-spacing: 0.16em;
+	text-transform: uppercase;
+	color: var(--ink);
+	line-height: 1.3;
+}
+
+.section-head a {
+	text-decoration: none;
+}
+
+.section-head a:hover {
+	text-decoration: underline;
+}
+
+.button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: var(--space-2);
+	min-height: var(--touch);
+	min-width: var(--touch);
+	padding: var(--space-2) var(--space-4);
+	border: 1px solid var(--ink);
+	border-radius: 0;
+	background: transparent;
+	color: var(--ink);
+	font-family: var(--font-ui);
+	font-size: var(--step--1);
+	font-weight: 600;
+	letter-spacing: 0.04em;
+	line-height: 1.2;
+	text-decoration: none;
+	cursor: pointer;
+}
+
+.button:hover {
+	background: var(--paper-2);
+}
+
+.button:disabled,
+.button[aria-disabled='true'] {
+	opacity: 0.55;
+	cursor: default;
+}
+
+.button-primary {
+	background: var(--ink);
+	color: var(--paper);
+}
+
+.button-primary:hover {
+	background: var(--ink-2);
+	border-color: var(--ink-2);
+}
+
+.field {
+	display: grid;
+	gap: var(--space-1);
+	margin-bottom: var(--space-4);
+}
+
+.field > label,
+.field > .label {
+	font-family: var(--font-ui);
+	font-size: var(--step--1);
+	font-weight: 600;
+	letter-spacing: 0.02em;
+}
+
+.field input,
+.field select,
+.field textarea {
+	width: 100%;
+	min-height: var(--touch);
+	padding: var(--space-2) var(--space-3);
+	border: 1px solid var(--ink-3);
+	border-radius: 0;
+	background: var(--paper);
+	color: var(--ink);
+	font-family: var(--font-body);
+	font-size: max(16px, var(--step-0));
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+	outline-offset: 0;
+	border-color: var(--ink);
+}
+
+.field .hint {
+	font-family: var(--font-ui);
+	font-size: var(--step--2);
+	color: var(--ink-2);
+}
+
+.visually-hidden {
+	position: absolute !important;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* Skip link becomes visible on focus. */
+.skip-link:not(:focus) {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+}
+
+.skip-link:focus {
+	position: absolute;
+	top: var(--space-2);
+	left: var(--space-2);
+	z-index: 10;
+	padding: var(--space-2) var(--space-4);
+	background: var(--paper);
+	font-family: var(--font-ui);
+}
+
+/* Shared page shell */
+.page {
+	width: 100%;
+	max-width: var(--page-max);
+	margin: 0 auto;
+	padding: 0 var(--gutter);
+}
+
+/* Story headlines: size encodes importance. */
+.hed {
+	font-family: var(--font-head);
+	font-weight: 700;
+	line-height: 1.12;
+	letter-spacing: -0.005em;
+	/* Long Finnish compounds must never push a column wider than the screen. */
+	overflow-wrap: anywhere;
+	hyphens: auto;
+	-webkit-hyphens: auto;
+}
+
+.hed a {
+	text-decoration: none;
+}
+
+.hed a:hover {
+	text-decoration: underline;
+	text-decoration-thickness: 1px;
+}
+
+.hed-6 {
+	font-size: var(--step-5);
+	font-weight: 800;
+	line-height: 1.04;
+}
+.hed-5 {
+	font-size: var(--step-4);
+	line-height: 1.06;
+}
+.hed-4 {
+	font-size: var(--step-3);
+}
+.hed-3 {
+	font-size: var(--step-2);
+}
+.hed-2 {
+	font-size: var(--step-1);
+	line-height: 1.18;
+}
+.hed-1 {
+	font-size: var(--step-0);
+	line-height: 1.25;
+}
+
+/* On phones the largest headlines step down one size so long Finnish words still fit. */
+@media (max-width: 30rem) {
+	.hed-6 {
+		font-size: var(--step-4);
+	}
+
+	.hed-5 {
+		font-size: var(--step-3);
+	}
+}
+
+/* Already read: dimmed, never hidden. */
+.is-read .hed,
+.hed.is-read {
+	color: var(--ink-3);
+	font-weight: 600;
+}
+
+.summary {
+	color: var(--ink-2);
+	font-size: var(--step--1);
+	line-height: 1.5;
+}
+
+.note {
+	font-family: var(--font-body);
+	font-style: italic;
+	color: var(--ink-2);
+}
+
+/* "Earlier" links below lists: cursor pagination, never page numbers or counts. */
+.pager {
+	display: flex;
+	justify-content: center;
+	margin: var(--space-6) 0;
+	padding-top: var(--space-5);
+	border-top: var(--hairline);
+}
+
+/* Photos: hairline frame, a little less saturated, like newsprint. */
+.photo-frame {
+	border: var(--hairline);
+	background: var(--paper-2);
+}
+
+.photo-frame img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+	filter: saturate(0.82) contrast(1.02);
+}
+
+html.dark .photo-frame img {
+	filter: saturate(0.75) brightness(0.92);
+}
+
+@media (prefers-color-scheme: dark) {
+	html.system .photo-frame img {
+		filter: saturate(0.75) brightness(0.92);
+	}
+}
+
+.caption {
+	margin-top: var(--space-2);
+	font-family: var(--font-body);
+	font-style: italic;
+	font-size: var(--step--1);
+	line-height: 1.4;
+	color: var(--ink-2);
+}
+
+.caption .credit {
+	font-family: var(--font-ui);
+	font-style: normal;
+	font-size: var(--step--2);
+	font-variant-caps: all-small-caps;
+	letter-spacing: 0.06em;
+	color: var(--ink-3);
+	margin-left: 0.4em;
+}
+
+/* ---------------------------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+}
+
+@media print {
+	:root {
+		--paper: #fff;
+		--paper-2: #fff;
+		--ink: #000;
+		--ink-2: #222;
+		--ink-3: #444;
+		--rule: #999;
+		--accent: #000;
+	}
+
+	html,
+	body {
+		background: #fff;
+		color: #000;
+		font-size: 10.5pt;
+	}
+
+	.no-print,
+	nav,
+	form,
+	.button {
+		display: none !important;
+	}
+
+	a {
+		text-decoration: none;
+	}
+
+	/* Photos print modestly; the inline max-width only caps tall photos on screen. */
+	figure {
+		max-width: 60% !important;
+		margin-inline: auto;
+	}
+
+	figure,
+	.hed,
+	h1,
+	h2,
+	h3 {
+		break-inside: avoid;
+		break-after: avoid;
+	}
+
+	@page {
+		margin: 14mm 12mm;
+	}
+}

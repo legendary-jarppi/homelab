@@ -1,0 +1,42 @@
+{
+  "name": "shilly-shally-news",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite dev --host",
+    "build": "vite build && npm run build:worker",
+    "build:worker": "esbuild worker/main.ts --bundle --platform=node --format=esm --target=node22 --packages=external --outfile=build/worker.js",
+    "worker": "node build/worker.js",
+    "start": "node build/index.js",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --test --experimental-strip-types 'tests/**/*.test.ts'"
+  },
+  "dependencies": {
+    "@fontsource-variable/libre-franklin": "5.3.0",
+    "@fontsource-variable/playfair-display": "5.3.0",
+    "@fontsource-variable/source-serif-4": "5.3.0",
+    "@fontsource/unifrakturmaguntia": "5.3.0",
+    "@mozilla/readability": "0.6.0",
+    "fast-xml-parser": "5.11.2",
+    "linkedom": "0.18.13",
+    "postgres": "3.4.9",
+    "robots-parser": "3.0.1",
+    "sharp": "0.35.5",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "5.5.7",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "svelte": "5.57.1",
+    "svelte-check": "4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.2"
+  }
+}

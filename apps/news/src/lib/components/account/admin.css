@@ -1,0 +1,233 @@
+/* Admin pages: dense, typographic, rules not boxes. Every selector is scoped under .admin. */
+
+.admin {
+	padding: var(--space-4) 0 var(--space-8);
+	font-family: var(--font-ui);
+	font-size: var(--step--1);
+}
+
+.admin-head {
+	margin-bottom: var(--space-5);
+	border-bottom: 3px double var(--ink);
+}
+
+.admin-head ul {
+	display: flex;
+	overflow-x: auto;
+	white-space: nowrap;
+	scrollbar-width: none;
+	margin: 0;
+	padding: 0;
+	list-style: none;
+}
+
+.admin-head li + li {
+	border-left: var(--hairline);
+}
+
+.admin-head a {
+	display: inline-flex;
+	align-items: center;
+	min-height: var(--touch);
+	padding: 0 var(--space-4);
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	font-size: var(--step--2);
+	text-decoration: none;
+	color: var(--ink-2);
+}
+
+.admin-head li:first-child a {
+	padding-left: 0;
+}
+
+.admin-head a[aria-current='page'] {
+	color: var(--ink);
+	text-decoration: underline;
+	text-decoration-color: var(--accent);
+	text-decoration-thickness: 2px;
+	text-underline-offset: 0.5em;
+}
+
+.admin h1 {
+	margin: 0 0 var(--space-4);
+	font-family: var(--font-head);
+	font-size: var(--step-3);
+}
+
+.admin h2 {
+	margin: var(--space-6) 0 var(--space-3);
+	font-family: var(--font-head);
+	font-size: var(--step-1);
+}
+
+.admin h3 {
+	margin: var(--space-4) 0 var(--space-2);
+	font-size: var(--step--1);
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.admin .table-wrap {
+	overflow-x: auto;
+	margin: 0 0 var(--space-4);
+}
+
+.admin table {
+	width: 100%;
+	border-collapse: collapse;
+	font-variant-numeric: tabular-nums;
+}
+
+.admin th,
+.admin td {
+	padding: var(--space-2) var(--space-3) var(--space-2) 0;
+	border-bottom: var(--hairline);
+	text-align: left;
+	vertical-align: top;
+}
+
+.admin thead th {
+	border-bottom: 1px solid var(--ink);
+	font-size: var(--step--2);
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+.admin td.num,
+.admin th.num {
+	text-align: right;
+}
+
+.admin .muted {
+	color: var(--ink-3);
+}
+
+.admin .warn {
+	color: var(--accent);
+}
+
+.admin .flash {
+	margin: 0 0 var(--space-4);
+	padding: var(--space-2) var(--space-3);
+	border-left: 3px solid var(--ink);
+	background: var(--paper-2);
+}
+
+.admin .flash.error {
+	border-left-color: var(--accent);
+}
+
+.admin .inline-form {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--space-2);
+	margin: 0;
+}
+
+.admin .controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--space-2);
+	margin: var(--space-3) 0;
+}
+
+.admin input[type='number'],
+.admin input[type='text'],
+.admin select {
+	min-height: var(--touch);
+	padding: var(--space-1) var(--space-2);
+	border: 1px solid var(--ink-3);
+	border-radius: 0;
+	background: var(--paper);
+	color: var(--ink);
+	font: inherit;
+	font-size: max(16px, var(--step--1));
+}
+
+.admin input[type='number'] {
+	width: 6rem;
+}
+
+.admin .button {
+	font-size: var(--step--2);
+	padding: var(--space-1) var(--space-3);
+}
+
+.admin dl.facts {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: var(--space-1) var(--space-4);
+	margin: 0 0 var(--space-3);
+}
+
+.admin dl.facts dt {
+	color: var(--ink-2);
+}
+
+.admin dl.facts dd {
+	margin: 0;
+	overflow-wrap: anywhere;
+}
+
+.admin .entry {
+	padding: var(--space-4) 0;
+	border-top: 1px solid var(--ink);
+}
+
+.admin .entry-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--space-2) var(--space-4);
+}
+
+.admin .entry-head h2 {
+	margin: 0;
+}
+
+.admin .tag {
+	font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+	font-size: 0.92em;
+}
+
+.admin .confirm {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--space-2);
+	min-height: var(--touch);
+}
+
+.admin .confirm input {
+	width: 1.1rem;
+	height: 1.1rem;
+	accent-color: var(--ink);
+}
+
+.admin .reveal-once {
+	padding: var(--space-3);
+	border: 1px solid var(--ink);
+	overflow-wrap: anywhere;
+}
+
+.admin .reveal-once code {
+	font-size: var(--step-0);
+	user-select: all;
+}
+
+.admin details > summary::before {
+	content: '+';
+	display: inline-block;
+	width: 1.25em;
+	font-weight: 400;
+}
+
+.admin details[open] > summary::before {
+	content: '−';
+}
