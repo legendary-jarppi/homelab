@@ -40,6 +40,7 @@ export const actions: Actions = {
 		}
 
 		failures.delete(client);
+		console.info(`login from ${client}`);
 		cookies.set(SESSION_COOKIE, createSession(now), {
 			path: '/',
 			httpOnly: true,

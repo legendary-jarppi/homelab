@@ -6,11 +6,19 @@ const PUBLIC_PATHS = ['/login', '/manifest.webmanifest', '/icons/'];
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;
-	event.locals.authenticated = verifySession(event.cookies.get(SESSION_COOKIE));
+	const session = event.cookies.get(SESSION_COOKIE);
+	event.locals.authenticated = verifySession(session);
 
 	if (!event.locals.authenticated && !PUBLIC_PATHS.some((p) => path.startsWith(p))) {
 		if (path.startsWith('/api/') || path.startsWith('/cameras/')) {
 			return new Response('Unauthorized', { status: 401 });
+		}
+		// Page loads only (not API polling): shows whether a browser lost or never stored the cookie.
+		if (path === '/' || path === '/__data.json') {
+			console.warn(
+				`no valid session for ${path} from ${event.getClientAddress()}: cookie ${session ? 'invalid/expired' : 'not sent'}` +
+					` (${event.request.headers.get('user-agent')?.slice(0, 120) ?? 'no user agent'})`
+			);
 		}
 		redirect(303, '/login');
 	}
