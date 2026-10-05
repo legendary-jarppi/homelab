@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { fade, fly } from 'svelte/transition';
 	import WeatherIcon from './WeatherIcon.svelte';
+	import { shortDay } from '$lib/dates';
 	import { describeWeather, temperatureColor } from '$lib/weather';
 	import type { WeatherData } from '$lib/types';
 
@@ -13,9 +14,7 @@
 	const span = $derived(Math.max(1, scaleMax - scaleMin));
 
 	function dayLabel(date: string, index: number): string {
-		if (index === 0) return 'Today';
-		// Noon avoids the date shifting across a time-zone boundary.
-		return new Date(`${date}T12:00`).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+		return index === 0 ? 'Tänään' : shortDay(date.slice(0, 10));
 	}
 
 	function onkeydown(event: KeyboardEvent) {

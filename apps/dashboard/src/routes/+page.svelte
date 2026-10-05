@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import CalendarCard from '$lib/components/CalendarCard.svelte';
 	import CameraTile from '$lib/components/CameraTile.svelte';
 	import CameraViewer from '$lib/components/CameraViewer.svelte';
 	import Card from '$lib/components/Card.svelte';
@@ -10,8 +11,9 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import TopDevicesCard from '$lib/components/TopDevicesCard.svelte';
 	import WanCard from '$lib/components/WanCard.svelte';
+	import WorkoutCard from '$lib/components/WorkoutCard.svelte';
 	import { night } from '$lib/night.svelte';
-	import type { LiveData, SlowData, WeatherData } from '$lib/types';
+	import type { CalendarData, DashboardTab, LiveData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 
 	let { data } = $props();
 
@@ -19,7 +21,26 @@
 	let live = $state<LiveData | null>(untrack(() => data.live));
 	let slow = $state<SlowData | null>(untrack(() => data.slow));
 	let weather = $state<WeatherData[] | null>(untrack(() => data.weather));
+	let workout = $state<WorkoutSummary | null>(untrack(() => data.workout));
+	let calendar = $state<CalendarData | null>(untrack(() => data.calendar));
 	let viewer = $state<number | null>(null);
+	let tab = $state<DashboardTab>('home');
+
+	/** A wall display goes back to the main page by itself after this long untouched. */
+	const RETURN_HOME_MS = 2 * 60_000;
+	$effect(() => {
+		if (tab === 'home') return;
+		let timer = setTimeout(() => (tab = 'home'), RETURN_HOME_MS);
+		const touched = () => {
+			clearTimeout(timer);
+			timer = setTimeout(() => (tab = 'home'), RETURN_HOME_MS);
+		};
+		window.addEventListener('pointerdown', touched);
+		return () => {
+			clearTimeout(timer);
+			window.removeEventListener('pointerdown', touched);
+		};
+	});
 
 	/** Live data older than three refresh intervals counts as stale. */
 	const liveStale = $derived(!live || night.now.getTime() - live.updatedAt > 30_000);
@@ -36,10 +57,14 @@
 		// `due`: next fetch time. Data missing from the server render is fetched right away.
 		const pollers: { url: string; everyMs: number; apply: (body: unknown) => void; due: number }[] = [
 			{ url: '/api/live', everyMs: 10_000, apply: (b) => (live = b as LiveData), due: live ? start + 10_000 : 0 },
-			{ url: '/api/slow', everyMs: 60_000, apply: (b) => (slow = b as SlowData), due: slow ? start + 60_000 : 0 }
+			{ url: '/api/slow', everyMs: 60_000, apply: (b) => (slow = b as SlowData), due: slow ? start + 60_000 : 0 },
+			{ url: '/api/calendar', everyMs: 5 * 60_000, apply: (b) => (calendar = b as CalendarData), due: calendar ? start + 5 * 60_000 : 0 }
 		];
 		if (data.weatherConfigured) {
 			pollers.push({ url: '/api/weather', everyMs: 10 * 60_000, apply: (b) => (weather = b as WeatherData[]), due: weather ? start + 10 * 60_000 : 0 });
+		}
+		if (data.workoutConfigured) {
+			pollers.push({ url: '/api/workout', everyMs: 60_000, apply: (b) => (workout = b as WorkoutSummary), due: workout ? start + 60_000 : 0 });
 		}
 
 		const tick = async (force = false) => {
@@ -80,33 +105,46 @@
 {/if}
 
 <div class="page" class:dimmed={night.active}>
-	<TopBar {weather} weatherConfigured={data.weatherConfigured} {live} {liveStale} />
+	<TopBar {weather} weatherConfigured={data.weatherConfigured} {live} {liveStale} bind:tab />
 
-	<main class="grid">
-		{#if data.cameras.length > 0}
-			<div class="area cameras">
-				{#each data.cameras as camera, i (camera.id)}
-					<CameraTile id={camera.id} label={camera.label} refreshMs={5000} paused={night.active || viewer !== null} onopen={() => (viewer = i)} />
-				{/each}
+	{#if tab === 'home'}
+		<main class="grid" class:with-workout={data.workoutConfigured}>
+			{#if data.cameras.length > 0}
+				<div class="area cameras">
+					{#each data.cameras as camera, i (camera.id)}
+						<CameraTile id={camera.id} label={camera.label} refreshMs={5000} paused={night.active || viewer !== null} onopen={() => (viewer = i)} />
+					{/each}
+				</div>
+			{/if}
+
+			<div class="area wan">
+				{#if live}<WanCard wan={live.wan} />{:else}<Card title="Internet"><p class="muted">Metrics unavailable.</p></Card>{/if}
 			</div>
-		{/if}
-
-		<div class="area wan">
-			{#if live}<WanCard wan={live.wan} />{:else}<Card title="Internet"><p class="muted">Metrics unavailable.</p></Card>{/if}
-		</div>
-		<div class="area network">
-			{#if live}<NetworkCard {live} />{:else}<Card title="Network"><p class="muted">Metrics unavailable.</p></Card>{/if}
-		</div>
-		<div class="area speed">
-			<SpeedtestCard speedtest={slow?.speedtest ?? null} />
-		</div>
-		<div class="area top">
-			<TopDevicesCard top={live?.top ?? []} />
-		</div>
-		<div class="area homelab">
-			{#if slow}<HomelabCard homelab={slow.homelab} />{:else}<Card title="Homelab"><p class="muted">Metrics unavailable.</p></Card>{/if}
-		</div>
-	</main>
+			<div class="area calendar">
+				<CalendarCard {calendar} />
+			</div>
+			{#if data.workoutConfigured}
+				<div class="area workout">
+					<WorkoutCard {workout} href={data.workoutAppUrl} />
+				</div>
+			{/if}
+			<div class="area network">
+				{#if live}<NetworkCard {live} />{:else}<Card title="Network"><p class="muted">Metrics unavailable.</p></Card>{/if}
+			</div>
+			<div class="area homelab">
+				{#if slow}<HomelabCard homelab={slow.homelab} />{:else}<Card title="Homelab"><p class="muted">Metrics unavailable.</p></Card>{/if}
+			</div>
+		</main>
+	{:else}
+		<main class="grid network-page">
+			<div class="area speed">
+				<SpeedtestCard speedtest={slow?.speedtest ?? null} />
+			</div>
+			<div class="area top">
+				<TopDevicesCard top={live?.top ?? []} limit={10} />
+			</div>
+		</main>
+	{/if}
 </div>
 
 {#if viewer !== null}
@@ -150,6 +188,12 @@
 	.homelab {
 		grid-area: lab;
 	}
+	.workout {
+		grid-area: wo;
+	}
+	.calendar {
+		grid-area: cal;
+	}
 	.area {
 		min-width: 0;
 		min-height: 0;
@@ -158,8 +202,8 @@
 		margin: 0;
 	}
 
-	/* iPad landscape and laptops: exactly one screen, cameras stacked on the right,
-	   the traffic chart absorbs the leftover height. */
+	/* iPad landscape and laptops: exactly one screen. Home: traffic, network and homelab on the left,
+	   the calendar full height in the middle, cameras stacked on the right. */
 	@media (min-width: 1000px) and (min-aspect-ratio: 5/4) {
 		.page {
 			height: 100dvh;
@@ -170,9 +214,28 @@
 			grid-template-columns: repeat(12, minmax(0, 1fr));
 			grid-template-rows: minmax(0, 1fr) auto auto;
 			grid-template-areas:
-				'wan wan wan wan wan wan wan wan cam cam cam cam'
-				'net net net net spd spd spd spd cam cam cam cam'
-				'top top top top lab lab lab lab cam cam cam cam';
+				'wan wan wan wan cal cal cal cal cam cam cam cam'
+				'net net net net cal cal cal cal cam cam cam cam'
+				'lab lab lab lab cal cal cal cal cam cam cam cam';
+		}
+		/* The workout card goes under the cameras, so the left column and the calendar keep their room. */
+		.grid.with-workout {
+			grid-template-areas:
+				'wan wan wan wan cal cal cal cal cam cam cam cam'
+				'net net net net cal cal cal cal cam cam cam cam'
+				'lab lab lab lab cal cal cal cal wo wo wo wo';
+		}
+		.grid.network-page {
+			grid-template-rows: auto;
+			align-items: start;
+			grid-template-areas: 'spd spd spd spd spd spd top top top top top top';
+		}
+		/* Size containers: the cards drop details that do not fit their grid slot. */
+		.workout {
+			container: workout / size;
+		}
+		.calendar {
+			container: calendar / size;
 		}
 		.cameras {
 			grid-template-rows: repeat(auto-fit, minmax(0, 1fr));
@@ -180,10 +243,6 @@
 		.cameras > :global(.tile) {
 			aspect-ratio: auto;
 			height: 100%;
-		}
-		/* Four devices fit beside the homelab card. */
-		.top :global(li:nth-child(n + 5)) {
-			display: none;
 		}
 	}
 
@@ -193,9 +252,22 @@
 			grid-template-columns: repeat(2, minmax(0, 1fr));
 			grid-template-areas:
 				'cam cam'
+				'cal cal'
 				'wan wan'
-				'net spd'
-				'top lab';
+				'net lab';
+		}
+		.grid.with-workout {
+			grid-template-areas:
+				'cam cam'
+				'cal cal'
+				'wan wan'
+				'wo wo'
+				'net lab';
+		}
+		.grid.network-page {
+			grid-template-areas:
+				'spd spd'
+				'top top';
 		}
 		.cameras {
 			grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -213,7 +285,13 @@
 		}
 		.grid {
 			grid-template-columns: minmax(0, 1fr);
-			grid-template-areas: 'cam' 'wan' 'net' 'spd' 'top' 'lab';
+			grid-template-areas: 'cam' 'cal' 'wan' 'net' 'lab';
+		}
+		.grid.with-workout {
+			grid-template-areas: 'cam' 'cal' 'wan' 'wo' 'net' 'lab';
+		}
+		.grid.network-page {
+			grid-template-areas: 'spd' 'top';
 		}
 		.cameras {
 			display: flex;

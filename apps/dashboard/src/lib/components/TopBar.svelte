@@ -4,17 +4,23 @@
 	import WeatherIcon from './WeatherIcon.svelte';
 	import { night, type NightMode } from '$lib/night.svelte';
 	import { describeWeather } from '$lib/weather';
-	import type { LiveData, WeatherData } from '$lib/types';
+	import { longDate } from '$lib/dates';
+	import type { DashboardTab, LiveData, WeatherData } from '$lib/types';
 
 	let {
 		weather,
 		weatherConfigured,
 		live,
-		liveStale
-	}: { weather: WeatherData[] | null; weatherConfigured: boolean; live: LiveData | null; liveStale: boolean } = $props();
+		liveStale,
+		tab = $bindable()
+	}: { weather: WeatherData[] | null; weatherConfigured: boolean; live: LiveData | null; liveStale: boolean; tab: DashboardTab } = $props();
 
+	const TABS: { id: DashboardTab; label: string }[] = [
+		{ id: 'home', label: 'Home' },
+		{ id: 'network', label: 'Network' }
+	];
 	const time = $derived(night.now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
-	const date = $derived(night.now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }));
+	const date = $derived(longDate(night.now));
 	const NIGHT_OPTIONS: { mode: NightMode; label: string }[] = [
 		{ mode: 'auto', label: 'Auto' },
 		{ mode: 'on', label: 'On' },
@@ -72,6 +78,11 @@
 	{/if}
 
 	<div class="controls">
+		<div class="tabs" role="tablist" aria-label="Dashboard page">
+			{#each TABS as t (t.id)}
+				<button role="tab" aria-selected={tab === t.id} class:active={tab === t.id} onclick={() => (tab = t.id)}>{t.label}</button>
+			{/each}
+		</div>
 		<span class="pill" class:bad={liveStale || !live}>
 			<i></i>{liveStale || !live ? 'No data' : live.wan.latencyMs !== null ? `Online · ${live.wan.latencyMs < 1 ? '<1' : Math.round(live.wan.latencyMs)} ms` : 'Online'}
 		</span>
@@ -207,6 +218,27 @@
 		align-items: center;
 		gap: 10px;
 		flex: none;
+	}
+	.tabs {
+		display: flex;
+		padding: 3px;
+		border-radius: 999px;
+		background: var(--surface);
+		border: 1px solid var(--border);
+	}
+	.tabs button {
+		padding: 7px 14px;
+		font-size: 13px;
+		font-weight: 600;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.tabs button.active {
+		background: rgba(255, 255, 255, 0.14);
+		color: var(--text);
 	}
 	.pill {
 		display: inline-flex;

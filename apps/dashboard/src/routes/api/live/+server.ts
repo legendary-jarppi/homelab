@@ -76,7 +76,7 @@ export const GET: RequestHandler = async () => {
 			upBps: (upByMac.get(c.metric.mac) ?? 0) * 8
 		}))
 		.sort((a, b) => b.downBps + b.upBps - (a.downBps + a.upBps))
-		.slice(0, 6);
+		.slice(0, 10);
 
 	const body: LiveData = {
 		wan: {

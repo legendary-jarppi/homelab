@@ -1,6 +1,6 @@
 # dashboard
 
-Home dashboard at http://dashboard.lab.internal: cameras, live internet traffic, network status, top devices, speed tests, homelab health, clock and weather (tap a location for its 10-day forecast), night mode. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
+Home dashboard at http://dashboard.lab.internal: cameras, family calendar (today, then this and next week), live internet traffic, this week's workouts, network status, homelab health, clock and weather (tap a location for its 10-day forecast), night mode. A second page (*Network* in the top bar) shows speed tests and the top 10 devices; it returns to *Home* after 2 minutes untouched. Dates are Finnish, other text English. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
 
 SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler and relays live camera WebSockets; `session.js` is shared by both.
 
@@ -11,8 +11,10 @@ SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler an
 | Prometheus (`PROMETHEUS_URL`) | UnPoller (`unpoller_*`, home site via `UNIFI_SOURCE`), node-exporter, kube-state-metrics |
 | go2rtc (`GO2RTC_URL`, cluster-internal) | Snapshots (`/cameras/<id>/frame`) and live video (`/cameras/live?src=<id>`, MSE over WebSocket) |
 | Open-Meteo | Weather for `WEATHER_LOCATIONS` (`name:lat:lon,…`; currently Espoo and Ristiina), one request for all, cached 10 min server-side |
+| apps/workout (`WORKOUT_URL`, cluster-internal; bearer token `WORKOUT_TOKEN` from secret `dashboard-workout`) | Workouts card: this week per person (total, workout count, km per machine); tapping it opens the app (`WORKOUT_APP_URL`) in a new tab. Card hidden when the token is not set; rotation in [apps/workout/README.md](../workout/README.md#dashboard-card) |
+| Calendar (`/api/calendar`) | Calendar card. **Static sample events for now** (`src/lib/server/calendar.ts`, laid out relative to today); Google Calendar comes later with the same `CalendarData` shape |
 
-Browser refresh: live data 10 s, homelab/speed test 60 s, weather 10 min, snapshots 5 s (paused at night and while live video is open).
+Browser refresh: live data 10 s, homelab/speed test/workouts 60 s, calendar 5 min, weather 10 min, snapshots 5 s (paused at night and while live video is open).
 
 ## Access
 

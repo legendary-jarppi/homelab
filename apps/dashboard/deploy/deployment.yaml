@@ -32,6 +32,10 @@ spec:
                 name: dashboard-config
             - secretRef:
                 name: dashboard-auth
+            # WORKOUT_TOKEN for apps/workout's summary; without it the workout card is hidden.
+            - secretRef:
+                name: dashboard-workout
+                optional: true
           ports:
             - name: http
               containerPort: 3000

@@ -1,3 +1,6 @@
+/** Main dashboard (`home`) and the secondary network page. */
+export type DashboardTab = 'home' | 'network';
+
 /** [unix seconds, value] */
 export type Point = [number, number];
 
@@ -62,4 +65,39 @@ export interface WeatherData {
 		windMaxMs: number | null;
 	}[];
 	updatedAt: number;
+}
+
+/** apps/workout GET /api/summary: the current ISO week (Europe/Helsinki) per person. */
+export interface WorkoutSummary {
+	/** `start` is Monday, `end` Sunday, "YYYY-MM-DD". */
+	week: { year: number; week: number; start: string; end: string };
+	people: {
+		id: string;
+		name: string;
+		meters: number;
+		workouts: number;
+		/** Every machine, in fixed order (treadmill, crosstrainer, rowing), zeros included; `short` is TR, CT, R. */
+		byMachine: { id: string; name: string; short: string; meters: number }[];
+	}[];
+}
+
+/** Family calendar (GET /api/calendar): events from today through the next days, sorted by start. */
+export interface CalendarData {
+	/** IANA zone the dates and day boundaries are in. */
+	timeZone: string;
+	events: CalendarEvent[];
+	updatedAt: number;
+}
+
+export interface CalendarEvent {
+	id: string;
+	title: string;
+	/** All-day: "YYYY-MM-DD", `end` exclusive (as in Google Calendar). Timed: ISO 8601 instants. */
+	start: string;
+	end: string;
+	allDay: boolean;
+	location: string | null;
+	/** Whose calendar or which shared calendar; `color` is a CSS colour for it. */
+	calendar: string;
+	color: string;
 }

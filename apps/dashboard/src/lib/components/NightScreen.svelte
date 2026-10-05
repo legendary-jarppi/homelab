@@ -3,12 +3,13 @@
 	import WeatherIcon from './WeatherIcon.svelte';
 	import { night } from '$lib/night.svelte';
 	import { describeWeather } from '$lib/weather';
+	import { longDate } from '$lib/dates';
 	import type { WeatherData } from '$lib/types';
 
 	let { weather, ok }: { weather: WeatherData[] | null; ok: boolean } = $props();
 
 	const time = $derived(night.now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
-	const date = $derived(night.now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }));
+	const date = $derived(longDate(night.now));
 </script>
 
 <button class="night" transition:fade={{ duration: 600 }} onclick={() => night.peek()} aria-label="Show dashboard">

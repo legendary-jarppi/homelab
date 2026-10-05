@@ -1,5 +1,6 @@
 # Home dashboard at http://dashboard.lab.internal
-# Needs secret dashboard-auth (PASSCODE, SESSION_SECRET), not in git; see apps/dashboard/README.md.
+# Needs secret dashboard-auth (PASSCODE, SESSION_SECRET), not in git; optional dashboard-workout
+# (WORKOUT_TOKEN); see apps/dashboard/README.md.
 # Build + apply: apps/dashboard/deploy.sh (sets newTag below).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -10,7 +11,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261004-191736"
+    newTag: "20261005-181241"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -30,3 +31,7 @@ configMapGenerator:
       - UNIFI_SOURCE=https://192.168.1.1
       # Weather (Open-Meteo), name:latitude:longitude; the first gets the hourly forecast.
       - WEATHER_LOCATIONS=Espoo:60.2052:24.6522,Ristiina:61.5058:27.2464
+      # This week's workouts (apps/workout, cluster-internal).
+      - WORKOUT_URL=http://web.workout.svc:3000
+      # Opened when the workout card is tapped.
+      - WORKOUT_APP_URL=http://workout.lab.internal
