@@ -57,14 +57,16 @@
 		// `due`: next fetch time. Data missing from the server render is fetched right away.
 		const pollers: { url: string; everyMs: number; apply: (body: unknown) => void; due: number }[] = [
 			{ url: '/api/live', everyMs: 10_000, apply: (b) => (live = b as LiveData), due: live ? start + 10_000 : 0 },
-			{ url: '/api/slow', everyMs: 60_000, apply: (b) => (slow = b as SlowData), due: slow ? start + 60_000 : 0 },
-			{ url: '/api/calendar', everyMs: 5 * 60_000, apply: (b) => (calendar = b as CalendarData), due: calendar ? start + 5 * 60_000 : 0 }
+			{ url: '/api/slow', everyMs: 60_000, apply: (b) => (slow = b as SlowData), due: slow ? start + 60_000 : 0 }
 		];
 		if (data.weatherConfigured) {
 			pollers.push({ url: '/api/weather', everyMs: 10 * 60_000, apply: (b) => (weather = b as WeatherData[]), due: weather ? start + 10 * 60_000 : 0 });
 		}
 		if (data.workoutConfigured) {
 			pollers.push({ url: '/api/workout', everyMs: 60_000, apply: (b) => (workout = b as WorkoutSummary), due: workout ? start + 60_000 : 0 });
+		}
+		if (data.calendarConfigured) {
+			pollers.push({ url: '/api/calendar', everyMs: 5 * 60_000, apply: (b) => (calendar = b as CalendarData), due: calendar ? start + 5 * 60_000 : 0 });
 		}
 
 		const tick = async (force = false) => {
@@ -121,7 +123,7 @@
 				{#if live}<WanCard wan={live.wan} />{:else}<Card title="Internet"><p class="muted">Metrics unavailable.</p></Card>{/if}
 			</div>
 			<div class="area calendar">
-				<CalendarCard {calendar} />
+				<CalendarCard {calendar} configured={data.calendarConfigured} />
 			</div>
 			{#if data.workoutConfigured}
 				<div class="area workout">

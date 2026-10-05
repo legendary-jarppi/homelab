@@ -41,5 +41,9 @@ export const config = {
 	workoutUrl: env.WORKOUT_URL ?? 'http://localhost:3000',
 	workoutToken: env.WORKOUT_TOKEN ?? '',
 	/** Where tapping the workout card goes (the app's address in the browser). */
-	workoutAppUrl: env.WORKOUT_APP_URL ?? 'http://workout.lab.internal'
+	workoutAppUrl: env.WORKOUT_APP_URL ?? 'http://workout.lab.internal',
+	/** Google Calendar "secret address in iCal format" (secret dashboard-calendar); never sent to the browser or logged. */
+	calendarIcsUrl: env.CALENDAR_ICS_URL ?? '',
+	/** Colour of the calendar's events on the card. */
+	calendarColor: env.CALENDAR_COLOR ?? '#38bdf8'
 };

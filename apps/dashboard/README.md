@@ -12,9 +12,18 @@ SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler an
 | go2rtc (`GO2RTC_URL`, cluster-internal) | Snapshots (`/cameras/<id>/frame`) and live video (`/cameras/live?src=<id>`, MSE over WebSocket) |
 | Open-Meteo | Weather for `WEATHER_LOCATIONS` (`name:lat:lon,…`; currently Espoo and Ristiina), one request for all, cached 10 min server-side |
 | apps/workout (`WORKOUT_URL`, cluster-internal; bearer token `WORKOUT_TOKEN` from secret `dashboard-workout`) | Workouts card: this week per person (total, workout count, km per machine); tapping it opens the app (`WORKOUT_APP_URL`) in a new tab. Card hidden when the token is not set; rotation in [apps/workout/README.md](../workout/README.md#dashboard-card) |
-| Calendar (`/api/calendar`) | Calendar card. **Static sample events for now** (`src/lib/server/calendar.ts`, laid out relative to today); Google Calendar comes later with the same `CalendarData` shape |
+| Google Calendar (`CALENDAR_ICS_URL` from secret `dashboard-calendar`) | Calendar card: the shared *Family* calendar's secret iCal address, fetched server-side at most every 5 min (last good copy served for up to an hour if Google fails). Recurring events are expanded with their exceptions and cancellations; day boundaries are Europe/Helsinki. The address is never sent to the browser or logged. Card colour: `CALENDAR_COLOR` (default `#38bdf8`) |
 
 Browser refresh: live data 10 s, homelab/speed test/workouts 60 s, calendar 5 min, weather 10 min, snapshots 5 s (paused at night and while live video is open).
+
+Calendar address (Google Calendar → the calendar's *Settings and sharing* → *Secret address in iCal format*). Resetting it there invalidates the old one; then store the new one:
+
+```sh
+read -rsp 'Secret iCal address: ' U && echo
+kubectl -n dashboard create secret generic dashboard-calendar --from-literal=CALENDAR_ICS_URL="$U" --dry-run=client -o yaml | kubectl apply -f -
+unset U
+kubectl -n dashboard rollout restart deploy/dashboard
+```
 
 ## Access
 

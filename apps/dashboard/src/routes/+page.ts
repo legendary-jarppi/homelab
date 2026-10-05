@@ -18,7 +18,7 @@ export const load: PageLoad = async ({ data, fetch }) => {
 		get<SlowData>('/api/slow'),
 		data.weatherConfigured ? get<WeatherData[]>('/api/weather') : null,
 		data.workoutConfigured ? get<WorkoutSummary>('/api/workout') : null,
-		get<CalendarData>('/api/calendar')
+		data.calendarConfigured ? get<CalendarData>('/api/calendar') : null
 	]);
 	return { ...data, live, slow, weather, workout, calendar };
 };

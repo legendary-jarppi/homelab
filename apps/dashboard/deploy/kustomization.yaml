@@ -1,6 +1,6 @@
 # Home dashboard at http://dashboard.lab.internal
 # Needs secret dashboard-auth (PASSCODE, SESSION_SECRET), not in git; optional dashboard-workout
-# (WORKOUT_TOKEN); see apps/dashboard/README.md.
+# (WORKOUT_TOKEN) and dashboard-calendar (CALENDAR_ICS_URL); see apps/dashboard/README.md.
 # Build + apply: apps/dashboard/deploy.sh (sets newTag below).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -11,7 +11,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261005-181241"
+    newTag: "20261005-182512"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config

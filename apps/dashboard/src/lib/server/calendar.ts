@@ -1,79 +1,108 @@
-// Family calendar data. Static sample events, laid out relative to today, while the card's design
-// is iterated; replaced later by Google Calendar with the same CalendarData shape.
+// Family calendar from a Google Calendar "secret address in iCal format" (CALENDAR_ICS_URL).
+// Recurring events are expanded (with their exceptions and cancellations) over the days the
+// card shows: today through the end of next week.
+import ICAL from 'ical.js';
+import { config } from '$lib/server/config';
 import type { CalendarData, CalendarEvent } from '$lib/types';
 
+/** Day boundaries are the household's, whatever zone the calendar itself is set to. */
 export const TIME_ZONE = 'Europe/Helsinki';
+/** The feed is fetched at most this often; every open dashboard shares the result. */
+const CACHE_MS = 5 * 60_000;
+/** On a failed fetch, the last good result is served while it is younger than this. */
+const STALE_MS = 60 * 60_000;
+/** Covers the card's range (today through next Sunday) with a day of margin on both sides. */
+const WINDOW_BEFORE_MS = 86_400_000;
+const WINDOW_AFTER_MS = 16 * 86_400_000;
+/** Guard against runaway rules (e.g. minutely recurrences). */
+const MAX_OCCURRENCES_PER_EVENT = 500;
 
-const CALENDARS = {
-	family: { calendar: 'Family', color: '#38bdf8' },
-	jari: { calendar: 'Jari', color: '#c084fc' },
-	hobbies: { calendar: 'Hobbies', color: '#34d399' },
-	school: { calendar: 'School', color: '#fbbf24' }
-} as const;
+const dateKey = (t: ICAL.Time) => `${t.year}-${String(t.month).padStart(2, '0')}-${String(t.day).padStart(2, '0')}`;
+const sortKey = (e: CalendarEvent) => (e.allDay ? `${e.start}T00:00:00.000Z!` : e.start);
 
-/** "YYYY-MM-DD" of the day `offset` days from today in the calendar's zone. */
-function dayKey(now: Date, offset: number): string {
-	const today = new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE }).format(now);
-	const d = new Date(`${today}T12:00:00Z`);
-	d.setUTCDate(d.getUTCDate() + offset);
-	return d.toISOString().slice(0, 10);
-}
+/** Parses an iCalendar feed into the occurrences that overlap [from, to). */
+export function parseCalendar(ics: string, from: Date, to: Date, color: string): CalendarData {
+	const root = new ICAL.Component(ICAL.parse(ics));
+	for (const vtz of root.getAllSubcomponents('vtimezone')) ICAL.TimezoneService.register(new ICAL.Timezone(vtz));
+	const calendar = (root.getFirstPropertyValue('x-wr-calname') as string | null) || 'Calendar';
 
-/** The instant of local wall time `hh:mm` on day `key` in the calendar's zone. */
-function at(key: string, hh: number, mm = 0): string {
-	const guess = Date.parse(`${key}T${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:00Z`);
-	const name = new Intl.DateTimeFormat('en-US', { timeZone: TIME_ZONE, timeZoneName: 'longOffset' })
-		.formatToParts(guess)
-		.find((p) => p.type === 'timeZoneName')?.value;
-	const [, sign, h, m] = /GMT([+-])(\d{2}):(\d{2})/.exec(name ?? '') ?? ['', '+', '00', '00'];
-	const offsetMin = (sign === '-' ? -1 : 1) * (Number(h) * 60 + Number(m));
-	return new Date(guess - offsetMin * 60_000).toISOString();
-}
+	const masters = new Map<string, ICAL.Event>();
+	const exceptions: ICAL.Event[] = [];
+	for (const vevent of root.getAllSubcomponents('vevent')) {
+		const event = new ICAL.Event(vevent);
+		if (event.isRecurrenceException()) exceptions.push(event);
+		else masters.set(event.uid, event);
+	}
+	const orphans: ICAL.Event[] = [];
+	for (const ex of exceptions) {
+		const master = masters.get(ex.uid);
+		if (master) master.relateException(ex);
+		else orphans.push(ex);
+	}
 
-type Who = keyof typeof CALENDARS;
+	const windowStart = ICAL.Time.fromJSDate(from, true);
+	const windowEnd = ICAL.Time.fromJSDate(to, true);
+	const events: CalendarEvent[] = [];
 
-export function sampleCalendar(now = new Date()): CalendarData {
-	const day = (offset: number) => dayKey(now, offset);
-	let n = 0;
-	const timed = (who: Who, offset: number, title: string, from: [number, number], to: [number, number], location: string | null = null): CalendarEvent => ({
-		id: `sample-${n++}`,
-		title,
-		start: at(day(offset), ...from),
-		end: at(day(offset), ...to),
-		allDay: false,
-		location,
-		...CALENDARS[who]
-	});
-	const allDay = (who: Who, offset: number, days: number, title: string, location: string | null = null): CalendarEvent => ({
-		id: `sample-${n++}`,
-		title,
-		start: day(offset),
-		end: day(offset + days),
-		allDay: true,
-		location,
-		...CALENDARS[who]
-	});
+	const add = (item: ICAL.Event, start: ICAL.Time, end: ICAL.Time, recurrence: string) => {
+		if (item.component.getFirstPropertyValue('status') === 'CANCELLED') return;
+		if (end.compare(windowStart) <= 0 || start.compare(windowEnd) >= 0) return;
+		const allDay = start.isDate;
+		let endValue = end;
+		if (allDay && end.compare(start) <= 0) {
+			endValue = start.clone();
+			endValue.adjust(1, 0, 0, 0);
+		}
+		const location = (item.location ?? '').trim();
+		events.push({
+			id: `${item.uid}/${recurrence}`,
+			title: (item.summary ?? '').trim() || '(no title)',
+			start: allDay ? dateKey(start) : start.toJSDate().toISOString(),
+			end: allDay ? dateKey(endValue) : endValue.toJSDate().toISOString(),
+			allDay,
+			location: location || null,
+			calendar,
+			color
+		});
+	};
 
-	const events = [
-		allDay('family', 0, 1, 'Biojäte'),
-		timed('jari', 0, 'Aamulenkki', [7, 0], [7, 45], 'Laajalahti'),
-		timed('jari', 0, 'Hammaslääkäri', [10, 30], [11, 15], 'Oral Hammaslääkärit, Leppävaara'),
-		timed('school', 0, 'Uintitunti', [13, 0], [14, 30], 'Leppävaaran uimahalli'),
-		timed('hobbies', 0, 'Jalkapallotreenit', [17, 30], [19, 0], 'Leppävaaran stadion'),
-		timed('family', 0, 'Saunailta', [20, 0], [21, 30]),
-		timed('school', 1, 'Vanhempainilta', [18, 0], [19, 30], 'Mäkkylän koulu'),
-		allDay('family', 2, 3, 'Mummo kylässä'),
-		timed('hobbies', 2, 'Pianotunti', [16, 15], [17, 0], 'Musiikkiopisto'),
-		timed('family', 4, 'Pizza- ja leffailta', [18, 0], [21, 0]),
-		allDay('family', 5, 2, 'Mökkiviikonloppu', 'Ristiina'),
-		timed('jari', 7, 'Auto huoltoon', [8, 0], [9, 0], 'Autotalo, Espoo'),
-		timed('hobbies', 8, 'Jalkapallotreenit', [17, 30], [19, 0], 'Leppävaaran stadion'),
-		allDay('school', 10, 1, 'Retkipäivä, eväät mukaan'),
-		timed('family', 12, 'Synttärit', [14, 0], [17, 0], 'Mummola, Ristiina')
-	];
+	for (const event of masters.values()) {
+		if (!event.isRecurring()) {
+			add(event, event.startDate, event.endDate, event.startDate.toString());
+			continue;
+		}
+		const iterator = event.iterator();
+		for (let i = 0, next = iterator.next(); next && i < MAX_OCCURRENCES_PER_EVENT; i++, next = iterator.next()) {
+			if (next.compare(windowEnd) >= 0) break;
+			const occurrence = event.getOccurrenceDetails(next);
+			add(occurrence.item, occurrence.startDate, occurrence.endDate, next.toString());
+		}
+	}
+	for (const ex of orphans) add(ex, ex.startDate, ex.endDate, ex.recurrenceId.toString());
+
 	events.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 	return { timeZone: TIME_ZONE, events, updatedAt: Date.now() };
 }
 
-/** All-day events sort before timed events of the same day. */
-const sortKey = (e: CalendarEvent) => (e.allDay ? `${e.start}T00:00:00.000Z!` : e.start);
+let cache: { at: number; data: CalendarData } | null = null;
+
+export async function familyCalendar(now = new Date()): Promise<CalendarData> {
+	if (cache && now.getTime() - cache.at < CACHE_MS) return cache.data;
+	try {
+		const response = await fetch(config.calendarIcsUrl, { signal: AbortSignal.timeout(10_000) });
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		const data = parseCalendar(
+			await response.text(),
+			new Date(now.getTime() - WINDOW_BEFORE_MS),
+			new Date(now.getTime() + WINDOW_AFTER_MS),
+			config.calendarColor
+		);
+		cache = { at: now.getTime(), data };
+		return data;
+	} catch (e) {
+		// Never log the URL: it is the calendar's secret address.
+		console.error(`calendar feed: ${(e as Error).message}`);
+		if (cache && now.getTime() - cache.at < STALE_MS) return cache.data;
+		throw e;
+	}
+}

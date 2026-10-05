@@ -5,5 +5,6 @@ export const load: PageServerLoad = () => ({
 	cameras: config.cameras,
 	weatherConfigured: config.weatherLocations.length > 0,
 	workoutConfigured: config.workoutToken !== '',
-	workoutAppUrl: config.workoutAppUrl
+	workoutAppUrl: config.workoutAppUrl,
+	calendarConfigured: config.calendarIcsUrl !== ''
 });

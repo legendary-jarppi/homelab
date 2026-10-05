@@ -4,7 +4,10 @@
 	import { night } from '$lib/night.svelte';
 	import type { CalendarData, CalendarEvent } from '$lib/types';
 
-	let { calendar }: { calendar: CalendarData | null } = $props();
+	let { calendar, configured }: { calendar: CalendarData | null; configured: boolean } = $props();
+
+	/** The calendar's name is worth a line only when events come from several calendars. */
+	const severalCalendars = $derived(new Set(calendar?.events.map((e) => e.calendar)).size > 1);
 
 	const zone = $derived(calendar?.timeZone ?? 'Europe/Helsinki');
 	const keyOf = (instant: Date | string) => new Intl.DateTimeFormat('en-CA', { timeZone: zone }).format(new Date(instant));
@@ -85,7 +88,7 @@
 
 <Card title="Calendar">
 	{#snippet accessory()}
-		{#if calendar}<span>{remaining === 0 ? 'Nothing more today' : `${remaining} more today`}</span>{/if}
+		{#if calendar && todayTimed.length > 0}<span>{remaining === 0 ? 'Nothing more today' : `${remaining} more today`}</span>{/if}
 	{/snippet}
 	{#if calendar}
 		<div class="body">
@@ -106,7 +109,7 @@
 								<span class="bar" aria-hidden="true">{#if s === 'now'}<span class="fill" style:height="{progress(e)}%"></span>{/if}</span>
 								<span class="what">
 									<span class="title">{e.title}</span>
-									<span class="meta">{[e.location, e.calendar].filter(Boolean).join(' · ')}</span>
+									<span class="meta">{[e.location, severalCalendars ? e.calendar : null].filter(Boolean).join(' · ')}</span>
 								</span>
 								{#if s === 'now'}
 									<span class="badge now">Now</span>
@@ -141,10 +144,12 @@
 						{/each}
 					</ol>
 				</section>
+			{:else}
+				<p class="muted empty">Nothing planned for this week or next.</p>
 			{/each}
 		</div>
 	{:else}
-		<p class="muted">Calendar unavailable.</p>
+		<p class="muted">{configured ? 'Calendar unavailable.' : 'Calendar not configured.'}</p>
 	{/if}
 </Card>
 
