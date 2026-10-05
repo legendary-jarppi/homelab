@@ -101,3 +101,48 @@ export interface CalendarEvent {
 	calendar: string;
 	color: string;
 }
+
+export type Carrier = 'posti' | 'dhl' | 'ups';
+
+/** Normalised across carriers; `pickup` = waiting at a pickup point or parcel locker. */
+export type PackageState = 'unknown' | 'info' | 'transit' | 'out' | 'pickup' | 'delivered' | 'exception';
+
+export interface PackageEvent {
+	/** ISO 8601 with offset, or the carrier's local wall time ("YYYY-MM-DDTHH:MM:SS") when it gives no zone. */
+	time: string | null;
+	description: string;
+	location: string | null;
+}
+
+/** What a carrier reports for one tracking code. */
+export interface PackageTracking {
+	state: PackageState;
+	/** Latest event in the carrier's words. */
+	summary: string | null;
+	events: PackageEvent[];
+	/** Expected delivery: ISO instant or "YYYY-MM-DD". */
+	eta: string | null;
+	pickup: { name: string; address: string | null; until: string | null } | null;
+}
+
+export interface TrackedPackage {
+	id: string;
+	code: string;
+	carrier: Carrier;
+	/** Given when adding ("Shoes"); the code is shown otherwise. */
+	label: string | null;
+	addedAt: number;
+	checkedAt: number | null;
+	/** Last check failed (carrier unreachable, unknown code, carrier not configured). */
+	error: string | null;
+	/** When the package was first seen delivered; it leaves the card a few days later. */
+	deliveredAt: number | null;
+	tracking: PackageTracking | null;
+}
+
+/** GET /api/packages */
+export interface PackagesData {
+	packages: TrackedPackage[];
+	/** Carriers with credentials in place (Posti needs none). */
+	carriers: Record<Carrier, boolean>;
+}

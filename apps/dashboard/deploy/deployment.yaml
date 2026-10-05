@@ -40,6 +40,13 @@ spec:
             - secretRef:
                 name: dashboard-calendar
                 optional: true
+            # DHL_API_KEY, UPS_CLIENT_ID, UPS_CLIENT_SECRET for package tracking; Posti needs none.
+            - secretRef:
+                name: dashboard-packages
+                optional: true
+          env:
+            - name: PACKAGES_FILE
+              value: /data/packages.json
           ports:
             - name: http
               containerPort: 3000
@@ -66,6 +73,12 @@ spec:
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: data
+              mountPath: /data
       volumes:
         - name: tmp
           emptyDir: {}
+        # Tracked packages (packages.json).
+        - name: data
+          persistentVolumeClaim:
+            claimName: dashboard-data

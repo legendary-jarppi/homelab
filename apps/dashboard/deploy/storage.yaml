@@ -1,0 +1,10 @@
+# Small state the dashboard keeps itself: the tracked packages list.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: dashboard-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 100Mi

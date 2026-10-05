@@ -7,13 +7,14 @@
 	import HomelabCard from '$lib/components/HomelabCard.svelte';
 	import NetworkCard from '$lib/components/NetworkCard.svelte';
 	import NightScreen from '$lib/components/NightScreen.svelte';
+	import PackagesCard from '$lib/components/PackagesCard.svelte';
 	import SpeedtestCard from '$lib/components/SpeedtestCard.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import TopDevicesCard from '$lib/components/TopDevicesCard.svelte';
 	import WanCard from '$lib/components/WanCard.svelte';
 	import WorkoutCard from '$lib/components/WorkoutCard.svelte';
 	import { night } from '$lib/night.svelte';
-	import type { CalendarData, DashboardTab, LiveData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
+	import type { CalendarData, DashboardTab, LiveData, PackagesData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 
 	let { data } = $props();
 
@@ -23,6 +24,7 @@
 	let weather = $state<WeatherData[] | null>(untrack(() => data.weather));
 	let workout = $state<WorkoutSummary | null>(untrack(() => data.workout));
 	let calendar = $state<CalendarData | null>(untrack(() => data.calendar));
+	let packages = $state<PackagesData | null>(untrack(() => data.packages));
 	let viewer = $state<number | null>(null);
 	let tab = $state<DashboardTab>('home');
 
@@ -50,6 +52,10 @@
 			(slow ? slow.homelab.pods.problem === 0 && slow.homelab.targetsDown === 0 : true)
 	);
 
+	async function refreshPackages() {
+		const response = await fetch('/api/packages', { cache: 'no-store' });
+		if (response.ok) packages = await response.json();
+	}
 	onMount(() => {
 		const stopNight = night.start();
 		const RETRY_MS = 30_000;
@@ -57,7 +63,9 @@
 		// `due`: next fetch time. Data missing from the server render is fetched right away.
 		const pollers: { url: string; everyMs: number; apply: (body: unknown) => void; due: number }[] = [
 			{ url: '/api/live', everyMs: 10_000, apply: (b) => (live = b as LiveData), due: live ? start + 10_000 : 0 },
-			{ url: '/api/slow', everyMs: 60_000, apply: (b) => (slow = b as SlowData), due: slow ? start + 60_000 : 0 }
+			{ url: '/api/slow', everyMs: 60_000, apply: (b) => (slow = b as SlowData), due: slow ? start + 60_000 : 0 },
+			// The server checks each carrier only as often as it allows; this just picks up the results.
+			{ url: '/api/packages', everyMs: 60_000, apply: (b) => (packages = b as PackagesData), due: packages ? start + 60_000 : 0 }
 		];
 		if (data.weatherConfigured) {
 			pollers.push({ url: '/api/weather', everyMs: 10 * 60_000, apply: (b) => (weather = b as WeatherData[]), due: weather ? start + 10 * 60_000 : 0 });
@@ -130,8 +138,8 @@
 					<WorkoutCard {workout} href={data.workoutAppUrl} />
 				</div>
 			{/if}
-			<div class="area network">
-				{#if live}<NetworkCard {live} />{:else}<Card title="Network"><p class="muted">Metrics unavailable.</p></Card>{/if}
+			<div class="area packages">
+				<PackagesCard data={packages} onchange={refreshPackages} />
 			</div>
 			<div class="area homelab">
 				{#if slow}<HomelabCard homelab={slow.homelab} />{:else}<Card title="Homelab"><p class="muted">Metrics unavailable.</p></Card>{/if}
@@ -139,6 +147,9 @@
 		</main>
 	{:else}
 		<main class="grid network-page">
+			<div class="area network">
+				{#if live}<NetworkCard {live} />{:else}<Card title="Network"><p class="muted">Metrics unavailable.</p></Card>{/if}
+			</div>
 			<div class="area speed">
 				<SpeedtestCard speedtest={slow?.speedtest ?? null} />
 			</div>
@@ -196,6 +207,9 @@
 	.calendar {
 		grid-area: cal;
 	}
+	.packages {
+		grid-area: pkg;
+	}
 	.area {
 		min-width: 0;
 		min-height: 0;
@@ -204,7 +218,7 @@
 		margin: 0;
 	}
 
-	/* iPad landscape and laptops: exactly one screen. Home: traffic, network and homelab on the left,
+	/* iPad landscape and laptops: exactly one screen. Home: traffic, packages and homelab on the left,
 	   the calendar full height in the middle, cameras stacked on the right. */
 	@media (min-width: 1000px) and (min-aspect-ratio: 5/4) {
 		.page {
@@ -214,23 +228,25 @@
 			flex: 1;
 			min-height: 0;
 			grid-template-columns: repeat(12, minmax(0, 1fr));
-			grid-template-rows: minmax(0, 1fr) auto auto;
+			grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
 			grid-template-areas:
 				'wan wan wan wan cal cal cal cal cam cam cam cam'
-				'net net net net cal cal cal cal cam cam cam cam'
+				'pkg pkg pkg pkg cal cal cal cal cam cam cam cam'
 				'lab lab lab lab cal cal cal cal cam cam cam cam';
 		}
 		/* The workout card goes under the cameras, so the left column and the calendar keep their room. */
 		.grid.with-workout {
 			grid-template-areas:
 				'wan wan wan wan cal cal cal cal cam cam cam cam'
-				'net net net net cal cal cal cal cam cam cam cam'
+				'pkg pkg pkg pkg cal cal cal cal cam cam cam cam'
 				'lab lab lab lab cal cal cal cal wo wo wo wo';
 		}
 		.grid.network-page {
-			grid-template-rows: auto;
+			grid-template-rows: auto auto;
 			align-items: start;
-			grid-template-areas: 'spd spd spd spd spd spd top top top top top top';
+			grid-template-areas:
+				'net net net net net net spd spd spd spd spd spd'
+				'top top top top top top top top top top top top';
 		}
 		/* Size containers: the cards drop details that do not fit their grid slot. */
 		.workout {
@@ -255,20 +271,21 @@
 			grid-template-areas:
 				'cam cam'
 				'cal cal'
+				'pkg pkg'
 				'wan wan'
-				'net lab';
+				'lab lab';
 		}
 		.grid.with-workout {
 			grid-template-areas:
 				'cam cam'
 				'cal cal'
+				'pkg pkg'
 				'wan wan'
-				'wo wo'
-				'net lab';
+				'wo lab';
 		}
 		.grid.network-page {
 			grid-template-areas:
-				'spd spd'
+				'net spd'
 				'top top';
 		}
 		.cameras {
@@ -287,13 +304,13 @@
 		}
 		.grid {
 			grid-template-columns: minmax(0, 1fr);
-			grid-template-areas: 'cam' 'cal' 'wan' 'net' 'lab';
+			grid-template-areas: 'cam' 'cal' 'pkg' 'wan' 'lab';
 		}
 		.grid.with-workout {
-			grid-template-areas: 'cam' 'cal' 'wan' 'wo' 'net' 'lab';
+			grid-template-areas: 'cam' 'cal' 'pkg' 'wan' 'wo' 'lab';
 		}
 		.grid.network-page {
-			grid-template-areas: 'spd' 'top';
+			grid-template-areas: 'net' 'spd' 'top';
 		}
 		.cameras {
 			display: flex;

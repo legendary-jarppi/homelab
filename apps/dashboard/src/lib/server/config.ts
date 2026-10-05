@@ -45,5 +45,12 @@ export const config = {
 	/** Google Calendar "secret address in iCal format" (secret dashboard-calendar); never sent to the browser or logged. */
 	calendarIcsUrl: env.CALENDAR_ICS_URL ?? '',
 	/** Colour of the calendar's events on the card. */
-	calendarColor: env.CALENDAR_COLOR ?? '#38bdf8'
+	calendarColor: env.CALENDAR_COLOR ?? '#38bdf8',
+	/** Tracked packages (JSON) on the dashboard's volume. */
+	packagesFile: env.PACKAGES_FILE ?? '.data/packages.json',
+	/** developer.dhl.com "Shipment Tracking - Unified" key (secret dashboard-packages). */
+	dhlApiKey: env.DHL_API_KEY ?? '',
+	/** developer.ups.com OAuth app with the Tracking API (secret dashboard-packages). */
+	upsClientId: env.UPS_CLIENT_ID ?? '',
+	upsClientSecret: env.UPS_CLIENT_SECRET ?? ''
 };
