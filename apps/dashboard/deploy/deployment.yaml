@@ -40,7 +40,7 @@ spec:
             - secretRef:
                 name: dashboard-calendar
                 optional: true
-            # DHL_API_KEY, UPS_CLIENT_ID, UPS_CLIENT_SECRET for package tracking; Posti needs none.
+            # UPS_CLIENT_ID, UPS_CLIENT_SECRET for UPS tracking; Posti needs none, DHL is link-only.
             - secretRef:
                 name: dashboard-packages
                 optional: true

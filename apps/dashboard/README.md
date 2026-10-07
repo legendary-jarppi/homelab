@@ -13,7 +13,7 @@ SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler an
 | Open-Meteo | Weather for `WEATHER_LOCATIONS` (`name:lat:lon,…`; currently Espoo and Ristiina), one request for all, cached 10 min server-side |
 | apps/workout (`WORKOUT_URL`, cluster-internal; bearer token `WORKOUT_TOKEN` from secret `dashboard-workout`) | Workouts card: this week per person (total, workout count, km per machine); tapping it opens the app (`WORKOUT_APP_URL`) in a new tab. Card hidden when the token is not set; rotation in [apps/workout/README.md](../workout/README.md#dashboard-card) |
 | Google Calendar (`CALENDAR_ICS_URL` from secret `dashboard-calendar`) | Calendar card: the shared *Family* calendar's secret iCal address, fetched server-side at most every 5 min (last good copy served for up to an hour if Google fails). Recurring events are expanded with their exceptions and cancellations; day boundaries are Europe/Helsinki. The address is never sent to the browser or logged. Card colour: `CALENDAR_COLOR` (default `#38bdf8`) |
-| Posti (public tracking used by posti.fi: anonymous token from `auth-service.posti.fi`, GraphQL at `graphql.posti.fi`; no account), DHL Shipment Tracking - Unified API (`DHL_API_KEY`), UPS Tracking API (`UPS_CLIENT_ID`/`UPS_CLIENT_SECRET`); keys from secret `dashboard-packages` | Packages card: add a tracking code (carrier detected from its format), see status, pickup point and deadline, ETA and the event history; delivered packages leave after 2 days. Each package is re-checked while the dashboard is open, at most every 20 min (Posti, UPS) or 60 min (DHL: 250 calls/day on the free tier). List stored in `/data/packages.json` (PVC `dashboard-data`). Carriers without credentials are shown as "not set up" |
+| Posti (public tracking used by posti.fi: anonymous token from `auth-service.posti.fi`, GraphQL at `graphql.posti.fi`; no account), UPS Tracking API (`UPS_CLIENT_ID`/`UPS_CLIENT_SECRET` from secret `dashboard-packages`) | Packages card: add a tracking code (carrier detected from its format), see status, pickup point and deadline, ETA and the event history; delivered packages leave after 2 days. Each package is re-checked while the dashboard is open, at most every 20 min. List stored in `/data/packages.json` (PVC `dashboard-data`). UPS without credentials is shown as "not set up". **DHL is link-only**: its tracking API is for business customers only and dhl.com blocks automated lookups, so DHL packages show "Check at DHL" with a link to DHL's tracking page and leave the card 14 days after being added (nothing reports them delivered). Aggregators with DHL data (17TRACK, Ship24, Parcel app) were considered: no free plan with lasting API access |
 
 Browser refresh: live data 10 s, homelab/speed test/workouts 60 s, calendar 5 min, weather 10 min, snapshots 5 s (paused at night and while live video is open).
 
@@ -26,13 +26,13 @@ unset U
 kubectl -n dashboard rollout restart deploy/dashboard
 ```
 
-Package tracking credentials (all optional; Posti works without): a DHL key from https://developer.dhl.com (app with *Shipment Tracking - Unified*), a UPS app from https://developer.ups.com (OAuth client credentials with the *Tracking* product):
+UPS tracking credentials (optional): an app from https://developer.ups.com (OAuth client credentials with the *Tracking* product):
 
 ```sh
-read -rsp 'DHL API key: ' D && echo; read -rsp 'UPS client ID: ' I && echo; read -rsp 'UPS client secret: ' S && echo
-kubectl -n dashboard create secret generic dashboard-packages --from-literal=DHL_API_KEY="$D" \
+read -rsp 'UPS client ID: ' I && echo; read -rsp 'UPS client secret: ' S && echo
+kubectl -n dashboard create secret generic dashboard-packages \
   --from-literal=UPS_CLIENT_ID="$I" --from-literal=UPS_CLIENT_SECRET="$S" --dry-run=client -o yaml | kubectl apply -f -
-unset D I S
+unset I S
 kubectl -n dashboard rollout restart deploy/dashboard
 ```
 

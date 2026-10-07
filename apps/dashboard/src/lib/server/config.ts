@@ -48,8 +48,6 @@ export const config = {
 	calendarColor: env.CALENDAR_COLOR ?? '#38bdf8',
 	/** Tracked packages (JSON) on the dashboard's volume. */
 	packagesFile: env.PACKAGES_FILE ?? '.data/packages.json',
-	/** developer.dhl.com "Shipment Tracking - Unified" key (secret dashboard-packages). */
-	dhlApiKey: env.DHL_API_KEY ?? '',
 	/** developer.ups.com OAuth app with the Tracking API (secret dashboard-packages). */
 	upsClientId: env.UPS_CLIENT_ID ?? '',
 	upsClientSecret: env.UPS_CLIENT_SECRET ?? ''

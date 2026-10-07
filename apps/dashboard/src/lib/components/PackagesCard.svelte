@@ -2,7 +2,7 @@
 	import Card from './Card.svelte';
 	import PackageSheet from './PackageSheet.svelte';
 	import { dayOf, eventTime } from '$lib/dates';
-	import { STATE_LABEL } from '$lib/packages';
+	import { carrierName, LINK_ONLY, linkOnlyUntil, STATE_LABEL } from '$lib/packages';
 	import type { PackageState, PackagesData, TrackedPackage } from '$lib/types';
 
 	let { data, onchange }: { data: PackagesData | null; onchange: () => void } = $props();
@@ -50,18 +50,23 @@
 		<ul class="list">
 			{#each packages as p (p.id)}
 				{@const state = p.tracking?.state ?? 'unknown'}
+				{@const linkOnly = LINK_ONLY.has(p.carrier)}
 				<li>
-					<button class="row {state}" onclick={() => (sheet = p.id)}>
-						<span class="carrier {p.carrier}">{p.carrier === 'posti' ? 'Posti' : p.carrier.toUpperCase()}</span>
+					<button class="row {state}" class:link-only={linkOnly} onclick={() => (sheet = p.id)}>
+						<span class="carrier {p.carrier}">{carrierName(p.carrier)}</span>
 						<span class="main">
 							<span class="line">
 								<span class="name">{p.label ?? p.code}</span>
-								<span class="state">{STATE_LABEL[state]}</span>
+								<span class="state">{linkOnly ? `Check at ${carrierName(p.carrier)}` : STATE_LABEL[state]}</span>
 							</span>
-							<span class="detail muted">{detail(p)}</span>
-							<span class="steps" aria-hidden="true">
-								{#each [1, 2, 3, 4] as s (s)}<i class:done={step(state) >= s}></i>{/each}
-							</span>
+							{#if linkOnly}
+								<span class="detail muted">On the card until {dayOf(new Date(linkOnlyUntil(p)).toISOString())}</span>
+							{:else}
+								<span class="detail muted">{detail(p)}</span>
+								<span class="steps" aria-hidden="true">
+									{#each [1, 2, 3, 4] as s (s)}<i class:done={step(state) >= s}></i>{/each}
+								</span>
+							{/if}
 						</span>
 					</button>
 				</li>
@@ -162,6 +167,9 @@
 	}
 	.row.exception {
 		--s: var(--bad);
+	}
+	.row.link-only {
+		--s: var(--text);
 	}
 	.carrier {
 		margin-top: 1px;

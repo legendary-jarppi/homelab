@@ -145,6 +145,6 @@ export interface TrackedPackage {
 /** GET /api/packages */
 export interface PackagesData {
 	packages: TrackedPackage[];
-	/** Carriers with credentials in place (Posti needs none). */
+	/** Carriers a package can be added for: Posti and DHL (link-only) always, UPS with credentials. */
 	carriers: Record<Carrier, boolean>;
 }

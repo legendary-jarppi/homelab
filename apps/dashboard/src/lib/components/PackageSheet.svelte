@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { fade, fly } from 'svelte/transition';
 	import { dayOf, eventTime } from '$lib/dates';
-	import { CARRIERS, detectCarrier, normalizeCode, STATE_LABEL } from '$lib/packages';
+	import { CARRIERS, carrierName, detectCarrier, LINK_ONLY, linkOnlyUntil, normalizeCode, STATE_LABEL, TRACKING_URL } from '$lib/packages';
 	import type { Carrier, PackagesData, TrackedPackage } from '$lib/types';
 
 	/** `pkg` null = add form; otherwise that package's details. */
@@ -21,12 +21,6 @@
 
 	const detected = $derived(detectCarrier(code));
 	const carrier = $derived(chosen ?? detected);
-
-	const TRACKING_URL: Record<Carrier, (code: string) => string> = {
-		posti: (c) => `https://www.posti.fi/fi/seuranta#/lahetys/${c}`,
-		dhl: (c) => `https://www.dhl.com/fi-fi/home/tracking.html?tracking-id=${c}`,
-		ups: (c) => `https://www.ups.com/track?tracknum=${c}`
-	};
 
 	async function add(event: SubmitEvent) {
 		event.preventDefault();
@@ -74,10 +68,12 @@
 
 		{#if pkg}
 			{@const t = pkg.tracking}
+			{@const linkOnly = LINK_ONLY.has(pkg.carrier)}
 			<dl class="facts">
-				<div><dt>Status</dt><dd>{STATE_LABEL[t?.state ?? 'unknown']}</dd></div>
-				<div><dt>Carrier</dt><dd>{CARRIERS.find((c) => c.id === pkg.carrier)?.name}</dd></div>
+				<div><dt>Status</dt><dd>{linkOnly ? `On ${carrierName(pkg.carrier)}'s website` : STATE_LABEL[t?.state ?? 'unknown']}</dd></div>
+				<div><dt>Carrier</dt><dd>{carrierName(pkg.carrier)}</dd></div>
 				<div><dt>Code</dt><dd class="num">{pkg.code}</dd></div>
+				{#if linkOnly}<div><dt>On the card until</dt><dd>{dayOf(new Date(linkOnlyUntil(pkg)).toISOString())}</dd></div>{/if}
 				{#if t?.eta}<div><dt>Arriving</dt><dd>{dayOf(t.eta)}</dd></div>{/if}
 				{#if t?.pickup}
 					<div class="wide">
@@ -85,7 +81,7 @@
 						<dd>{t.pickup.name}{#if t.pickup.address}<span class="muted">{` · ${t.pickup.address}`}</span>{/if}{#if t.pickup.until}<br /><span class="warn">By {dayOf(t.pickup.until)}</span>{/if}</dd>
 					</div>
 				{/if}
-				{#if pkg.error}<div class="wide"><dt>Last check</dt><dd class="muted">{pkg.error}</dd></div>{/if}
+				{#if pkg.error && !linkOnly}<div class="wide"><dt>Last check</dt><dd class="muted">{pkg.error}</dd></div>{/if}
 			</dl>
 			{#if t && t.events.length > 0}
 				<ol class="events">
@@ -98,7 +94,7 @@
 				</ol>
 			{/if}
 			<div class="actions">
-				<a class="button" href={TRACKING_URL[pkg.carrier](pkg.code)} target="_blank" rel="noopener noreferrer">Open at {CARRIERS.find((c) => c.id === pkg.carrier)?.name}</a>
+				<a class="button" href={TRACKING_URL[pkg.carrier](pkg.code)} target="_blank" rel="noopener noreferrer">Open at {carrierName(pkg.carrier)}</a>
 				<button class="button danger" onclick={remove} disabled={busy}>Remove</button>
 			</div>
 		{:else}
@@ -128,10 +124,11 @@
 					{/each}
 				</div>
 				<p class="hint muted">
-					{#if chosen}Carrier chosen by hand.{:else if detected}Detected from the code.{:else if code.length > 5}Choose the carrier.{:else}The carrier is detected from the code.{/if}
+					{#if carrier && LINK_ONLY.has(carrier)}{carrierName(carrier)} shares status only with business customers: the card links to its tracking page.
+					{:else if chosen}Carrier chosen by hand.{:else if detected}Detected from the code.{:else if code.length > 5}Choose the carrier.{:else}The carrier is detected from the code.{/if}
 				</p>
 				{#if message}<p class="error">{message}</p>{/if}
-				<button class="button primary" disabled={busy || !carrier || !carriers[carrier]}>{busy ? 'Checking…' : 'Add'}</button>
+				<button class="button primary" disabled={busy || !carrier || !carriers[carrier]}>{busy ? 'Adding…' : 'Add'}</button>
 			</form>
 		{/if}
 	</div>

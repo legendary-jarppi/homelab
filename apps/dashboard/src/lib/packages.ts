@@ -1,11 +1,30 @@
 // Shared by the card and the server: carrier detection from the code's format, display names.
-import type { Carrier, PackageState } from '$lib/types';
+import type { Carrier, PackageState, TrackedPackage } from '$lib/types';
 
 export const CARRIERS: { id: Carrier; name: string }[] = [
 	{ id: 'posti', name: 'Posti' },
 	{ id: 'dhl', name: 'DHL' },
 	{ id: 'ups', name: 'UPS' }
 ];
+
+export const carrierName = (carrier: Carrier): string => CARRIERS.find((c) => c.id === carrier)?.name ?? carrier;
+
+export const TRACKING_URL: Record<Carrier, (code: string) => string> = {
+	posti: (c) => `https://www.posti.fi/fi/seuranta#/lahetys/${c}`,
+	dhl: (c) => `https://www.dhl.com/fi-fi/home/tracking.html?tracking-id=${c}`,
+	ups: (c) => `https://www.ups.com/track?tracknum=${c}`
+};
+
+/**
+ * Carriers whose status the dashboard cannot read: DHL gives API access to business customers only
+ * and blocks automated use of its website. Their packages link to the carrier's tracking page.
+ */
+export const LINK_ONLY: ReadonlySet<Carrier> = new Set(['dhl']);
+/** Nothing reports a link-only package as delivered, so it leaves the card this long after being added. */
+const LINK_ONLY_KEEP_MS = 14 * 86_400_000;
+
+/** When a link-only package leaves the card (unix ms). */
+export const linkOnlyUntil = (p: TrackedPackage): number => p.addedAt + LINK_ONLY_KEEP_MS;
 
 /** Upper case, no spaces or dashes: codes are often copied with grouping. */
 export function normalizeCode(code: string): string {
