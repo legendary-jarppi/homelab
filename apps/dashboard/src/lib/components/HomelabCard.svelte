@@ -15,7 +15,7 @@
 		[
 			homelab.pods.problem > 0 && `${homelab.pods.problem} pod${homelab.pods.problem === 1 ? '' : 's'} not ready`,
 			homelab.targetsDown > 0 && `${homelab.targetsDown} metric source${homelab.targetsDown === 1 ? '' : 's'} down`,
-			backupIssue
+			backupIssue?.detail
 		].filter(Boolean) as string[]
 	);
 </script>

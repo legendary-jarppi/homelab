@@ -4,16 +4,28 @@
 	import WeatherIcon from './WeatherIcon.svelte';
 	import { night, type NightMode } from '$lib/night.svelte';
 	import { describeWeather } from '$lib/weather';
+	import { backupProblem } from '$lib/backup';
 	import { longDate } from '$lib/dates';
-	import type { DashboardTab, LiveData, WeatherData } from '$lib/types';
+	import type { DashboardTab, LiveData, SlowData, WeatherData } from '$lib/types';
 
 	let {
 		weather,
 		weatherConfigured,
 		live,
 		liveStale,
+		backup,
 		tab = $bindable()
-	}: { weather: WeatherData[] | null; weatherConfigured: boolean; live: LiveData | null; liveStale: boolean; tab: DashboardTab } = $props();
+	}: {
+		weather: WeatherData[] | null;
+		weatherConfigured: boolean;
+		live: LiveData | null;
+		liveStale: boolean;
+		/** null while the status is unknown (no data from Prometheus yet). */
+		backup: SlowData['homelab']['backup'] | null;
+		tab: DashboardTab;
+	} = $props();
+
+	const backupIssue = $derived(backup ? backupProblem(backup, night.now.getTime()) : null);
 
 	const TABS: { id: DashboardTab; label: string }[] = [
 		{ id: 'home', label: 'Home' },
@@ -84,8 +96,13 @@
 			{/each}
 		</div>
 		<span class="pill" class:bad={liveStale || !live}>
-			<i></i>{liveStale || !live ? 'No data' : live.wan.latencyMs !== null ? `Online · ${live.wan.latencyMs < 1 ? '<1' : Math.round(live.wan.latencyMs)} ms` : 'Online'}
+			<i></i><span>{#if liveStale || !live}No data{:else}Online{#if live.wan.latencyMs !== null}<span class="latency">{` · ${live.wan.latencyMs < 1 ? '<1' : Math.round(live.wan.latencyMs)} ms`}</span>{/if}{/if}</span>
 		</span>
+		{#if backup}
+			<button class="pill backup" class:warn={backupIssue !== null} onclick={() => (tab = 'homelab')} aria-label="{backupIssue?.detail ?? 'Backup ok'}: open Homelab">
+				<i></i><span class="label">{backupIssue?.short ?? 'Backup ok'}</span>
+			</button>
+		{/if}
 		<div class="menu" bind:this={menu}>
 			<button class="icon" onclick={() => (menuOpen = !menuOpen)} aria-label="Menu" aria-expanded={menuOpen}>
 				<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
@@ -216,7 +233,7 @@
 	.controls {
 		display: flex;
 		align-items: center;
-		gap: 10px;
+		gap: 6px;
 		flex: none;
 	}
 	.tabs {
@@ -243,8 +260,8 @@
 	.pill {
 		display: inline-flex;
 		align-items: center;
-		gap: 7px;
-		padding: 8px 13px;
+		gap: 6px;
+		padding: 8px 12px;
 		font-size: 13px;
 		font-weight: 600;
 		white-space: nowrap;
@@ -264,6 +281,17 @@
 		color: var(--bad);
 		background: rgba(248, 113, 113, 0.1);
 		border-color: rgba(248, 113, 113, 0.2);
+	}
+	.pill.backup {
+		font: inherit;
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	.pill.warn {
+		color: var(--warn);
+		background: rgba(251, 191, 36, 0.1);
+		border-color: rgba(251, 191, 36, 0.25);
 	}
 	.menu {
 		position: relative;
@@ -345,8 +373,14 @@
 		color: var(--bad);
 		cursor: pointer;
 	}
-	/* Hourly strip only where it fits beside both locations, the clock and controls. */
-	@media (max-width: 1299px) {
+	/* Hourly strip and latency (also on the Homelab tab's internet card) only where they fit beside
+	   both locations, the clock and the controls (measured with both status pills). */
+	@media (max-width: 1479px) {
+		.latency {
+			display: none;
+		}
+	}
+	@media (max-width: 1429px) {
 		.hours {
 			display: none;
 		}
@@ -365,9 +399,15 @@
 			flex-basis: 100%;
 		}
 	}
-	/* Phones: drop the condition line, keep name + temperature. */
+	/* Phones: drop the condition line, keep name + temperature; the backup pill keeps only its dot. */
 	@media (max-width: 480px) {
 		.desc .muted {
+			display: none;
+		}
+		.pill.backup {
+			padding: 8px 11px;
+		}
+		.pill.backup .label {
 			display: none;
 		}
 		.temp,

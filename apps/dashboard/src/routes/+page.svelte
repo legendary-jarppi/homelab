@@ -120,7 +120,7 @@
 {/if}
 
 <div class="page" class:dimmed={night.active}>
-	<TopBar {weather} weatherConfigured={data.weatherConfigured} {live} {liveStale} bind:tab />
+	<TopBar {weather} weatherConfigured={data.weatherConfigured} {live} {liveStale} backup={slow?.homelab.backup ?? null} bind:tab />
 
 	{#if tab === 'home'}
 		<main class="grid home-page" class:with-workout={data.workoutConfigured}>

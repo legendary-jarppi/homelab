@@ -1,6 +1,6 @@
 # dashboard
 
-Home dashboard at http://dashboard.lab.internal, two pages in the top bar. *Home*, for the whole family: cameras, family calendar (today, then this and next week), package tracking (Posti, DHL, UPS), this week's workouts. *Homelab*: live internet traffic, speed tests, homelab health and backup status, network status and the top 10 devices; it returns to *Home* after 2 minutes untouched. Both show the clock, weather (tap a location for its 10-day forecast), internet status and night mode. Dates are Finnish, other text English. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
+Home dashboard at http://dashboard.lab.internal, two pages in the top bar. *Home*, for the whole family: cameras, family calendar (today, then this and next week), package tracking (Posti, DHL, UPS), this week's workouts. *Homelab*: live internet traffic, speed tests, homelab health and backup status, network status and the top 10 devices; it returns to *Home* after 2 minutes untouched. Both show the clock, weather (tap a location for its 10-day forecast), internet and backup status pills (tap the backup pill for *Homelab*) and night mode. Dates are Finnish, other text English. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
 
 SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler and relays live camera WebSockets; `session.js` is shared by both.
 
@@ -8,7 +8,7 @@ SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler an
 
 | Source | Used for |
 |---|---|
-| Prometheus (`PROMETHEUS_URL`) | UnPoller (`unpoller_*`, home site via `UNIFI_SOURCE`), node-exporter, kube-state-metrics. Homelab card's backup status: jobs in namespace `backup` ([platform/components/backup](../../platform/components/backup/)); warns on "Backup failed" (newest finished run failed), "No backup yet", or a last success older than 26 h. Failed pods of Jobs do not count as pods not ready |
+| Prometheus (`PROMETHEUS_URL`) | UnPoller (`unpoller_*`, home site via `UNIFI_SOURCE`), node-exporter, kube-state-metrics. Backup status (top bar pill, Homelab card, night screen dot): jobs in namespace `backup` ([platform/components/backup](../../platform/components/backup/)); amber on "Backup failed" (newest finished run failed), "No backup yet", or a last success older than 26 h ("Backup late" in the pill). Failed pods of Jobs do not count as pods not ready |
 | go2rtc (`GO2RTC_URL`, cluster-internal) | Snapshots (`/cameras/<id>/frame`) and live video (`/cameras/live?src=<id>`, MSE over WebSocket) |
 | Open-Meteo | Weather for `WEATHER_LOCATIONS` (`name:lat:lon,…`; currently Espoo and Ristiina), one request for all, cached 10 min server-side |
 | apps/workout (`WORKOUT_URL`, cluster-internal; bearer token `WORKOUT_TOKEN` from secret `dashboard-workout`) | Workouts card: this week per person (total, workout count, km per machine); tapping it opens the app (`WORKOUT_APP_URL`) in a new tab. Card hidden when the token is not set; rotation in [apps/workout/README.md](../workout/README.md#dashboard-card) |

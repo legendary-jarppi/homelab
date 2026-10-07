@@ -44,7 +44,7 @@ Google Drive access lasts until revoked (Google account → *Security* → *Thir
 
 ## Operating
 
-The dashboard's Homelab card shows the time of the last successful run and turns amber on "Backup failed", "No backup yet" or a success older than 26 h (also the night screen's status dot).
+The dashboard shows the status as a pill in its top bar ("Backup ok", amber "Backup failed" / "No backup" / "Backup late" when the newest run failed, none succeeded yet, or the last success is older than 26 h) and in detail on the Homelab tab's card; the night screen's status dot turns too.
 
 Occasional `rateLimitExceeded` / `403 Quota exceeded` lines from rclone in the log are Google throttling rclone's shared client ID; restic retries them and the run still succeeds. If runs start failing on it, create your own Google OAuth client (rclone docs: *Making your own client_id*), publish it to *In production* (a *Testing* app's tokens expire after 7 days) and redo *Setup* step 1 with `client_id=… client_secret=…` added.
 
