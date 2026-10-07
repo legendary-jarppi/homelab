@@ -4,39 +4,63 @@ import { query, queryRange, scalar } from '$lib/server/prometheus';
 import type { SlowData } from '$lib/types';
 import type { RequestHandler } from './$types';
 
+// Jobs of the backup CronJob (platform/components/backup), scheduled or started by hand, except the
+// `restic-shell` job its README uses for browsing the repository.
+const BACKUP_JOBS = `namespace="backup", job_name!~"restic-shell.*"`;
+
 export const GET: RequestHandler = async () => {
 	const S = `source="${config.unifiSource}"`;
-	const [speed, speedHistory, cpu, memory, disks, diskFree, uptime, cpuHistory, pods, problemPods, restarts, targetsDown] =
-		await Promise.all([
-			query(
-				`label_replace(max(unpoller_device_speedtest_download{${S}}), "stat", "down", "", "")
-				 or label_replace(max(unpoller_device_speedtest_upload{${S}}), "stat", "up", "", "")
-				 or label_replace(max(unpoller_device_speedtest_latency_seconds{${S}}) * 1000, "stat", "latency", "", "")
-				 or label_replace(max(unpoller_device_speedtest_rundate_seconds{${S}}), "stat", "ranAt", "", "")`
-			),
-			// One sample per hour for a week; each distinct run date becomes one history entry.
-			queryRange(
-				`label_replace(max(unpoller_device_speedtest_download{${S}}), "stat", "down", "", "")
-				 or label_replace(max(unpoller_device_speedtest_upload{${S}}), "stat", "up", "", "")
-				 or label_replace(max(unpoller_device_speedtest_rundate_seconds{${S}}), "stat", "ranAt", "", "")`,
-				7 * 24 * 3600,
-				3600
-			),
-			scalar(`1 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))`),
-			scalar(`1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)`),
-			query(`max by (mountpoint) (node_filesystem_size_bytes{fstype="xfs", mountpoint=~"/|/home"})`),
-			query(`max by (mountpoint) (node_filesystem_avail_bytes{fstype="xfs", mountpoint=~"/|/home"})`),
-			scalar(`max(time() - node_boot_time_seconds)`),
-			queryRange(`1 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))`, 3600, 60),
-			scalar(`sum(kube_pod_status_phase{phase="Running"})`),
-			// Pending/Failed/Unknown pods, plus running pods that are not ready.
-			scalar(
-				`sum(kube_pod_status_phase{phase=~"Pending|Failed|Unknown"})
-				 + (count(kube_pod_status_ready{condition="false"} == 1 and on (namespace, pod) kube_pod_status_phase{phase="Running"} == 1) or vector(0))`
-			),
-			scalar(`sum(increase(kube_pod_container_status_restarts_total[1h]))`),
-			scalar(`count(up == 0) or vector(0)`)
-		]);
+	const [
+		speed,
+		speedHistory,
+		cpu,
+		memory,
+		disks,
+		diskFree,
+		uptime,
+		cpuHistory,
+		pods,
+		problemPods,
+		restarts,
+		targetsDown,
+		backupSuccess,
+		backupFailure,
+		backupActive
+	] = await Promise.all([
+		query(
+			`label_replace(max(unpoller_device_speedtest_download{${S}}), "stat", "down", "", "")
+			 or label_replace(max(unpoller_device_speedtest_upload{${S}}), "stat", "up", "", "")
+			 or label_replace(max(unpoller_device_speedtest_latency_seconds{${S}}) * 1000, "stat", "latency", "", "")
+			 or label_replace(max(unpoller_device_speedtest_rundate_seconds{${S}}), "stat", "ranAt", "", "")`
+		),
+		// One sample per hour for a week; each distinct run date becomes one history entry.
+		queryRange(
+			`label_replace(max(unpoller_device_speedtest_download{${S}}), "stat", "down", "", "")
+			 or label_replace(max(unpoller_device_speedtest_upload{${S}}), "stat", "up", "", "")
+			 or label_replace(max(unpoller_device_speedtest_rundate_seconds{${S}}), "stat", "ranAt", "", "")`,
+			7 * 24 * 3600,
+			3600
+		),
+		scalar(`1 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))`),
+		scalar(`1 - sum(node_memory_MemAvailable_bytes) / sum(node_memory_MemTotal_bytes)`),
+		query(`max by (mountpoint) (node_filesystem_size_bytes{fstype="xfs", mountpoint=~"/|/home"})`),
+		query(`max by (mountpoint) (node_filesystem_avail_bytes{fstype="xfs", mountpoint=~"/|/home"})`),
+		scalar(`max(time() - node_boot_time_seconds)`),
+		queryRange(`1 - avg(rate(node_cpu_seconds_total{mode="idle"}[2m]))`, 3600, 60),
+		scalar(`sum(kube_pod_status_phase{phase="Running"})`),
+		// Pending/Unknown pods, failed pods outside Jobs (a failed Job's pods stay until its history
+		// is pruned; backup failures are reported separately), plus running pods that are not ready.
+		scalar(
+			`sum(kube_pod_status_phase{phase=~"Pending|Unknown"})
+			 + (sum(kube_pod_status_phase{phase="Failed"} unless on (namespace, pod) kube_pod_owner{owner_kind="Job"}) or vector(0))
+			 + (count(kube_pod_status_ready{condition="false"} == 1 and on (namespace, pod) kube_pod_status_phase{phase="Running"} == 1) or vector(0))`
+		),
+		scalar(`sum(increase(kube_pod_container_status_restarts_total[1h]))`),
+		scalar(`count(up == 0) or vector(0)`),
+		scalar(`max(kube_job_status_completion_time{${BACKUP_JOBS}} and on (job_name) (kube_job_status_succeeded{${BACKUP_JOBS}} > 0))`),
+		scalar(`max(kube_job_status_start_time{${BACKUP_JOBS}} and on (job_name) (kube_job_failed{${BACKUP_JOBS}, condition="true"} == 1))`),
+		scalar(`sum(kube_job_status_active{${BACKUP_JOBS}})`)
+	]);
 
 	const freeByMount = new Map(diskFree.map((d) => [d.metric.mountpoint, d.value]));
 
@@ -81,7 +105,8 @@ export const GET: RequestHandler = async () => {
 			uptimeS: uptime,
 			cpuHistory: cpuHistory[0]?.values ?? [],
 			pods: { running: pods ?? 0, problem: problemPods ?? 0, restarts1h: Math.round(restarts ?? 0) },
-			targetsDown: targetsDown ?? 0
+			targetsDown: targetsDown ?? 0,
+			backup: { lastSuccess: backupSuccess, lastFailure: backupFailure, running: (backupActive ?? 0) > 0 }
 		},
 		updatedAt: Date.now()
 	};

@@ -13,6 +13,7 @@
 	import TopDevicesCard from '$lib/components/TopDevicesCard.svelte';
 	import WanCard from '$lib/components/WanCard.svelte';
 	import WorkoutCard from '$lib/components/WorkoutCard.svelte';
+	import { backupProblem } from '$lib/backup';
 	import { night } from '$lib/night.svelte';
 	import type { CalendarData, DashboardTab, LiveData, PackagesData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 
@@ -49,7 +50,11 @@
 	const healthy = $derived(
 		!liveStale &&
 			(live?.devices.every((d) => d.online) ?? false) &&
-			(slow ? slow.homelab.pods.problem === 0 && slow.homelab.targetsDown === 0 : true)
+			(slow
+				? slow.homelab.pods.problem === 0 &&
+					slow.homelab.targetsDown === 0 &&
+					backupProblem(slow.homelab.backup, night.now.getTime()) === null
+				: true)
 	);
 
 	async function refreshPackages() {

@@ -2,15 +2,20 @@
 	import AreaChart from './AreaChart.svelte';
 	import Card from './Card.svelte';
 	import Meter from './Meter.svelte';
-	import { formatBytes, formatDuration } from '$lib/format';
+	import { backupProblem } from '$lib/backup';
+	import { formatAgo, formatBytes, formatDuration } from '$lib/format';
+	import { night } from '$lib/night.svelte';
 	import type { SlowData } from '$lib/types';
 
 	let { homelab }: { homelab: SlowData['homelab'] } = $props();
 
+	const backupIssue = $derived(backupProblem(homelab.backup, night.now.getTime()));
+
 	const problems = $derived(
 		[
 			homelab.pods.problem > 0 && `${homelab.pods.problem} pod${homelab.pods.problem === 1 ? '' : 's'} not ready`,
-			homelab.targetsDown > 0 && `${homelab.targetsDown} metric source${homelab.targetsDown === 1 ? '' : 's'} down`
+			homelab.targetsDown > 0 && `${homelab.targetsDown} metric source${homelab.targetsDown === 1 ? '' : 's'} down`,
+			backupIssue
 		].filter(Boolean) as string[]
 	);
 </script>
@@ -38,6 +43,12 @@
 		<div><span class="big">{homelab.pods.running}</span><span class="muted">pods running</span></div>
 		<div><span class="big">{homelab.pods.restarts1h}</span><span class="muted">restarts 1 h</span></div>
 		<div><span class="big">{formatDuration(homelab.uptimeS)}</span><span class="muted">uptime</span></div>
+		<div>
+			<span class="big" class:warn={backupIssue !== null}>
+				{homelab.backup.running ? 'running' : homelab.backup.lastSuccess === null ? '–' : formatAgo(homelab.backup.lastSuccess, night.now.getTime())}
+			</span>
+			<span class="muted">last backup</span>
+		</div>
 	</div>
 </Card>
 
@@ -86,7 +97,8 @@
 	.facts {
 		margin-top: auto;
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: repeat(4, auto);
+		justify-content: space-between;
 		gap: 10px;
 		padding-top: 10px;
 		border-top: 1px solid var(--border);
@@ -98,6 +110,9 @@
 		font-size: 19px;
 		font-weight: 650;
 		white-space: nowrap;
+	}
+	.big.warn {
+		color: var(--warn);
 	}
 	.facts .muted {
 		font-size: 11px;

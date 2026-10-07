@@ -45,6 +45,8 @@ export interface SlowData {
 		cpuHistory: Point[];
 		pods: { running: number; problem: number; restarts1h: number };
 		targetsDown: number;
+		/** Backup CronJob: unix seconds of the newest successful run's end and failed run's start. */
+		backup: { lastSuccess: number | null; lastFailure: number | null; running: boolean };
 	};
 	updatedAt: number;
 }
