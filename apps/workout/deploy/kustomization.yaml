@@ -1,0 +1,26 @@
+# Workout log at http://workout.lab.internal
+# Needs secrets workout-db (POSTGRES_PASSWORD) and workout-auth (PASSCODE, SESSION_SECRET), not in git;
+# see apps/workout/README.md. Build + apply: apps/workout/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: workout
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - app.yaml
+  - networkpolicy.yaml
+images:
+  - name: localhost/workout
+    newTag: "20261004-204021"
+configMapGenerator:
+  # Hashed name: changes roll the pod.
+  - name: workout-config
+    literals:
+      # Origin per request from Traefik's headers (see apps/dashboard for why not a fixed ORIGIN).
+      - PROTOCOL_HEADER=x-forwarded-proto
+      - HOST_HEADER=x-forwarded-host
+      # Traefik appends the client address; used for login rate limiting.
+      - ADDRESS_HEADER=X-Forwarded-For
+      - XFF_DEPTH=1
+      # "Today" for the entry form and the current week.
+      - TIME_ZONE=Europe/Helsinki

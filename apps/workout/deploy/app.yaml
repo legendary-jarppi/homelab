@@ -1,0 +1,108 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  # One replica: login rate limiting is in memory.
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          # Built locally and imported into k3s (deploy.sh); never pulled.
+          image: localhost/workout
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: workout-config
+            - secretRef:
+                name: workout-auth
+            # SUMMARY_TOKEN for /api/summary (home dashboard); without it the endpoint is off.
+            - secretRef:
+                name: workout-api
+                optional: true
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: workout-db
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgres://workout:$(DB_PASSWORD)@postgres:5432/workout
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: workout.lab.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: web
+                port:
+                  name: http

@@ -1,0 +1,30 @@
+{
+  "name": "workout",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "vite dev --host",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node build/index.js",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "test": "node --test --experimental-strip-types 'tests/**/*.test.ts'",
+    "import-sheet": "node --experimental-strip-types scripts/import-sheet.ts"
+  },
+  "devDependencies": {
+    "@sveltejs/adapter-node": "5.5.7",
+    "@sveltejs/kit": "2.70.3",
+    "@sveltejs/vite-plugin-svelte": "7.3.1",
+    "@types/node": "22.20.5",
+    "exceljs": "4.4.0",
+    "postgres": "3.4.9",
+    "svelte": "5.57.1",
+    "svelte-check": "4.7.6",
+    "typescript": "6.0.3",
+    "vite": "8.3.2"
+  }
+}
