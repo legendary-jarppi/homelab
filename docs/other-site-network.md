@@ -27,8 +27,10 @@ Be on site (or have other access): if the UCG Max does not pick up a new WAN add
 4. **Site Magic** (UniFi Site Manager > Site Magic SD-WAN > Mesh): select both consoles, connect only the *Default* networks (`192.168.1.0/24`, `192.168.20.0/24`). Home has the public IP, so the mobile side works behind CGNAT.
 5. **DNS** on the UCG Max (*Settings > Policy Table > DNS*): *Forward Domain* `lab.internal` → `192.168.1.1`.
 6. **Check** from a client at the other site: `ping 192.168.1.10`, and open `http://grafana.lab.internal`.
+7. **Phones for presence**: have everyone's iPhone join the site's Wi-Fi while there. iPhones use a separate private Wi-Fi address per network, so the phones (except Ansku's, which uses its hardware address) will likely appear here with addresses different from home; note each one from the UCG Max client list (*Client Devices*: name, MAC), or leave them connected after the VPN is up so UnPoller records them (Prometheus keeps 15 days).
 
 ## Afterwards (with the agent)
 
 - Confirm whether the `unpoller` UniFi account has the same password on both consoles.
 - UnPoller: add the UCG Max (`https://192.168.20.1`) as a second controller, one Prometheus scrape per site; check its devices appear in the Grafana UniFi dashboards.
+- Presence ([apps/presence](../apps/presence/)): add the other site's phone addresses to `presence-people`, and extend the service to more than one site: a place per person (home / other site / away), and each site's UniFi source tracked separately, so someone last seen there stays "there, no fresh data" while the mobile link or VPN is down instead of turning away.
