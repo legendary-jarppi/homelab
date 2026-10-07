@@ -1,0 +1,11 @@
+# Topic access per user (users and passwords: users.sh). Anything not listed is denied.
+
+# ESPresense nodes: their own tree (rooms/, devices/, settings/ with enrolled phones' IRKs) and
+# Home Assistant discovery, which they publish by default.
+user espresense
+topic readwrite espresense/#
+topic readwrite homeassistant/#
+
+# apps/presence: reads Bluetooth sightings.
+user presence
+topic read espresense/#

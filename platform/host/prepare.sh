@@ -38,8 +38,9 @@ if ! zone=$(firewall-cmd --get-zone-of-interface="$iface" 2>/dev/null); then
   zone=$(firewall-cmd --get-default-zone)
 fi
 firewall-cmd --permanent --zone=trusted --add-source="$POD_CIDR" --add-source="$SERVICE_CIDR"
-# 6443: Kubernetes API (kubectl from LAN/VPN); 80/443: Traefik ingress.
-firewall-cmd --permanent --zone="$zone" --add-port=6443/tcp
+# 6443: Kubernetes API (kubectl from LAN/VPN); 80/443: Traefik ingress; 1883: MQTT
+# (platform/components/mosquitto, for the ESPresense Bluetooth nodes; password-protected, no TLS).
+firewall-cmd --permanent --zone="$zone" --add-port=6443/tcp --add-port=1883/tcp
 firewall-cmd --permanent --zone="$zone" --add-service=http --add-service=https
 firewall-cmd --reload
 

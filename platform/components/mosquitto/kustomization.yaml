@@ -1,0 +1,16 @@
+# Mosquitto MQTT broker at mqtt://192.168.1.10:1883 (LAN) and mosquitto.mosquitto.svc:1883.
+# Needs secret mosquitto-users, not in git: create it with ./platform/components/mosquitto/users.sh.
+# Apply: kubectl apply -k platform/components/mosquitto
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: mosquitto
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - networkpolicy.yaml
+configMapGenerator:
+  # Hashed name: config or ACL changes roll the pod.
+  - name: mosquitto-config
+    files:
+      - mosquitto.conf
+      - acl

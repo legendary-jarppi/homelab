@@ -1,9 +1,10 @@
 # Build: apps/presence/deploy.sh. Node 22 runs the TypeScript sources directly (type stripping);
-# there are no runtime dependencies, so no install step.
+# only the runtime dependencies (mqtt, zod) are installed.
 FROM docker.io/library/node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production PORT=8080 NODE_NO_WARNINGS=1
-COPY package.json ./
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-fund --no-audit
 COPY src ./src
 USER node
 EXPOSE 8080

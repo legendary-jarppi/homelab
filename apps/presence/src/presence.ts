@@ -1,10 +1,11 @@
 // Home/away per person from sightings. Home as soon as any source sees one of the person's devices;
-// away once no source has seen them for `awayAfterS`, judged at the last time the sources answered,
-// so a Prometheus outage freezes the state instead of sending everyone away.
+// away once no source has seen them for `awayAfterS`. The away decision runs when the Wi-Fi poll
+// answers (evaluate), so a Prometheus outage freezes the state instead of sending everyone away;
+// Bluetooth sightings only ever bring people home or keep them there.
 import type { Person } from './config.ts';
 
-/** Only Wi-Fi so far; Bluetooth scanners (ESP32) are meant to report here as another source. */
-export type Source = 'wifi';
+/** wifi: UniFi clients via Prometheus; ble: ESPresense nodes via MQTT. */
+export type Source = 'wifi' | 'ble';
 
 export interface PersonState {
 	/** null until a source has answered at least once. */
@@ -24,15 +25,17 @@ export interface SourceState {
 
 export class Presence {
 	readonly state = new Map<string, PersonState>();
-	readonly sources: Record<Source, SourceState> = { wifi: { ok: false, lastOk: null, error: null } };
+	/** Only the configured sources. */
+	readonly sources: Partial<Record<Source, SourceState>> = {};
 	readonly people: Person[];
 	readonly awayAfterS: number;
 	private readonly onChange: (person: Person, state: PersonState) => void;
 
-	constructor(people: Person[], awayAfterS: number, onChange: (person: Person, state: PersonState) => void = () => {}) {
+	constructor(people: Person[], sources: Source[], awayAfterS: number, onChange: (person: Person, state: PersonState) => void = () => {}) {
 		this.people = people;
 		this.awayAfterS = awayAfterS;
 		this.onChange = onChange;
+		for (const s of sources) this.sources[s] = { ok: false, lastOk: null, error: null };
 		for (const p of people) this.state.set(p.id, { home: null, since: null, lastSeen: null, via: null });
 	}
 
@@ -60,26 +63,35 @@ export class Presence {
 		s.since = historyStart !== null && start - historyStart <= this.awayAfterS ? null : start;
 	}
 
-	/** A source answered at `nowS` and currently sees these people. */
-	observe(source: Source, seen: Set<string>, nowS: number): void {
-		this.sources[source] = { ok: true, lastOk: nowS, error: null };
+	/** One of the person's devices was seen at `atS`. */
+	sighting(personId: string, source: Source, atS: number): void {
+		const s = this.get(personId);
+		if (s.lastSeen !== null && atS < s.lastSeen) return;
+		s.lastSeen = atS;
+		s.via = source;
+		if (s.home !== true) this.set(personId, { home: true, since: atS });
+	}
+
+	/** Away decisions at `nowS`, when the judging source (Wi-Fi) has just answered. */
+	evaluate(nowS: number): void {
 		for (const p of this.people) {
 			const s = this.get(p.id);
-			if (seen.has(p.id)) {
-				s.lastSeen = nowS;
-				s.via = source;
-				if (s.home !== true) this.set(p, { home: true, since: nowS });
-			} else if (s.home === null) {
+			if (s.home === null) {
 				// First answer and not seen, no history: away, since unknown.
-				this.set(p, { home: false, since: s.lastSeen });
+				this.set(p.id, { home: false, since: s.lastSeen });
 			} else if (s.home && s.lastSeen !== null && nowS - s.lastSeen > this.awayAfterS) {
-				this.set(p, { home: false, since: s.lastSeen });
+				this.set(p.id, { home: false, since: s.lastSeen });
 			}
 		}
 	}
 
+	answered(source: Source, atS: number): void {
+		this.sources[source] = { ok: true, lastOk: atS, error: null };
+	}
+
 	failed(source: Source, error: string): void {
-		this.sources[source] = { ...this.sources[source], ok: false, error };
+		const prev = this.sources[source];
+		this.sources[source] = { ok: false, lastOk: prev?.lastOk ?? null, error };
 	}
 
 	private get(id: string): PersonState {
@@ -88,8 +100,10 @@ export class Presence {
 		return s;
 	}
 
-	private set(person: Person, change: Pick<PersonState, 'home' | 'since'>): void {
-		Object.assign(this.get(person.id), change);
-		this.onChange(person, this.get(person.id));
+	private set(id: string, change: Pick<PersonState, 'home' | 'since'>): void {
+		const person = this.people.find((p) => p.id === id);
+		if (!person) throw new Error(`unknown person ${id}`);
+		Object.assign(this.get(id), change);
+		this.onChange(person, this.get(id));
 	}
 }

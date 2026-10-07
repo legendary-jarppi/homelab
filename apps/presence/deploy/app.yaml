@@ -32,6 +32,9 @@ spec:
           envFrom:
             - configMapRef:
                 name: presence-config
+            # MQTT_USERNAME, MQTT_PASSWORD for Mosquitto (platform/components/mosquitto/users.sh).
+            - secretRef:
+                name: presence-mqtt
           ports:
             - name: http
               containerPort: 8080

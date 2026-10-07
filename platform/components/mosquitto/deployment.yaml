@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mosquitto-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 100Mi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mosquitto
+  labels:
+    app.kubernetes.io/name: mosquitto
+spec:
+  replicas: 1
+  # One writer for the persistence file.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mosquitto
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mosquitto
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        # The image's mosquitto user.
+        runAsUser: 1883
+        runAsGroup: 1883
+        fsGroup: 1883
+        seccompProfile:
+          type: RuntimeDefault
+      # Mosquitto wants its password and ACL files owned by its user and private ("future versions
+      # will refuse" otherwise); mounted Secrets/ConfigMaps are root-owned, so copy them.
+      initContainers:
+        - name: private-files
+          image: docker.io/library/eclipse-mosquitto:2.0.22
+          command: [sh, -c, "install -m 0600 /mosquitto/users/passwords /mosquitto/config/acl /mosquitto/private/"]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /mosquitto/config
+              readOnly: true
+            - name: users
+              mountPath: /mosquitto/users
+              readOnly: true
+            - name: private
+              mountPath: /mosquitto/private
+      containers:
+        - name: mosquitto
+          image: docker.io/library/eclipse-mosquitto:2.0.22
+          ports:
+            - name: mqtt
+              containerPort: 1883
+          # A TCP check is all Mosquitto offers, and each one is logged as a client connecting:
+          # no readiness probe (one pod), liveness every 5 min.
+          livenessProbe:
+            tcpSocket:
+              port: mqtt
+            periodSeconds: 300
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: config
+              mountPath: /mosquitto/config
+              readOnly: true
+            - name: private
+              mountPath: /mosquitto/private
+              readOnly: true
+            - name: data
+              mountPath: /mosquitto/data
+      volumes:
+        - name: config
+          configMap:
+            name: mosquitto-config
+        # passwords: mosquitto_passwd hashes, from users.sh; not in git.
+        - name: users
+          secret:
+            secretName: mosquitto-users
+            defaultMode: 0440
+        - name: private
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Mi
+        - name: data
+          persistentVolumeClaim:
+            claimName: mosquitto-data
+---
+# On the node's LAN address through ServiceLB: mqtt://192.168.1.10:1883. Local keeps client source
+# addresses, so the NetworkPolicy can admit the LAN by address.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mosquitto
+  labels:
+    app.kubernetes.io/name: mosquitto
+spec:
+  type: LoadBalancer
+  externalTrafficPolicy: Local
+  selector:
+    app.kubernetes.io/name: mosquitto
+  ports:
+    - name: mqtt
+      port: 1883
+      targetPort: mqtt

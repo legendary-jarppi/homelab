@@ -1,0 +1,24 @@
+# Enforced by k3s's embedded network policy controller.
+#   mosquitto <- home LAN (ESPresense nodes, through ServiceLB), apps/presence
+#   mosquitto -> nothing
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mosquitto
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mosquitto
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.168.1.0/24
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: presence
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: presence
+      ports:
+        - port: mqtt

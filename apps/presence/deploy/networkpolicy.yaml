@@ -1,7 +1,7 @@
 # Enforced by k3s's embedded network policy controller. Who is home is sensitive: nothing outside
 # the cluster reaches it (no Ingress), and inside only the dashboard and Prometheus.
 #   presence <- dashboard (API), Prometheus (scrape)
-#   presence -> Prometheus (UniFi client metrics), DNS
+#   presence -> Prometheus (UniFi client metrics), Mosquitto (ESPresense sightings), DNS
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -37,6 +37,15 @@ spec:
               app.kubernetes.io/name: prometheus
       ports:
         - port: 9090
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: mosquitto
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mosquitto
+      ports:
+        - port: 1883
     - to:
         - namespaceSelector:
             matchLabels:
