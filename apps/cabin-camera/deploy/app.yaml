@@ -25,6 +25,20 @@ spec:
         fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
+      # SFTPGo's atomic-upload folder (TEMP_PATH) must exist on the volume; its image has no shell.
+      initContainers:
+        - name: upload-folder
+          image: localhost/cabin-camera
+          imagePullPolicy: Never
+          command: [mkdir, -p, /data/.uploading, /data/cabin]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: snapshots
+              mountPath: /data
       containers:
         # FTPS server for the camera, reachable from the internet (UDM Pro port forward).
         - name: ftp

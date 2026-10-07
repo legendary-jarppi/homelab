@@ -1,21 +1,25 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
-	import { snapshotUrl } from '$lib/cabin';
+	import { snapshotUrl, type CabinEvent } from '$lib/cabin';
 	import { eventTime } from '$lib/dates';
 	import { night } from '$lib/night.svelte';
-	import type { CabinData } from '$lib/types';
 
-	/** Newest first, as the strip below the picture; `index` 0 is the latest. */
+	/** Motion events newest first, as the strip below; `index` 0 is the latest. */
 	let {
-		snapshots,
+		events,
 		index = $bindable(),
 		onclose
-	}: { snapshots: CabinData['snapshots']; index: number; onclose: () => void } = $props();
+	}: { events: CabinEvent[]; index: number; onclose: () => void } = $props();
 
-	const current = $derived(snapshots[Math.min(index, snapshots.length - 1)]);
+	const current = $derived(events[Math.min(index, events.length - 1)]);
+	/** Playing the current event's clip instead of showing its picture; reset when moving on. */
+	let playing = $state(false);
 	let strip: HTMLDivElement;
 
-	const step = (delta: number) => (index = Math.min(Math.max(index + delta, 0), snapshots.length - 1));
+	const go = (i: number) => {
+		index = Math.min(Math.max(i, 0), events.length - 1);
+		playing = false;
+	};
 
 	$effect(() => {
 		strip?.querySelector('.active')?.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
@@ -23,27 +27,37 @@
 
 	function onkeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') onclose();
-		else if (event.key === 'ArrowRight') step(1);
-		else if (event.key === 'ArrowLeft') step(-1);
+		else if (event.key === 'ArrowRight') go(index + 1);
+		else if (event.key === 'ArrowLeft') go(index - 1);
 	}
 </script>
 
 <svelte:window {onkeydown} />
 
 <div class="backdrop" transition:fade={{ duration: 180 }} onclick={(e) => e.target === e.currentTarget && onclose()} role="presentation">
-	<div class="viewer" transition:scale={{ start: 0.96, duration: 220 }} role="dialog" aria-modal="true" aria-label="Cabin camera pictures" tabindex="-1">
+	<div class="viewer" transition:scale={{ start: 0.96, duration: 220 }} role="dialog" aria-modal="true" aria-label="Cabin camera pictures and clips" tabindex="-1">
 		<div class="picture">
-			<img src={snapshotUrl(current.path)} alt="Motion at the cabin" />
+			{#if current.video && (playing || !current.image)}
+				<!-- svelte-ignore a11y_media_has_caption -->
+				<video src={snapshotUrl(current.video.path)} controls autoplay={playing} playsinline preload="metadata"></video>
+			{:else if current.image}
+				<img src={snapshotUrl(current.image.path)} alt="Motion at the cabin" />
+				{#if current.video}
+					<button class="play" onclick={() => (playing = true)} aria-label="Play the clip">
+						<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+					</button>
+				{/if}
+			{/if}
 		</div>
 		<div class="bar">
 			<span class="badge">Motion</span>
 			<span class="title">Cabin · {eventTime(new Date(current.time).toISOString(), night.now)}</span>
-			<span class="count muted num">{index + 1} / {snapshots.length}</span>
+			<span class="count muted num">{index + 1} / {events.length}</span>
 			<div class="actions">
-				<button onclick={() => step(-1)} disabled={index === 0} aria-label="Newer picture">
+				<button onclick={() => go(index - 1)} disabled={index === 0} aria-label="Newer">
 					<svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7" /></svg>
 				</button>
-				<button onclick={() => step(1)} disabled={index === snapshots.length - 1} aria-label="Older picture">
+				<button onclick={() => go(index + 1)} disabled={index === events.length - 1} aria-label="Older">
 					<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg>
 				</button>
 				<button onclick={onclose} aria-label="Close">
@@ -52,9 +66,14 @@
 			</div>
 		</div>
 		<div class="strip" bind:this={strip}>
-			{#each snapshots as s, i (s.path)}
-				<button class:active={i === index} onclick={() => (index = i)} aria-label="Picture {i + 1}">
-					<img src={snapshotUrl(s.path)} alt="" loading="lazy" />
+			{#each events as e, i (e.image?.path ?? e.video?.path)}
+				<button class:active={i === index} onclick={() => go(i)} aria-label="Event {i + 1}">
+					{#if e.image}
+						<img src={snapshotUrl(e.image.path)} alt="" loading="lazy" />
+					{:else if e.video}
+						<video src="{snapshotUrl(e.video.path)}#t=0.1" muted playsinline preload="metadata"></video>
+					{/if}
+					{#if e.video}<span class="mark"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg></span>{/if}
 				</button>
 			{/each}
 		</div>
@@ -81,17 +100,40 @@
 		outline: none;
 	}
 	.picture {
+		position: relative;
 		aspect-ratio: 16 / 9;
 		border-radius: 20px;
 		overflow: hidden;
 		background: #000;
 		box-shadow: 0 40px 100px rgba(0, 0, 0, 0.6);
 	}
-	.picture img {
+	.picture img,
+	.picture video {
 		display: block;
 		width: 100%;
 		height: 100%;
 		object-fit: contain;
+	}
+	.play {
+		position: absolute;
+		inset: 0;
+		margin: auto;
+		width: 76px;
+		height: 76px;
+		display: grid;
+		place-items: center;
+		border: 1px solid rgba(255, 255, 255, 0.25);
+		border-radius: 50%;
+		background: rgba(0, 0, 0, 0.5);
+		backdrop-filter: blur(8px);
+		-webkit-backdrop-filter: blur(8px);
+		cursor: pointer;
+	}
+	.play svg {
+		width: 34px;
+		height: 34px;
+		fill: #fff;
+		margin-left: 4px;
 	}
 	.bar {
 		display: flex;
@@ -154,6 +196,7 @@
 		display: none;
 	}
 	.strip button {
+		position: relative;
 		flex: none;
 		width: 112px;
 		aspect-ratio: 16 / 9;
@@ -169,11 +212,30 @@
 		border-color: var(--warn);
 		opacity: 1;
 	}
-	.strip img {
+	.strip img,
+	.strip video {
 		display: block;
 		width: 100%;
 		height: 100%;
 		object-fit: cover;
+		pointer-events: none;
+	}
+	.mark {
+		position: absolute;
+		right: 5px;
+		bottom: 5px;
+		width: 20px;
+		height: 20px;
+		display: grid;
+		place-items: center;
+		border-radius: 50%;
+		background: rgba(0, 0, 0, 0.6);
+	}
+	.mark svg {
+		width: 10px;
+		height: 10px;
+		fill: #fff;
+		margin-left: 1px;
 	}
 	@media (max-width: 640px) {
 		.title {

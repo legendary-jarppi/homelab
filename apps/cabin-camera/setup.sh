@@ -25,7 +25,7 @@ if [[ ! -s $work/tls.crt || ! -s $work/tls.key ]]; then
 fi
 
 # Upload-only: list, upload, make the camera's date folders, overwrite; no download, delete or rename.
-# Limits bound what a leaked password could do: 4 sessions, 20 MB per file, 5 GB in total.
+# Limits bound what a leaked password could do: 4 sessions, 200 MB per file (video clips), 20 GB in total.
 PASSWORD=$password jq -n '{
 	version: 16,
 	users: [{
@@ -35,8 +35,8 @@ PASSWORD=$password jq -n '{
 		home_dir: "/srv/sftpgo/data/cabin",
 		permissions: { "/": ["list", "upload", "create_dirs", "overwrite"] },
 		max_sessions: 4,
-		quota_size: 5368709120,
-		filters: { max_upload_file_size: 20971520 }
+		quota_size: 21474836480,
+		filters: { max_upload_file_size: 209715200 }
 	}]
 }' >"$work/users.json"
 

@@ -1,5 +1,6 @@
-# Snapshots from the cabin camera; the snapshot service deletes them after RETENTION_DAYS.
-# Backed up nightly like every local-path volume.
+# Pictures and video clips from the cabin camera; the snapshot service deletes them after
+# RETENTION_DAYS, and SFTPGo's quota for the camera account (setup.sh) is 20 GB. local-path does not
+# enforce the request. Backed up nightly like every local-path volume.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -8,4 +9,4 @@ spec:
   accessModes: [ReadWriteOnce]
   resources:
     requests:
-      storage: 5Gi
+      storage: 20Gi

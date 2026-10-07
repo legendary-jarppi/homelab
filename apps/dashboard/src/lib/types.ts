@@ -166,10 +166,10 @@ export interface PresenceData {
 	updatedAt: number;
 }
 
-/** GET /api/cabin: the cabin camera's latest motion snapshots, newest first (apps/cabin-camera). */
+/** GET /api/cabin: the cabin camera's latest pictures and clips, newest first (apps/cabin-camera). */
 export interface CabinData {
 	/** `path` is served at /cabin/<path>; `time` is the upload time, unix ms. */
-	snapshots: { path: string; time: number; size: number }[];
+	snapshots: { path: string; kind: 'image' | 'video'; time: number; size: number }[];
 	total: number;
 	retentionDays: number;
 }

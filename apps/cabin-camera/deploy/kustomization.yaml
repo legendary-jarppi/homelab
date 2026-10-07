@@ -12,7 +12,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/cabin-camera
-    newTag: "20261007-172229"
+    newTag: "20261007-180230"
 configMapGenerator:
   # SFTPGo settings (https://docs.sftpgo.com/latest/config-file/). Hashed name: changes roll the pod.
   - name: cabin-ftp-config
@@ -39,8 +39,14 @@ configMapGenerator:
       # The camera's account (setup.sh).
       - SFTPGO_DATA_PROVIDER__DRIVER=memory
       - SFTPGO_DATA_PROVIDER__NAME=/etc/cabin/users.json
+      # Atomic uploads: written under .uploading (same volume, outside the snapshot service's folder)
+      # and moved into place when complete; a failed upload is deleted.
+      - SFTPGO_COMMON__UPLOAD_MODE=1
+      - SFTPGO_COMMON__TEMP_PATH=/srv/sftpgo/data/.uploading
       # Ban addresses that keep failing logins (about 8 wrong passwords) for an hour, longer on repeat.
       - SFTPGO_COMMON__DEFENDER__ENABLED=true
       - SFTPGO_COMMON__DEFENDER__BAN_TIME=60
       - SFTPGO_COMMON__MAX_TOTAL_CONNECTIONS=20
-      - SFTPGO_LOG_LEVEL=info
+      # debug also logs connections that fail before login (TLS handshake, wrong mode); set back to
+      # info once the camera uploads reliably.
+      - SFTPGO_LOG_LEVEL=debug
