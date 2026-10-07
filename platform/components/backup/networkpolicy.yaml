@@ -1,0 +1,42 @@
+# Enforced by k3s's embedded network policy controller. Nothing comes in; out: DNS, the
+# Kubernetes API (exec, secrets) and public HTTPS (Google Drive, Google OAuth).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backup
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+    # API server on the node (the kubernetes Service 10.43.0.1:443 is DNATed to it).
+    - to:
+        - ipBlock:
+            cidr: 192.168.1.10/32
+      ports:
+        - port: 6443
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 224.0.0.0/4
+      ports:
+        - port: 443

@@ -1,0 +1,24 @@
+# Nightly encrypted backup to Google Drive (restic through rclone); see README.md.
+# Needs secret backup (RESTIC_PASSWORD, rclone.conf) in namespace backup, not in git.
+# Build + apply: platform/components/backup/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: backup
+resources:
+  - namespace.yaml
+  - rbac.yaml
+  - networkpolicy.yaml
+  - cronjob.yaml
+images:
+  - name: localhost/backup
+    newTag: "20261007-094142"
+configMapGenerator:
+  - name: backup-config
+    literals:
+      # Remote "gdrive" in rclone.conf; restic creates the folder on the first run.
+      - RESTIC_REPOSITORY=rclone:gdrive:homelab-backup
+      # Fixed: pod names change every run, restic groups snapshots by host.
+      - BACKUP_HOST=shilly-shally-lab-01
+      # <namespace>/<pvc> left out. Prometheus: 15 days of metrics, rebuilt by scraping.
+      - EXCLUDE=monitoring/prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0
+      - TZ=Europe/Helsinki

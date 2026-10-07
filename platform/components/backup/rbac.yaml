@@ -1,0 +1,34 @@
+# Cluster-wide by necessity: dumps run in any namespace's Postgres pod, and secrets of all
+# namespaces are exported. RBAC cannot narrow exec to labelled pods.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backup
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: backup
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list]
+  - apiGroups: [""]
+    resources: [pods/exec]
+    verbs: [create]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: backup
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: backup
+subjects:
+  - kind: ServiceAccount
+    name: backup
+    namespace: backup

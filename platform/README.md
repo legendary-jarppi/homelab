@@ -34,6 +34,7 @@
    ```
    go2rtc reads tokens at start: after changing the secret, `kubectl -n go2rtc rollout restart deploy/go2rtc`.
 9. `kubectl apply -k platform/components/traefik`: Traefik keeps client source addresses.
+10. Backup to Google Drive: authorize rclone and create secret `backup` as in [components/backup/README.md](components/backup/README.md#setup), then `./platform/components/backup/deploy.sh`.
 
 Both scripts are idempotent. Re-run `install.sh` after editing `k3s/config.yaml`; bump `K3S_VERSION` in it to upgrade.
 
@@ -49,6 +50,7 @@ Cluster add-ons under `components/`, one kustomization each; apply with `kubectl
 | `unpoller` | UnPoller v5.5.0 polling the UDM Pro (`https://192.168.1.1`) every 10 s (the UDM's counters change at that rate; feeds the dashboard's live chart); metrics prefixed `unpoller_` (gateway/WAN, switch ports, APs, clients, speed tests; DPI off). Grafana dashboards in `dashboards/` are grafana.com 11311-11315 with the datasource placeholders replaced by `Prometheus`; loaded as ConfigMaps labelled `grafana_dashboard: "1"`. Panels that stay empty: DPI categories, client-type breakdowns the UDM doesn't report, name-matched Echo/FireTV/camera panels. |
 | `go2rtc` | go2rtc 1.9.14, cluster-internal (`go2rtc.go2rtc.svc:1984`): UniFi Protect RTSPS (`rtspx://192.168.1.1:7441/<token>`) repackaged without transcoding. Viewed through the dashboard (passcode login, WebSocket relay); a NetworkPolicy admits only the `dashboard` namespace. Streams `front-door`, `backyard`, `carport`; connects to Protect only while someone watches. Locked down: modules `api, ws, rtsp, mp4, mjpeg` only, API limited to `/`, `/api/ws`, `/api/frame.jpeg` (no stream/config editing, no exec). Tokens come from secret `camera-tokens`, mounted as credential files. Debug locally: `kubectl -n go2rtc port-forward svc/go2rtc 1984`. |
 | `traefik` | `HelmChartConfig` merged into k3s's bundled Traefik: `externalTrafficPolicy: Local`, so apps see real client addresses in `X-Forwarded-For` (with `Cluster`, ServiceLB rewrites every client to `10.42.0.1`). |
+| `backup` | Nightly (03:30) restic backup to Google Drive through rclone, encrypted: `pg_dump` of pods labelled `backup.homelab/dump: postgres`, every local-path volume except those Postgres data dirs and Prometheus, and the Opaque secrets. Keeps 7 daily, 5 weekly, 12 monthly. Own image (`deploy.sh`). Setup, adding apps, restore: [components/backup/README.md](components/backup/README.md). |
 
 k3s still provides Traefik (configured by `components/traefik`), ServiceLB, CoreDNS and metrics-server.
 

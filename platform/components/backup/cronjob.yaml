@@ -1,0 +1,86 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: backup
+  labels:
+    app.kubernetes.io/name: backup
+spec:
+  schedule: "30 3 * * *"
+  timeZone: Europe/Helsinki
+  concurrencyPolicy: Forbid
+  # Machine off at 03:30: the run starts when it is back, up to 12 h late.
+  startingDeadlineSeconds: 43200
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      activeDeadlineSeconds: 10800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: backup
+        spec:
+          serviceAccountName: backup
+          restartPolicy: Never
+          securityContext:
+            # Root plus DAC_READ_SEARCH reads every volume whatever its owner; volume files carry
+            # the MCS categories of whichever pod wrote them, hence the full range.
+            runAsUser: 0
+            runAsGroup: 0
+            seLinuxOptions:
+              level: s0-s0:c0.c1023
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              # Built locally and imported into k3s (deploy.sh); never pulled.
+              image: localhost/backup
+              imagePullPolicy: Never
+              envFrom:
+                - configMapRef:
+                    name: backup-config
+              env:
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: backup
+                      key: RESTIC_PASSWORD
+                - name: HOME
+                  value: /work
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
+                limits:
+                  memory: 1Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+                  add: [DAC_READ_SEARCH]
+              volumeMounts:
+                - name: storage
+                  mountPath: /storage
+                  readOnly: true
+                - name: work
+                  mountPath: /work
+                - name: rclone
+                  mountPath: /etc/rclone
+                  readOnly: true
+          volumes:
+            # All local-path volumes (platform/components/local-path).
+            - name: storage
+              hostPath:
+                path: /var/lib/rancher/k3s/storage
+                type: Directory
+            - name: work
+              emptyDir: {}
+            - name: rclone
+              secret:
+                secretName: backup
+                defaultMode: 0400
+                items:
+                  - key: rclone.conf
+                    path: rclone.conf
