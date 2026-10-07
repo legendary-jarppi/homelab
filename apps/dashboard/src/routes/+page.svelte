@@ -47,6 +47,8 @@
 
 	/** Live data older than three refresh intervals counts as stale. */
 	const liveStale = $derived(!live || night.now.getTime() - live.updatedAt > 30_000);
+	/** Backup status from Prometheus (via /api/slow, every 60 s); null = unknown: none yet, or stale like live data. */
+	const backup = $derived(slow && night.now.getTime() - slow.updatedAt <= 3 * 60_000 ? slow.homelab.backup : null);
 	const healthy = $derived(
 		!liveStale &&
 			(live?.devices.every((d) => d.online) ?? false) &&
@@ -120,7 +122,7 @@
 {/if}
 
 <div class="page" class:dimmed={night.active}>
-	<TopBar {weather} weatherConfigured={data.weatherConfigured} {live} {liveStale} backup={slow?.homelab.backup ?? null} bind:tab />
+	<TopBar {weather} weatherConfigured={data.weatherConfigured} {live} {liveStale} {backup} bind:tab />
 
 	{#if tab === 'home'}
 		<main class="grid home-page" class:with-workout={data.workoutConfigured}>

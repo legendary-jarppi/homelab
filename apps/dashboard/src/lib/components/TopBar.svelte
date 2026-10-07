@@ -20,7 +20,7 @@
 		weatherConfigured: boolean;
 		live: LiveData | null;
 		liveStale: boolean;
-		/** null while the status is unknown (no data from Prometheus yet). */
+		/** null when the status is unknown: no fresh data from Prometheus. */
 		backup: SlowData['homelab']['backup'] | null;
 		tab: DashboardTab;
 	} = $props();
@@ -98,11 +98,14 @@
 		<span class="pill" class:bad={liveStale || !live}>
 			<i></i><span>{#if liveStale || !live}No data{:else}Online{#if live.wan.latencyMs !== null}<span class="latency">{` · ${live.wan.latencyMs < 1 ? '<1' : Math.round(live.wan.latencyMs)} ms`}</span>{/if}{/if}</span>
 		</span>
-		{#if backup}
-			<button class="pill backup" class:warn={backupIssue !== null} onclick={() => (tab = 'homelab')} aria-label="{backupIssue?.detail ?? 'Backup ok'}: open Homelab">
-				<i></i><span class="label">{backupIssue?.short ?? 'Backup ok'}</span>
-			</button>
-		{/if}
+		<button
+			class="pill backup"
+			class:warn={backup === null || backupIssue !== null}
+			onclick={() => (tab = 'homelab')}
+			aria-label="{backup === null ? 'Backup status unknown, no data from Prometheus' : (backupIssue?.detail ?? 'Backup ok')}: open Homelab"
+		>
+			<i></i><span class="label">{backup === null ? 'Backup ?' : (backupIssue?.short ?? 'Backup ok')}</span>
+		</button>
 		<div class="menu" bind:this={menu}>
 			<button class="icon" onclick={() => (menuOpen = !menuOpen)} aria-label="Menu" aria-expanded={menuOpen}>
 				<svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
