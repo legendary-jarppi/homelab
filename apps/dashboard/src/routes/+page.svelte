@@ -123,7 +123,7 @@
 	<TopBar {weather} weatherConfigured={data.weatherConfigured} {live} {liveStale} bind:tab />
 
 	{#if tab === 'home'}
-		<main class="grid" class:with-workout={data.workoutConfigured}>
+		<main class="grid home-page" class:with-workout={data.workoutConfigured}>
 			{#if data.cameras.length > 0}
 				<div class="area cameras">
 					{#each data.cameras as camera, i (camera.id)}
@@ -131,32 +131,31 @@
 					{/each}
 				</div>
 			{/if}
-
-			<div class="area wan">
-				{#if live}<WanCard wan={live.wan} />{:else}<Card title="Internet"><p class="muted">Metrics unavailable.</p></Card>{/if}
-			</div>
 			<div class="area calendar">
 				<CalendarCard {calendar} configured={data.calendarConfigured} />
+			</div>
+			<div class="area packages">
+				<PackagesCard data={packages} onchange={refreshPackages} />
 			</div>
 			{#if data.workoutConfigured}
 				<div class="area workout">
 					<WorkoutCard {workout} href={data.workoutAppUrl} />
 				</div>
 			{/if}
-			<div class="area packages">
-				<PackagesCard data={packages} onchange={refreshPackages} />
+		</main>
+	{:else}
+		<main class="grid homelab-page">
+			<div class="area wan">
+				{#if live}<WanCard wan={live.wan} />{:else}<Card title="Internet"><p class="muted">Metrics unavailable.</p></Card>{/if}
+			</div>
+			<div class="area speed">
+				<SpeedtestCard speedtest={slow?.speedtest ?? null} />
 			</div>
 			<div class="area homelab">
 				{#if slow}<HomelabCard homelab={slow.homelab} />{:else}<Card title="Homelab"><p class="muted">Metrics unavailable.</p></Card>{/if}
 			</div>
-		</main>
-	{:else}
-		<main class="grid network-page">
 			<div class="area network">
 				{#if live}<NetworkCard {live} />{:else}<Card title="Network"><p class="muted">Metrics unavailable.</p></Card>{/if}
-			</div>
-			<div class="area speed">
-				<SpeedtestCard speedtest={slow?.speedtest ?? null} />
 			</div>
 			<div class="area top">
 				<TopDevicesCard top={live?.top ?? []} limit={10} />
@@ -223,8 +222,9 @@
 		margin: 0;
 	}
 
-	/* iPad landscape and laptops: exactly one screen. Home: traffic, packages and homelab on the left,
-	   the calendar full height in the middle, cameras stacked on the right. */
+	/* iPad landscape and laptops: exactly one screen. Home: packages and workouts on the left, the
+	   calendar full height in the middle, cameras stacked on the right. Homelab: internet, speed test
+	   and server on the left, the local network and its busiest devices on the right. */
 	@media (min-width: 1000px) and (min-aspect-ratio: 5/4) {
 		.page {
 			height: 100dvh;
@@ -233,25 +233,23 @@
 			flex: 1;
 			min-height: 0;
 			grid-template-columns: repeat(12, minmax(0, 1fr));
-			grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
-			grid-template-areas:
-				'wan wan wan wan cal cal cal cal cam cam cam cam'
-				'pkg pkg pkg pkg cal cal cal cal cam cam cam cam'
-				'lab lab lab lab cal cal cal cal cam cam cam cam';
 		}
-		/* The workout card goes under the cameras, so the left column and the calendar keep their room. */
-		.grid.with-workout {
-			grid-template-areas:
-				'wan wan wan wan cal cal cal cal cam cam cam cam'
-				'pkg pkg pkg pkg cal cal cal cal cam cam cam cam'
-				'lab lab lab lab cal cal cal cal wo wo wo wo';
+		.grid.home-page {
+			grid-template-rows: minmax(0, 1fr);
+			grid-template-areas: 'pkg pkg pkg pkg cal cal cal cal cam cam cam cam';
 		}
-		.grid.network-page {
-			grid-template-rows: auto auto;
-			align-items: start;
+		.grid.home-page.with-workout {
+			grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
 			grid-template-areas:
-				'net net net net net net spd spd spd spd spd spd'
-				'top top top top top top top top top top top top';
+				'pkg pkg pkg pkg cal cal cal cal cam cam cam cam'
+				'wo wo wo wo cal cal cal cal cam cam cam cam';
+		}
+		.grid.homelab-page {
+			grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
+			grid-template-areas:
+				'wan wan wan wan net net net net net net net net'
+				'spd spd spd spd top top top top top top top top'
+				'lab lab lab lab top top top top top top top top';
 		}
 		/* Size containers: the cards drop details that do not fit their grid slot. */
 		.workout {
@@ -273,24 +271,24 @@
 	@media not ((min-width: 1000px) and (min-aspect-ratio: 5/4)) {
 		.grid {
 			grid-template-columns: repeat(2, minmax(0, 1fr));
+		}
+		.grid.home-page {
 			grid-template-areas:
 				'cam cam'
 				'cal cal'
-				'pkg pkg'
-				'wan wan'
-				'lab lab';
+				'pkg pkg';
 		}
-		.grid.with-workout {
+		.grid.home-page.with-workout {
 			grid-template-areas:
 				'cam cam'
 				'cal cal'
-				'pkg pkg'
-				'wan wan'
-				'wo lab';
+				'pkg wo';
 		}
-		.grid.network-page {
+		.grid.homelab-page {
 			grid-template-areas:
-				'net spd'
+				'wan wan'
+				'net net'
+				'spd lab'
 				'top top';
 		}
 		.cameras {
@@ -309,13 +307,15 @@
 		}
 		.grid {
 			grid-template-columns: minmax(0, 1fr);
-			grid-template-areas: 'cam' 'cal' 'pkg' 'wan' 'lab';
 		}
-		.grid.with-workout {
-			grid-template-areas: 'cam' 'cal' 'pkg' 'wan' 'wo' 'lab';
+		.grid.home-page {
+			grid-template-areas: 'cam' 'cal' 'pkg';
 		}
-		.grid.network-page {
-			grid-template-areas: 'net' 'spd' 'top';
+		.grid.home-page.with-workout {
+			grid-template-areas: 'cam' 'cal' 'pkg' 'wo';
+		}
+		.grid.homelab-page {
+			grid-template-areas: 'wan' 'net' 'spd' 'lab' 'top';
 		}
 		.cameras {
 			display: flex;

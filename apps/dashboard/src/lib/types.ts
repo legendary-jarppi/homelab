@@ -1,5 +1,5 @@
-/** Main dashboard (`home`) and the secondary network page. */
-export type DashboardTab = 'home' | 'network';
+/** Everyday page (`home`) and the technical page (network, server, backups). */
+export type DashboardTab = 'home' | 'homelab';
 
 /** [unix seconds, value] */
 export type Point = [number, number];

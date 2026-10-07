@@ -17,7 +17,7 @@
 
 	const TABS: { id: DashboardTab; label: string }[] = [
 		{ id: 'home', label: 'Home' },
-		{ id: 'network', label: 'Network' }
+		{ id: 'homelab', label: 'Homelab' }
 	];
 	const time = $derived(night.now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
 	const date = $derived(longDate(night.now));

@@ -1,6 +1,6 @@
 # dashboard
 
-Home dashboard at http://dashboard.lab.internal: cameras, family calendar (today, then this and next week), package tracking (Posti, DHL, UPS), live internet traffic, this week's workouts, homelab health and backup status, clock and weather (tap a location for its 10-day forecast), night mode. A second page (*Network* in the top bar) shows network status, speed tests and the top 10 devices; it returns to *Home* after 2 minutes untouched. Dates are Finnish, other text English. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
+Home dashboard at http://dashboard.lab.internal, two pages in the top bar. *Home*, for the whole family: cameras, family calendar (today, then this and next week), package tracking (Posti, DHL, UPS), this week's workouts. *Homelab*: live internet traffic, speed tests, homelab health and backup status, network status and the top 10 devices; it returns to *Home* after 2 minutes untouched. Both show the clock, weather (tap a location for its 10-day forecast), internet status and night mode. Dates are Finnish, other text English. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
 
 SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler and relays live camera WebSockets; `session.js` is shared by both.
 

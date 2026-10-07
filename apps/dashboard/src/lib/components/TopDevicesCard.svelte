@@ -44,12 +44,16 @@
 </Card>
 
 <style>
+	/* Rows tighten (down to the icon height) when the card's grid slot is shorter than the list. */
 	ul {
 		list-style: none;
 		margin: 0;
 		padding: 0;
 		display: grid;
-		gap: 9px;
+		grid-auto-rows: minmax(30px, 33px);
+		gap: 6px;
+		flex: 1 1 auto;
+		min-height: 0;
 	}
 	li {
 		display: flex;
