@@ -7,5 +7,6 @@ export const load: PageServerLoad = () => ({
 	workoutConfigured: config.workoutToken !== '',
 	workoutAppUrl: config.workoutAppUrl,
 	calendarConfigured: config.calendarIcsUrl !== '',
-	presenceConfigured: config.presenceUrl !== ''
+	presenceConfigured: config.presenceUrl !== '',
+	cabinConfigured: config.cabinCameraUrl !== ''
 });

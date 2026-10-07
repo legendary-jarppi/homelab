@@ -1,0 +1,46 @@
+# Cabin camera (Reolink Go Plus, 4G) snapshots: FTPS upload from the internet (SFTPGo), snapshot
+# service for the dashboard (cluster-internal at http://snapshots.cabin-camera.svc:8080).
+# Needs secret cabin-ftp (./apps/cabin-camera/setup.sh), not in git, and the UDM Pro port forward;
+# see apps/cabin-camera/README.md. Build + apply: apps/cabin-camera/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cabin-camera
+resources:
+  - namespace.yaml
+  - storage.yaml
+  - app.yaml
+  - networkpolicy.yaml
+images:
+  - name: localhost/cabin-camera
+    newTag: "20261007-172229"
+configMapGenerator:
+  # SFTPGo settings (https://docs.sftpgo.com/latest/config-file/). Hashed name: changes roll the pod.
+  - name: cabin-ftp-config
+    literals:
+      # FTPS only: no SFTP, web UI, REST API, WebDAV or telemetry listeners.
+      - SFTPGO_SFTPD__BINDINGS__0__PORT=0
+      - SFTPGO_HTTPD__BINDINGS__0__PORT=0
+      - SFTPGO_WEBDAVD__BINDINGS__0__PORT=0
+      - SFTPGO_TELEMETRY__BIND_PORT=0
+      - SFTPGO_FTPD__BINDINGS__0__PORT=2121
+      # TLS required on control and data connections (explicit FTPS, AUTH TLS), TLS 1.2+.
+      - SFTPGO_FTPD__BINDINGS__0__TLS_MODE=1
+      - SFTPGO_FTPD__CERTIFICATE_FILE=/etc/cabin/tls.crt
+      - SFTPGO_FTPD__CERTIFICATE_KEY_FILE=/etc/cabin/tls.key
+      # Passive transfers: the camera connects back to the home's public address (port-forwarded);
+      # clients on the LAN, and this node itself (seen as 10.42.0.1), get the node's address instead.
+      - SFTPGO_FTPD__BINDINGS__0__FORCE_PASSIVE_IP=88.112.205.238
+      - SFTPGO_FTPD__BINDINGS__0__PASSIVE_IP_OVERRIDES__0__IP=192.168.1.10
+      - SFTPGO_FTPD__BINDINGS__0__PASSIVE_IP_OVERRIDES__0__NETWORKS=192.168.0.0/16,10.42.0.0/16
+      # Data connections only on the forwarded range; no active mode (the camera is behind 4G NAT).
+      - SFTPGO_FTPD__PASSIVE_PORT_RANGE__START=50000
+      - SFTPGO_FTPD__PASSIVE_PORT_RANGE__END=50009
+      - SFTPGO_FTPD__DISABLE_ACTIVE_MODE=true
+      # The camera's account (setup.sh).
+      - SFTPGO_DATA_PROVIDER__DRIVER=memory
+      - SFTPGO_DATA_PROVIDER__NAME=/etc/cabin/users.json
+      # Ban addresses that keep failing logins (about 8 wrong passwords) for an hour, longer on repeat.
+      - SFTPGO_COMMON__DEFENDER__ENABLED=true
+      - SFTPGO_COMMON__DEFENDER__BAN_TIME=60
+      - SFTPGO_COMMON__MAX_TOTAL_CONNECTIONS=20
+      - SFTPGO_LOG_LEVEL=info

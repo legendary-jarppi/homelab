@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import CabinCard from '$lib/components/CabinCard.svelte';
 	import CalendarCard from '$lib/components/CalendarCard.svelte';
 	import CameraTile from '$lib/components/CameraTile.svelte';
 	import CameraViewer from '$lib/components/CameraViewer.svelte';
@@ -16,7 +17,7 @@
 	import WorkoutCard from '$lib/components/WorkoutCard.svelte';
 	import { backupProblem } from '$lib/backup';
 	import { night } from '$lib/night.svelte';
-	import type { CalendarData, DashboardTab, LiveData, PackagesData, PresenceData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
+	import type { CabinData, CalendarData, DashboardTab, LiveData, PackagesData, PresenceData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 
 	let { data } = $props();
 
@@ -28,6 +29,7 @@
 	let calendar = $state<CalendarData | null>(untrack(() => data.calendar));
 	let packages = $state<PackagesData | null>(untrack(() => data.packages));
 	let presence = $state<PresenceData | null>(untrack(() => data.presence));
+	let cabin = $state<CabinData | null>(untrack(() => data.cabin));
 	let viewer = $state<number | null>(null);
 	let tab = $state<DashboardTab>('home');
 
@@ -88,6 +90,9 @@
 		if (data.presenceConfigured) {
 			pollers.push({ url: '/api/presence', everyMs: 30_000, apply: (b) => (presence = b as PresenceData), due: presence ? start + 30_000 : 0 });
 		}
+		if (data.cabinConfigured) {
+			pollers.push({ url: '/api/cabin', everyMs: 60_000, apply: (b) => (cabin = b as CabinData), due: cabin ? start + 60_000 : 0 });
+		}
 
 		const tick = async (force = false) => {
 			if (document.visibilityState !== 'visible') return;
@@ -141,8 +146,16 @@
 			<div class="area presence">
 				<PresenceCard {presence} configured={data.presenceConfigured} />
 			</div>
-			<div class="area calendar">
-				<CalendarCard {calendar} configured={data.calendarConfigured} />
+			<!-- Calendar, with the cabin camera's latest motion picture below it when configured. -->
+			<div class="area middle">
+				<div class="calendar">
+					<CalendarCard {calendar} configured={data.calendarConfigured} />
+				</div>
+				{#if data.cabinConfigured}
+					<div class="cabin">
+						<CabinCard {cabin} />
+					</div>
+				{/if}
 			</div>
 			<div class="area packages">
 				<PackagesCard data={packages} onchange={refreshPackages} />
@@ -218,8 +231,11 @@
 	.workout {
 		grid-area: wo;
 	}
-	.calendar {
+	.middle {
 		grid-area: cal;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
 	}
 	.packages {
 		grid-area: pkg;
@@ -271,8 +287,15 @@
 		.workout {
 			container: workout / size;
 		}
-		.calendar {
+		/* The calendar keeps three fifths of the column when the cabin card is there. */
+		.middle .calendar {
+			flex: 3 1 0;
+			min-height: 0;
 			container: calendar / size;
+		}
+		.middle .cabin {
+			flex: 2 1 0;
+			min-height: 0;
 		}
 		.cameras {
 			grid-template-rows: repeat(auto-fit, minmax(0, 1fr));

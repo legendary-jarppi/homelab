@@ -1,0 +1,11 @@
+# Snapshots from the cabin camera; the snapshot service deletes them after RETENTION_DAYS.
+# Backed up nightly like every local-path volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: snapshots
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi

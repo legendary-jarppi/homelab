@@ -1,0 +1,14 @@
+{
+	"name": "cabin-camera",
+	"private": true,
+	"type": "module",
+	"description": "Lists and serves the cabin camera's FTPS-uploaded snapshots to the dashboard; Node 22 runs the TypeScript directly, no runtime dependencies",
+	"scripts": {
+		"start": "node src/main.ts",
+		"check": "tsc"
+	},
+	"devDependencies": {
+		"@types/node": "^22.18.0",
+		"typescript": "^5.9.0"
+	}
+}

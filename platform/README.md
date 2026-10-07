@@ -82,5 +82,6 @@ While on, anything running as the invoking user can reach root without a passwor
 | | |
 |---|---|
 | Pod / service CIDR | `10.42.0.0/16` / `10.43.0.0/16` (firewalld `trusted` zone) |
-| Open on LAN | 6443/tcp (API), 80/443 (Traefik via ServiceLB on the node IP), 1883/tcp (Mosquitto, ServiceLB) |
+| Open on LAN | 6443/tcp (API), 80/443 (Traefik via ServiceLB on the node IP), 1883/tcp (Mosquitto, ServiceLB), 2121 + 50000-50009/tcp (cabin camera FTPS, ServiceLB) |
+| From the internet | 2121 + 50000-50009/tcp, port-forwarded by the UDM Pro to `192.168.1.10`: the cabin camera's FTPS uploads ([apps/cabin-camera](../apps/cabin-camera/)). Nothing else |
 | Not open yet | 10250/tcp, 8472/udp: needed when a second node joins |

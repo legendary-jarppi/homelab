@@ -1,4 +1,4 @@
-import type { CalendarData, LiveData, PackagesData, PresenceData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
+import type { CabinData, CalendarData, LiveData, PackagesData, PresenceData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 import type { PageLoad } from './$types';
 
 /** First render with data already in place; the page polls afterwards. Failures render as empty cards. */
@@ -13,14 +13,15 @@ export const load: PageLoad = async ({ data, fetch }) => {
 		}
 		return null;
 	};
-	const [live, slow, weather, workout, calendar, packages, presence] = await Promise.all([
+	const [live, slow, weather, workout, calendar, packages, presence, cabin] = await Promise.all([
 		get<LiveData>('/api/live'),
 		get<SlowData>('/api/slow'),
 		data.weatherConfigured ? get<WeatherData[]>('/api/weather') : null,
 		data.workoutConfigured ? get<WorkoutSummary>('/api/workout') : null,
 		data.calendarConfigured ? get<CalendarData>('/api/calendar') : null,
 		get<PackagesData>('/api/packages'),
-		data.presenceConfigured ? get<PresenceData>('/api/presence') : null
+		data.presenceConfigured ? get<PresenceData>('/api/presence') : null,
+		data.cabinConfigured ? get<CabinData>('/api/cabin') : null
 	]);
-	return { ...data, live, slow, weather, workout, calendar, packages, presence };
+	return { ...data, live, slow, weather, workout, calendar, packages, presence, cabin };
 };

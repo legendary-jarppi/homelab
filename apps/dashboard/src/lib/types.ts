@@ -165,3 +165,11 @@ export interface PresenceData {
 	awayAfterS: number;
 	updatedAt: number;
 }
+
+/** GET /api/cabin: the cabin camera's latest motion snapshots, newest first (apps/cabin-camera). */
+export interface CabinData {
+	/** `path` is served at /cabin/<path>; `time` is the upload time, unix ms. */
+	snapshots: { path: string; time: number; size: number }[];
+	total: number;
+	retentionDays: number;
+}

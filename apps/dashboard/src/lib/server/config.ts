@@ -44,6 +44,8 @@ export const config = {
 	workoutAppUrl: env.WORKOUT_APP_URL ?? 'http://workout.lab.internal',
 	/** apps/presence, cluster-internal (who is home); the card says "not set up" without it. */
 	presenceUrl: env.PRESENCE_URL ?? '',
+	/** apps/cabin-camera's snapshot service, cluster-internal; the cabin card is shown only when set. */
+	cabinCameraUrl: env.CABIN_CAMERA_URL ?? '',
 	/** Google Calendar "secret address in iCal format" (secret dashboard-calendar); never sent to the browser or logged. */
 	calendarIcsUrl: env.CALENDAR_ICS_URL ?? '',
 	/** Colour of the calendar's events on the card. */

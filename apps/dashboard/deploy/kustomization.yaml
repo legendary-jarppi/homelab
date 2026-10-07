@@ -13,7 +13,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261007-141124"
+    newTag: "20261007-172802"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -39,3 +39,5 @@ configMapGenerator:
       - WORKOUT_APP_URL=http://workout.lab.internal
       # Who is home (apps/presence, cluster-internal).
       - PRESENCE_URL=http://presence.presence.svc:8080
+      # Cabin camera snapshots (apps/cabin-camera, cluster-internal).
+      - CABIN_CAMERA_URL=http://snapshots.cabin-camera.svc:8080
