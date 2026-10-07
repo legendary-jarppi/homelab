@@ -24,6 +24,8 @@ Records live on the UDM Pro (*Settings > Policy Table > DNS*). UniFi rejects wil
 
 Existing: `dashboard` ([apps/dashboard](dashboard/)), `news` ([apps/news](news/)), `workout` ([apps/workout](workout/)), `grafana`, `prometheus`, `kube` (Headlamp). `cameras` is no longer used (go2rtc is cluster-internal); delete its record.
 
+Cluster-internal apps (no hostname, no record): `presence` ([apps/presence](presence/)), who is home, read by the dashboard.
+
 For other sites over site-to-site VPN: a *Forward Domain* record for `lab.internal` → `192.168.1.1`.
 
 No TLS for `lab.internal`: serve plain HTTP until the domain exists (then a Let's Encrypt `*.lab.<domain>` certificate via DNS-01).

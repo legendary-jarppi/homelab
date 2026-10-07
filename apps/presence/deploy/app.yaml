@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: presence
+  labels:
+    app.kubernetes.io/name: presence
+spec:
+  # State lives in memory (rebuilt from Prometheus history at start): one replica.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: presence
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: presence
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: presence
+          # Built locally and imported into k3s (deploy.sh); never pulled.
+          image: localhost/presence
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: presence-config
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 48Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: people
+              mountPath: /etc/presence
+              readOnly: true
+      volumes:
+        # people.json: names and Wi-Fi MAC addresses, not in git; see README.md.
+        - name: people
+          secret:
+            secretName: presence-people
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: presence
+  labels:
+    app.kubernetes.io/name: presence
+spec:
+  selector:
+    app.kubernetes.io/name: presence
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: presence
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: presence
+  endpoints:
+    - port: http
+      interval: 30s

@@ -42,6 +42,8 @@ export const config = {
 	workoutToken: env.WORKOUT_TOKEN ?? '',
 	/** Where tapping the workout card goes (the app's address in the browser). */
 	workoutAppUrl: env.WORKOUT_APP_URL ?? 'http://workout.lab.internal',
+	/** apps/presence, cluster-internal (who is home); the card says "not set up" without it. */
+	presenceUrl: env.PRESENCE_URL ?? '',
 	/** Google Calendar "secret address in iCal format" (secret dashboard-calendar); never sent to the browser or logged. */
 	calendarIcsUrl: env.CALENDAR_ICS_URL ?? '',
 	/** Colour of the calendar's events on the card. */

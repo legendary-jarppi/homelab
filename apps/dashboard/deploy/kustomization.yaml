@@ -13,7 +13,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261007-113107"
+    newTag: "20261007-141124"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -37,3 +37,5 @@ configMapGenerator:
       - WORKOUT_URL=http://web.workout.svc:3000
       # Opened when the workout card is tapped.
       - WORKOUT_APP_URL=http://workout.lab.internal
+      # Who is home (apps/presence, cluster-internal).
+      - PRESENCE_URL=http://presence.presence.svc:8080

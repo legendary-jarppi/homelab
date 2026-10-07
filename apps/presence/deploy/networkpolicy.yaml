@@ -1,0 +1,51 @@
+# Enforced by k3s's embedded network policy controller. Who is home is sensitive: nothing outside
+# the cluster reaches it (no Ingress), and inside only the dashboard and Prometheus.
+#   presence <- dashboard (API), Prometheus (scrape)
+#   presence -> Prometheus (UniFi client metrics), DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: presence
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: presence
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dashboard
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dashboard
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: http
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: 9090
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

@@ -148,3 +148,20 @@ export interface PackagesData {
 	/** Carriers a package can be added for: Posti and DHL (link-only) always, UPS with credentials. */
 	carriers: Record<Carrier, boolean>;
 }
+
+/** GET /api/presence, as apps/presence serves it (times in unix seconds). */
+export interface PresenceData {
+	people: {
+		id: string;
+		name: string;
+		/** null until the presence service has heard from a source. */
+		home: boolean | null;
+		/** Home since (arrival) or away since (last seen); null when unknown. */
+		since: number | null;
+		lastSeen: number | null;
+		via: string | null;
+	}[];
+	sources: Record<string, { ok: boolean; lastOk: number | null; error: string | null }>;
+	awayAfterS: number;
+	updatedAt: number;
+}

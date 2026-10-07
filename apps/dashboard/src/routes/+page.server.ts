@@ -6,5 +6,6 @@ export const load: PageServerLoad = () => ({
 	weatherConfigured: config.weatherLocations.length > 0,
 	workoutConfigured: config.workoutToken !== '',
 	workoutAppUrl: config.workoutAppUrl,
-	calendarConfigured: config.calendarIcsUrl !== ''
+	calendarConfigured: config.calendarIcsUrl !== '',
+	presenceConfigured: config.presenceUrl !== ''
 });

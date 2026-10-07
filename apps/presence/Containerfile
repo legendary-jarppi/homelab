@@ -1,0 +1,10 @@
+# Build: apps/presence/deploy.sh. Node 22 runs the TypeScript sources directly (type stripping);
+# there are no runtime dependencies, so no install step.
+FROM docker.io/library/node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=8080 NODE_NO_WARNINGS=1
+COPY package.json ./
+COPY src ./src
+USER node
+EXPOSE 8080
+CMD ["node", "src/main.ts"]

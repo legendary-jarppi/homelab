@@ -8,6 +8,7 @@
 	import NetworkCard from '$lib/components/NetworkCard.svelte';
 	import NightScreen from '$lib/components/NightScreen.svelte';
 	import PackagesCard from '$lib/components/PackagesCard.svelte';
+	import PresenceCard from '$lib/components/PresenceCard.svelte';
 	import SpeedtestCard from '$lib/components/SpeedtestCard.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import TopDevicesCard from '$lib/components/TopDevicesCard.svelte';
@@ -15,7 +16,7 @@
 	import WorkoutCard from '$lib/components/WorkoutCard.svelte';
 	import { backupProblem } from '$lib/backup';
 	import { night } from '$lib/night.svelte';
-	import type { CalendarData, DashboardTab, LiveData, PackagesData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
+	import type { CalendarData, DashboardTab, LiveData, PackagesData, PresenceData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 
 	let { data } = $props();
 
@@ -26,6 +27,7 @@
 	let workout = $state<WorkoutSummary | null>(untrack(() => data.workout));
 	let calendar = $state<CalendarData | null>(untrack(() => data.calendar));
 	let packages = $state<PackagesData | null>(untrack(() => data.packages));
+	let presence = $state<PresenceData | null>(untrack(() => data.presence));
 	let viewer = $state<number | null>(null);
 	let tab = $state<DashboardTab>('home');
 
@@ -83,6 +85,9 @@
 		if (data.calendarConfigured) {
 			pollers.push({ url: '/api/calendar', everyMs: 5 * 60_000, apply: (b) => (calendar = b as CalendarData), due: calendar ? start + 5 * 60_000 : 0 });
 		}
+		if (data.presenceConfigured) {
+			pollers.push({ url: '/api/presence', everyMs: 30_000, apply: (b) => (presence = b as PresenceData), due: presence ? start + 30_000 : 0 });
+		}
 
 		const tick = async (force = false) => {
 			if (document.visibilityState !== 'visible') return;
@@ -133,6 +138,9 @@
 					{/each}
 				</div>
 			{/if}
+			<div class="area presence">
+				<PresenceCard {presence} configured={data.presenceConfigured} />
+			</div>
 			<div class="area calendar">
 				<CalendarCard {calendar} configured={data.calendarConfigured} />
 			</div>
@@ -216,6 +224,9 @@
 	.packages {
 		grid-area: pkg;
 	}
+	.presence {
+		grid-area: who;
+	}
 	.area {
 		min-width: 0;
 		min-height: 0;
@@ -224,9 +235,9 @@
 		margin: 0;
 	}
 
-	/* iPad landscape and laptops: exactly one screen. Home: packages and workouts on the left, the
-	   calendar full height in the middle, cameras stacked on the right. Homelab: internet, speed test
-	   and server on the left, the local network and its busiest devices on the right. */
+	/* iPad landscape and laptops: exactly one screen. Home: who's home, packages and workouts on the
+	   left, the calendar full height in the middle, cameras stacked on the right. Homelab: internet,
+	   speed test and server on the left, the local network and its busiest devices on the right. */
 	@media (min-width: 1000px) and (min-aspect-ratio: 5/4) {
 		.page {
 			height: 100dvh;
@@ -237,12 +248,15 @@
 			grid-template-columns: repeat(12, minmax(0, 1fr));
 		}
 		.grid.home-page {
-			grid-template-rows: minmax(0, 1fr);
-			grid-template-areas: 'pkg pkg pkg pkg cal cal cal cal cam cam cam cam';
+			grid-template-rows: auto minmax(0, 1fr);
+			grid-template-areas:
+				'who who who who cal cal cal cal cam cam cam cam'
+				'pkg pkg pkg pkg cal cal cal cal cam cam cam cam';
 		}
 		.grid.home-page.with-workout {
-			grid-template-rows: minmax(0, 3fr) minmax(0, 2fr);
+			grid-template-rows: auto minmax(0, 3fr) minmax(0, 2fr);
 			grid-template-areas:
+				'who who who who cal cal cal cal cam cam cam cam'
 				'pkg pkg pkg pkg cal cal cal cal cam cam cam cam'
 				'wo wo wo wo cal cal cal cal cam cam cam cam';
 		}
@@ -277,12 +291,14 @@
 		.grid.home-page {
 			grid-template-areas:
 				'cam cam'
+				'who who'
 				'cal cal'
 				'pkg pkg';
 		}
 		.grid.home-page.with-workout {
 			grid-template-areas:
 				'cam cam'
+				'who who'
 				'cal cal'
 				'pkg wo';
 		}
@@ -311,10 +327,10 @@
 			grid-template-columns: minmax(0, 1fr);
 		}
 		.grid.home-page {
-			grid-template-areas: 'cam' 'cal' 'pkg';
+			grid-template-areas: 'cam' 'who' 'cal' 'pkg';
 		}
 		.grid.home-page.with-workout {
-			grid-template-areas: 'cam' 'cal' 'pkg' 'wo';
+			grid-template-areas: 'cam' 'who' 'cal' 'pkg' 'wo';
 		}
 		.grid.homelab-page {
 			grid-template-areas: 'wan' 'net' 'spd' 'lab' 'top';
