@@ -15,7 +15,7 @@
    ```
    Grafana reads the password only when it first initializes its database; later changes to the secret need `grafana cli admin reset-admin-password`.
 6. `kubectl apply -k platform/components/headlamp`.
-7. UniFi read-only login (a local *View Only* Network admin on the UDM Pro, kept out of git), then UnPoller:
+7. UniFi read-only login (a local *View Only* admin on the UDM Pro for Network and Protect, kept out of git), then UnPoller. The dashboard's Cameras tab uses the same login for Protect's motion events (secret `dashboard-protect`, see [apps/dashboard/README.md](../apps/dashboard/README.md)):
    ```sh
    kubectl apply -f platform/components/unpoller/namespace.yaml
    read -rp 'UniFi user: ' U && read -rsp 'UniFi password: ' P && echo

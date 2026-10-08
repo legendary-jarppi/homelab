@@ -1,5 +1,5 @@
-/** Everyday page (`home`) and the technical page (network, server, backups). */
-export type DashboardTab = 'home' | 'homelab';
+/** Everyday page (`home`), motion events from all cameras (`cameras`) and the technical page (network, server, backups). */
+export type DashboardTab = 'home' | 'cameras' | 'homelab';
 
 /** [unix seconds, value] */
 export type Point = [number, number];
@@ -172,4 +172,14 @@ export interface CabinData {
 	snapshots: { path: string; kind: 'image' | 'video'; time: number; size: number }[];
 	total: number;
 	retentionDays: number;
+}
+
+/** GET /api/protect: UniFi Protect's ended motion events of the last `windowHours`, newest first. */
+export interface ProtectData {
+	/** Display order and labels (PROTECT_CAMERAS). */
+	cameras: { id: string; label: string }[];
+	/** `start`/`end` unix ms; `types`: smart detections (person, vehicle, animal, …), empty for plain motion.
+	 *  Thumbnail at /cameras/events/<id>/thumbnail, clip at /cameras/events/<id>/clip. */
+	events: { id: string; camera: string; start: number; end: number; types: string[] }[];
+	windowHours: number;
 }

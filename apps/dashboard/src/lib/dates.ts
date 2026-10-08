@@ -45,3 +45,8 @@ export function dayOf(value: string): string {
 	const key = /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : new Intl.DateTimeFormat('en-CA', { timeZone: ZONE }).format(new Date(value));
 	return shortDay(key);
 }
+
+/** "14:32" in Finnish time for a unix ms instant. */
+export function clock(ms: number): string {
+	return new Intl.DateTimeFormat('en-GB', { timeZone: ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms);
+}

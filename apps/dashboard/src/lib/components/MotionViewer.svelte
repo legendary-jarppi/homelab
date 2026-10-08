@@ -1,23 +1,24 @@
 <script lang="ts">
 	import { fade, scale } from 'svelte/transition';
-	import { snapshotUrl, type CabinEvent } from '$lib/cabin';
 	import { eventTime } from '$lib/dates';
+	import { clipLength, tagLabel, type MotionItem } from '$lib/motion';
 	import { night } from '$lib/night.svelte';
 
 	/** Motion events newest first, as the strip below; `index` 0 is the latest. */
 	let {
-		events,
+		items,
 		index = $bindable(),
+		label,
 		onclose
-	}: { events: CabinEvent[]; index: number; onclose: () => void } = $props();
+	}: { items: MotionItem[]; index: number; label: string; onclose: () => void } = $props();
 
-	const current = $derived(events[Math.min(index, events.length - 1)]);
+	const current = $derived(items[Math.min(index, items.length - 1)]);
 	/** Playing the current event's clip instead of showing its picture; reset when moving on. */
 	let playing = $state(false);
 	let strip: HTMLDivElement;
 
 	const go = (i: number) => {
-		index = Math.min(Math.max(i, 0), events.length - 1);
+		index = Math.min(Math.max(i, 0), items.length - 1);
 		playing = false;
 	};
 
@@ -35,13 +36,13 @@
 <svelte:window {onkeydown} />
 
 <div class="backdrop" transition:fade={{ duration: 180 }} onclick={(e) => e.target === e.currentTarget && onclose()} role="presentation">
-	<div class="viewer" transition:scale={{ start: 0.96, duration: 220 }} role="dialog" aria-modal="true" aria-label="Cabin camera pictures and clips" tabindex="-1">
+	<div class="viewer" transition:scale={{ start: 0.96, duration: 220 }} role="dialog" aria-modal="true" aria-label={label} tabindex="-1">
 		<div class="picture">
 			{#if current.video && (playing || !current.image)}
 				<!-- svelte-ignore a11y_media_has_caption -->
-				<video src={snapshotUrl(current.video.path)} controls autoplay={playing} playsinline preload="metadata"></video>
+				<video src={current.video} poster={current.image ?? undefined} controls autoplay={playing} playsinline preload="metadata"></video>
 			{:else if current.image}
-				<img src={snapshotUrl(current.image.path)} alt="Motion at the cabin" />
+				<img src={current.image} alt="Motion: {current.place}" />
 				{#if current.video}
 					<button class="play" onclick={() => (playing = true)} aria-label="Play the clip">
 						<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
@@ -50,14 +51,16 @@
 			{/if}
 		</div>
 		<div class="bar">
-			<span class="badge">Motion</span>
-			<span class="title">Cabin · {eventTime(new Date(current.time).toISOString(), night.now)}</span>
-			<span class="count muted num">{index + 1} / {events.length}</span>
+			<span class="badge">{current.tags.length > 0 ? current.tags.map(tagLabel).join(' · ') : 'Motion'}</span>
+			<span class="title">
+				{current.place} · {eventTime(new Date(current.time).toISOString(), night.now)}{#if current.seconds !== null}<span class="muted num">{` · ${clipLength(current.seconds)}`}</span>{/if}
+			</span>
+			<span class="count muted num">{index + 1} / {items.length}</span>
 			<div class="actions">
 				<button onclick={() => go(index - 1)} disabled={index === 0} aria-label="Newer">
 					<svg viewBox="0 0 24 24"><path d="m15 5-7 7 7 7" /></svg>
 				</button>
-				<button onclick={() => go(index + 1)} disabled={index === events.length - 1} aria-label="Older">
+				<button onclick={() => go(index + 1)} disabled={index === items.length - 1} aria-label="Older">
 					<svg viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></svg>
 				</button>
 				<button onclick={onclose} aria-label="Close">
@@ -66,12 +69,12 @@
 			</div>
 		</div>
 		<div class="strip" bind:this={strip}>
-			{#each events as e, i (e.image?.path ?? e.video?.path)}
+			{#each items as e, i (e.key)}
 				<button class:active={i === index} onclick={() => go(i)} aria-label="Event {i + 1}">
 					{#if e.image}
-						<img src={snapshotUrl(e.image.path)} alt="" loading="lazy" />
+						<img src={e.image} alt="" loading="lazy" />
 					{:else if e.video}
-						<video src="{snapshotUrl(e.video.path)}#t=0.1" muted playsinline preload="metadata"></video>
+						<video src="{e.video}#t=0.1" muted playsinline preload="metadata"></video>
 					{/if}
 					{#if e.video}<span class="mark"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg></span>{/if}
 				</button>
@@ -142,13 +145,21 @@
 	}
 	.title {
 		flex: 1;
+		min-width: 0;
 		font-size: 20px;
 		font-weight: 600;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.title .muted {
+		font-weight: 500;
 	}
 	.count {
 		font-size: 14px;
 	}
 	.badge {
+		flex: none;
 		padding: 4px 10px;
 		font-size: 12px;
 		font-weight: 700;

@@ -44,6 +44,10 @@ spec:
             - secretRef:
                 name: dashboard-packages
                 optional: true
+            # PROTECT_USER, PROTECT_PASS: local UniFi account for Protect's motion events (Cameras tab).
+            - secretRef:
+                name: dashboard-protect
+                optional: true
           env:
             - name: PACKAGES_FILE
               value: /data/packages.json
@@ -76,8 +80,10 @@ spec:
             - name: data
               mountPath: /data
       volumes:
+        # Protect clips exported for playback (src/lib/server/protect.ts keeps them under 800 MB).
         - name: tmp
-          emptyDir: {}
+          emptyDir:
+            sizeLimit: 1Gi
         # Tracked packages (packages.json).
         - name: data
           persistentVolumeClaim:

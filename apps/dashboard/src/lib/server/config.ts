@@ -46,6 +46,16 @@ export const config = {
 	presenceUrl: env.PRESENCE_URL ?? '',
 	/** apps/cabin-camera's snapshot service, cluster-internal; the cabin card is shown only when set. */
 	cabinCameraUrl: env.CABIN_CAMERA_URL ?? '',
+	/** UniFi Protect (the UDM Pro) for the Cameras tab's motion events; shown only with PROTECT_USER and PROTECT_PASS (secret dashboard-protect). */
+	protectUrl: env.PROTECT_URL ?? 'https://192.168.1.1',
+	protectUser: env.PROTECT_USER ?? '',
+	protectPass: env.PROTECT_PASS ?? '',
+	/** PROTECT_CAMERAS="Ulko-ovi:Front door,…": Protect camera name -> label, in display order. */
+	protectCameras: (env.PROTECT_CAMERAS ?? '')
+		.split(',')
+		.map((entry) => entry.split(':').map((part) => part.trim()))
+		.filter(([name]) => name)
+		.map(([name, label]) => ({ name, label: label || name })),
 	/** Google Calendar "secret address in iCal format" (secret dashboard-calendar); never sent to the browser or logged. */
 	calendarIcsUrl: env.CALENDAR_ICS_URL ?? '',
 	/** Colour of the calendar's events on the card. */

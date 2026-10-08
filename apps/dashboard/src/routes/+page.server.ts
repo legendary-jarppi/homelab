@@ -8,5 +8,6 @@ export const load: PageServerLoad = () => ({
 	workoutAppUrl: config.workoutAppUrl,
 	calendarConfigured: config.calendarIcsUrl !== '',
 	presenceConfigured: config.presenceUrl !== '',
-	cabinConfigured: config.cabinCameraUrl !== ''
+	cabinConfigured: config.cabinCameraUrl !== '',
+	protectConfigured: config.protectUser !== '' && config.protectPass !== ''
 });

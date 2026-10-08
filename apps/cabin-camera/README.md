@@ -1,6 +1,6 @@
 # cabin-camera
 
-Motion pictures and video clips from the camera at the cabin (Reolink Go Plus, 4G, battery) on the dashboard's *Cabin* card. The camera has no RTSP/ONVIF (Reolink: not supported on 4G models) and is not on any of our networks, so on each motion event it uploads a picture and then the clip over **FTPS**, through the internet to the home's public address.
+Motion pictures and video clips from the camera at the cabin (Reolink Go Plus, 4G, battery) on the dashboard's *Cabin* card (*Cameras* tab). The camera has no RTSP/ONVIF (Reolink: not supported on 4G models) and is not on any of our networks, so on each motion event it uploads a picture and then the clip over **FTPS**, through the internet to the home's public address.
 
 ```
 camera (4G) ──FTPS──▶ UDM Pro port forward ──▶ 192.168.1.10 (ServiceLB) ──▶ SFTPGo ──▶ volume ──▶ snapshot service ──▶ dashboard

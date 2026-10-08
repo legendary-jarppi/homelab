@@ -10,6 +10,7 @@
 	import NightScreen from '$lib/components/NightScreen.svelte';
 	import PackagesCard from '$lib/components/PackagesCard.svelte';
 	import PresenceCard from '$lib/components/PresenceCard.svelte';
+	import ProtectCard from '$lib/components/ProtectCard.svelte';
 	import SpeedtestCard from '$lib/components/SpeedtestCard.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import TopDevicesCard from '$lib/components/TopDevicesCard.svelte';
@@ -17,7 +18,7 @@
 	import WorkoutCard from '$lib/components/WorkoutCard.svelte';
 	import { backupProblem } from '$lib/backup';
 	import { night } from '$lib/night.svelte';
-	import type { CabinData, CalendarData, DashboardTab, LiveData, PackagesData, PresenceData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
+	import type { CabinData, CalendarData, DashboardTab, LiveData, PackagesData, PresenceData, ProtectData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 
 	let { data } = $props();
 
@@ -30,6 +31,7 @@
 	let packages = $state<PackagesData | null>(untrack(() => data.packages));
 	let presence = $state<PresenceData | null>(untrack(() => data.presence));
 	let cabin = $state<CabinData | null>(untrack(() => data.cabin));
+	let protect = $state<ProtectData | null>(untrack(() => data.protect));
 	let viewer = $state<number | null>(null);
 	let tab = $state<DashboardTab>('home');
 
@@ -93,6 +95,9 @@
 		if (data.cabinConfigured) {
 			pollers.push({ url: '/api/cabin', everyMs: 60_000, apply: (b) => (cabin = b as CabinData), due: cabin ? start + 60_000 : 0 });
 		}
+		if (data.protectConfigured) {
+			pollers.push({ url: '/api/protect', everyMs: 30_000, apply: (b) => (protect = b as ProtectData), due: protect ? start + 30_000 : 0 });
+		}
 
 		const tick = async (force = false) => {
 			if (document.visibilityState !== 'visible') return;
@@ -146,16 +151,8 @@
 			<div class="area presence">
 				<PresenceCard {presence} configured={data.presenceConfigured} />
 			</div>
-			<!-- Calendar, with the cabin camera's latest motion picture below it when configured. -->
-			<div class="area middle">
-				<div class="calendar">
-					<CalendarCard {calendar} configured={data.calendarConfigured} />
-				</div>
-				{#if data.cabinConfigured}
-					<div class="cabin">
-						<CabinCard {cabin} />
-					</div>
-				{/if}
+			<div class="area calendar">
+				<CalendarCard {calendar} configured={data.calendarConfigured} />
 			</div>
 			<div class="area packages">
 				<PackagesCard data={packages} onchange={refreshPackages} />
@@ -164,6 +161,21 @@
 				<div class="area workout">
 					<WorkoutCard {workout} href={data.workoutAppUrl} />
 				</div>
+			{/if}
+		</main>
+	{:else if tab === 'cameras'}
+		<main class="grid cameras-page" class:single={!data.cabinConfigured || !data.protectConfigured}>
+			{#if data.cabinConfigured}
+				<div class="area cabin">
+					<CabinCard {cabin} />
+				</div>
+			{/if}
+			{#if data.protectConfigured}
+				<div class="area protect">
+					<ProtectCard {protect} />
+				</div>
+			{:else if !data.cabinConfigured}
+				<Card title="Cameras"><p class="muted">No camera events set up.</p></Card>
 			{/if}
 		</main>
 	{:else}
@@ -231,11 +243,22 @@
 	.workout {
 		grid-area: wo;
 	}
-	.middle {
+	.calendar {
 		grid-area: cal;
-		display: flex;
-		flex-direction: column;
-		gap: 12px;
+	}
+	.cabin {
+		grid-area: cab;
+	}
+	.protect {
+		grid-area: evt;
+	}
+	/* Only one of the two camera cards configured: it takes the whole width. */
+	.grid.cameras-page.single {
+		grid-template-areas: none;
+	}
+	.cameras-page.single > :global(*) {
+		grid-area: auto;
+		grid-column: 1 / -1;
 	}
 	.packages {
 		grid-area: pkg;
@@ -283,19 +306,17 @@
 				'spd spd spd spd top top top top top top top top'
 				'lab lab lab lab top top top top top top top top';
 		}
+		/* Cameras: the cabin on the left, the home cameras' events on the right; both scroll inside. */
+		.grid.cameras-page {
+			grid-template-rows: minmax(0, 1fr);
+			grid-template-areas: 'cab cab cab cab evt evt evt evt evt evt evt evt';
+		}
 		/* Size containers: the cards drop details that do not fit their grid slot. */
 		.workout {
 			container: workout / size;
 		}
-		/* The calendar keeps three fifths of the column when the cabin card is there. */
-		.middle .calendar {
-			flex: 3 1 0;
-			min-height: 0;
+		.calendar {
 			container: calendar / size;
-		}
-		.middle .cabin {
-			flex: 2 1 0;
-			min-height: 0;
 		}
 		.cameras {
 			grid-template-rows: repeat(auto-fit, minmax(0, 1fr));
@@ -332,6 +353,11 @@
 				'spd lab'
 				'top top';
 		}
+		.grid.cameras-page {
+			grid-template-areas:
+				'cab cab'
+				'evt evt';
+		}
 		.cameras {
 			grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 		}
@@ -357,6 +383,9 @@
 		}
 		.grid.homelab-page {
 			grid-template-areas: 'wan' 'net' 'spd' 'lab' 'top';
+		}
+		.grid.cameras-page {
+			grid-template-areas: 'cab' 'evt';
 		}
 		.cameras {
 			display: flex;

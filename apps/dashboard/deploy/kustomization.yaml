@@ -1,7 +1,7 @@
 # Home dashboard at http://dashboard.lab.internal
 # Needs secret dashboard-auth (PASSCODE, SESSION_SECRET), not in git; optional dashboard-workout
-# (WORKOUT_TOKEN), dashboard-calendar (CALENDAR_ICS_URL) and dashboard-packages (UPS_CLIENT_ID,
-# UPS_CLIENT_SECRET); see apps/dashboard/README.md.
+# (WORKOUT_TOKEN), dashboard-calendar (CALENDAR_ICS_URL), dashboard-packages (UPS_CLIENT_ID,
+# UPS_CLIENT_SECRET) and dashboard-protect (PROTECT_USER, PROTECT_PASS); see apps/dashboard/README.md.
 # Build + apply: apps/dashboard/deploy.sh (sets newTag below).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -13,7 +13,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261007-180608"
+    newTag: "20261008-204255"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -41,3 +41,7 @@ configMapGenerator:
       - PRESENCE_URL=http://presence.presence.svc:8080
       # Cabin camera snapshots (apps/cabin-camera, cluster-internal).
       - CABIN_CAMERA_URL=http://snapshots.cabin-camera.svc:8080
+      # UniFi Protect motion events for the Cameras tab (login in secret dashboard-protect).
+      - PROTECT_URL=https://192.168.1.1
+      # Protect camera name:label, in display order.
+      - PROTECT_CAMERAS=Ulko-ovi:Front door,Takapiha:Backyard,Autokatos:Carport

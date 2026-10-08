@@ -1,6 +1,6 @@
 # dashboard
 
-Home dashboard at http://dashboard.lab.internal, two pages in the top bar. *Home*, for the whole family: cameras, who's home, family calendar (today, then this and next week), the cabin camera's latest motion picture, package tracking (Posti, DHL, UPS), this week's workouts. *Homelab*: live internet traffic, speed tests, homelab health and backup status, network status and the top 10 devices; it returns to *Home* after 2 minutes untouched. Both show the clock, weather (tap a location for its 10-day forecast), internet and backup status pills (tap the backup pill for *Homelab*) and night mode. Dates are Finnish, other text English. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
+Home dashboard at http://dashboard.lab.internal, three pages in the top bar. *Home*, for the whole family: live camera pictures, who's home, family calendar (today, then this and next week), package tracking (Posti, DHL, UPS), this week's workouts. *Cameras*: motion events with their clips, from the cabin camera and the home cameras (UniFi Protect). *Homelab*: live internet traffic, speed tests, homelab health and backup status, network status and the top 10 devices. *Cameras* and *Homelab* return to *Home* after 2 minutes untouched. All show the clock, weather (tap a location for its 10-day forecast), internet and backup status pills (tap the backup pill for *Homelab*) and night mode. Dates are Finnish, other text English. Built for an iPad (landscape fits one screen; portrait and phones scroll); add it to the Home Screen for full-screen use.
 
 SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler and relays live camera WebSockets; `session.js` is shared by both.
 
@@ -13,11 +13,12 @@ SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler an
 | Open-Meteo | Weather for `WEATHER_LOCATIONS` (`name:lat:lon,…`; currently Espoo and Ristiina), one request for all, cached 10 min server-side |
 | apps/workout (`WORKOUT_URL`, cluster-internal; bearer token `WORKOUT_TOKEN` from secret `dashboard-workout`) | Workouts card: this week per person (total, workout count, km per machine); tapping it opens the app (`WORKOUT_APP_URL`) in a new tab. Card hidden when the token is not set; rotation in [apps/workout/README.md](../workout/README.md#dashboard-card) |
 | apps/presence (`PRESENCE_URL`, cluster-internal) | Who's home card: each person home/away with since (today's time or the day); "No fresh data" in amber when the presence service or its Wi-Fi source is not answering (state frozen). "Presence not set up" without the URL |
-| apps/cabin-camera (`CABIN_CAMERA_URL`, cluster-internal) | Cabin card under the calendar: the latest motion event from the cabin's Reolink camera (picture, or the clip's first frame; a play mark when there is a clip), with its time and today's count; tap for a viewer of the last events with clip playback (arrow keys step). A clip joins the picture uploaded up to 10 min before it (`src/lib/cabin.ts`). Files stream through `/cabin/<path>` (behind the login, Range requests passed through for video). Card hidden without the URL |
+| apps/cabin-camera (`CABIN_CAMERA_URL`, cluster-internal) | *Cameras* tab, Cabin card: the latest motion event from the cabin's Reolink camera (picture, or the clip's first frame; a play mark when there is a clip) above the earlier ones, with today's count; tap one for the viewer with clip playback (arrow keys step). A clip joins the picture uploaded up to 10 min before it (`src/lib/cabin.ts`). Files stream through `/cabin/<path>` (behind the login, Range requests passed through for video). Card hidden without the URL |
+| UniFi Protect on the UDM Pro (`PROTECT_URL`; login `PROTECT_USER`/`PROTECT_PASS` from secret `dashboard-protect`) | *Cameras* tab, Home cameras card: Protect's motion and smart-detection events of the last 48 h, by day, with thumbnail, camera, time, length and detections (person, vehicle, animal); filter by camera and detection; tap one for the viewer, which plays the recording. Labels and order from `PROTECT_CAMERAS` (Protect name:label). Uses Protect's **private** API (`/proxy/protect/api`, as its web app and Home Assistant do; the official integration API has no event history or recordings), so a Protect update may break it; certificate not verified (self-signed UDM). Clips are exported from the UDM at full resolution (about 0.7 MB per second of video; events over 3 min are cut) into the pod's `/tmp` (kept under 800 MB) and served from there, because Protect's export ignores the Range requests Safari needs. Card hidden without the login (`src/lib/server/protect.ts`) |
 | Google Calendar (`CALENDAR_ICS_URL` from secret `dashboard-calendar`) | Calendar card: the shared *Family* calendar's secret iCal address, fetched server-side at most every 5 min (last good copy served for up to an hour if Google fails). Recurring events are expanded with their exceptions and cancellations; day boundaries are Europe/Helsinki. The address is never sent to the browser or logged. Card colour: `CALENDAR_COLOR` (default `#38bdf8`) |
 | Posti (public tracking used by posti.fi: anonymous token from `auth-service.posti.fi`, GraphQL at `graphql.posti.fi`; no account), UPS Tracking API (`UPS_CLIENT_ID`/`UPS_CLIENT_SECRET` from secret `dashboard-packages`) | Packages card: add a tracking code (carrier detected from its format), see status, pickup point and deadline, ETA and the event history; delivered packages leave after 2 days. Each package is re-checked while the dashboard is open, at most every 20 min. List stored in `/data/packages.json` (PVC `dashboard-data`). UPS without credentials is shown as "not set up". **DHL is link-only**: its tracking API is for business customers only and dhl.com blocks automated lookups, so DHL packages show "Check at DHL" with a link to DHL's tracking page and leave the card 14 days after being added (nothing reports them delivered). Aggregators with DHL data (17TRACK, Ship24, Parcel app) were considered: no free plan with lasting API access |
 
-Browser refresh: live data 10 s, presence 30 s, homelab/speed test/workouts/cabin pictures 60 s, calendar 5 min, weather 10 min, camera snapshots 5 s (paused at night and while live video is open).
+Browser refresh: live data 10 s, presence 30 s, Protect events 30 s, homelab/speed test/workouts/cabin pictures 60 s, calendar 5 min, weather 10 min, camera snapshots 5 s (paused at night and while live video is open).
 
 Calendar address (Google Calendar → the calendar's *Settings and sharing* → *Secret address in iCal format*). Resetting it there invalidates the old one; then store the new one:
 
@@ -37,6 +38,16 @@ kubectl -n dashboard create secret generic dashboard-packages \
 unset I S
 kubectl -n dashboard rollout restart deploy/dashboard
 ```
+
+UniFi Protect login (optional; any local UniFi account that can view Protect, here the read-only account UnPoller uses, see [platform/README.md](../../platform/README.md)):
+
+```sh
+kubectl -n unpoller get secret unifi-readonly -o json | jq '{apiVersion: "v1", kind: "Secret", type: "Opaque",
+  metadata: {name: "dashboard-protect", namespace: "dashboard"}, data: {PROTECT_USER: .data.user, PROTECT_PASS: .data.pass}}' | kubectl apply -f -
+kubectl -n dashboard rollout restart deploy/dashboard
+```
+
+After changing that account's password, update `unifi-readonly` and run the above again.
 
 ## Access
 

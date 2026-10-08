@@ -29,6 +29,7 @@
 
 	const TABS: { id: DashboardTab; label: string }[] = [
 		{ id: 'home', label: 'Home' },
+		{ id: 'cameras', label: 'Cameras' },
 		{ id: 'homelab', label: 'Homelab' }
 	];
 	const time = $derived(night.now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
@@ -96,7 +97,7 @@
 			{/each}
 		</div>
 		<span class="pill" class:bad={liveStale || !live}>
-			<i></i><span>{#if liveStale || !live}No data{:else}Online{#if live.wan.latencyMs !== null}<span class="latency">{` · ${live.wan.latencyMs < 1 ? '<1' : Math.round(live.wan.latencyMs)} ms`}</span>{/if}{/if}</span>
+			<i></i><span class="label">{#if liveStale || !live}No data{:else}Online{#if live.wan.latencyMs !== null}<span class="latency">{` · ${live.wan.latencyMs < 1 ? '<1' : Math.round(live.wan.latencyMs)} ms`}</span>{/if}{/if}</span>
 		</span>
 		<button
 			class="pill backup"
@@ -402,15 +403,30 @@
 			flex-basis: 100%;
 		}
 	}
-	/* Phones: drop the condition line, keep name + temperature; the backup pill keeps only its dot. */
-	@media (max-width: 480px) {
-		.desc .muted {
-			display: none;
+	/* Narrow screens: the controls (about 490 px with labels) get their own row, the tabs sharing it;
+	   both status pills keep only their dot. */
+	@media (max-width: 600px) {
+		.controls {
+			flex-basis: 100%;
+			margin-left: 0;
 		}
-		.pill.backup {
+		.tabs {
+			flex: 1;
+		}
+		.tabs button {
+			flex: 1;
+			padding: 7px 8px;
+		}
+		.pill {
 			padding: 8px 11px;
 		}
-		.pill.backup .label {
+		.pill .label {
+			display: none;
+		}
+	}
+	/* Phones: drop the condition line, keep name + temperature. */
+	@media (max-width: 480px) {
+		.desc .muted {
 			display: none;
 		}
 		.temp,
