@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import ArchitectureView from '$lib/components/ArchitectureView.svelte';
 	import CabinCard from '$lib/components/CabinCard.svelte';
 	import CabinTile from '$lib/components/CabinTile.svelte';
 	import CalendarCard from '$lib/components/CalendarCard.svelte';
@@ -16,6 +17,7 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import TopDevicesCard from '$lib/components/TopDevicesCard.svelte';
 	import WanCard from '$lib/components/WanCard.svelte';
+	import ViewSwitch from '$lib/components/ViewSwitch.svelte';
 	import WorkoutCard from '$lib/components/WorkoutCard.svelte';
 	import { backupProblem } from '$lib/backup';
 	import { cabinEvents } from '$lib/cabin';
@@ -39,8 +41,11 @@
 	let tab = $state<DashboardTab>('home');
 	/** The Cameras tab's view; opening the tab always starts on the live pictures. */
 	let cameraView = $state<'live' | 'detections'>('live');
+	/** The Homelab tab's view; opening the tab (or the backup pill) starts on Status. */
+	let homelabView = $state<'status' | 'components' | 'network'>('status');
 	$effect(() => {
 		if (tab !== 'cameras') cameraView = 'live';
+		if (tab !== 'homelab') homelabView = 'status';
 	});
 	const todayKey = $derived(dayOf(night.now.toISOString()));
 	/** Motion events today from the home cameras and the cabin, shown on the Detections switch. */
@@ -172,12 +177,14 @@
 			{/if}
 		</main>
 	{:else if tab === 'cameras'}
-		<div class="views" role="tablist" aria-label="Cameras view">
-			<button role="tab" aria-selected={cameraView === 'live'} class:active={cameraView === 'live'} onclick={() => (cameraView = 'live')}>Live</button>
-			<button role="tab" aria-selected={cameraView === 'detections'} class:active={cameraView === 'detections'} onclick={() => (cameraView = 'detections')}>
-				Detections{#if motionToday > 0}<span class="today num" aria-label="{motionToday} today">{motionToday}</span>{/if}
-			</button>
-		</div>
+		<ViewSwitch
+			label="Cameras view"
+			bind:value={cameraView}
+			options={[
+				{ id: 'live', label: 'Live' },
+				{ id: 'detections', label: 'Detections', count: motionToday }
+			]}
+		/>
 		{#if cameraView === 'live'}
 			<main class="grid live-page" style:--cols={liveTiles <= 1 ? 1 : liveTiles <= 4 ? 2 : 3}>
 				{#each data.cameras as camera, i (camera.id)}
@@ -207,23 +214,38 @@
 			</main>
 		{/if}
 	{:else}
-		<main class="grid homelab-page">
-			<div class="area wan">
-				{#if live}<WanCard wan={live.wan} />{:else}<Card title="Internet"><p class="muted">Metrics unavailable.</p></Card>{/if}
-			</div>
-			<div class="area speed">
-				<SpeedtestCard speedtest={slow?.speedtest ?? null} />
-			</div>
-			<div class="area homelab">
-				{#if slow}<HomelabCard homelab={slow.homelab} />{:else}<Card title="Homelab"><p class="muted">Metrics unavailable.</p></Card>{/if}
-			</div>
-			<div class="area network">
-				{#if live}<NetworkCard {live} />{:else}<Card title="Network"><p class="muted">Metrics unavailable.</p></Card>{/if}
-			</div>
-			<div class="area top">
-				<TopDevicesCard top={live?.top ?? []} limit={10} />
-			</div>
-		</main>
+		<ViewSwitch
+			label="Homelab view"
+			bind:value={homelabView}
+			options={[
+				{ id: 'status', label: 'Status' },
+				{ id: 'components', label: 'Components' },
+				{ id: 'network', label: 'Network' }
+			]}
+		/>
+		{#if homelabView !== 'status'}
+			<main class="arch-page">
+				<ArchitectureView view={homelabView} />
+			</main>
+		{:else}
+			<main class="grid homelab-page">
+				<div class="area wan">
+					{#if live}<WanCard wan={live.wan} />{:else}<Card title="Internet"><p class="muted">Metrics unavailable.</p></Card>{/if}
+				</div>
+				<div class="area speed">
+					<SpeedtestCard speedtest={slow?.speedtest ?? null} />
+				</div>
+				<div class="area homelab">
+					{#if slow}<HomelabCard homelab={slow.homelab} />{:else}<Card title="Homelab"><p class="muted">Metrics unavailable.</p></Card>{/if}
+				</div>
+				<div class="area network">
+					{#if live}<NetworkCard {live} />{:else}<Card title="Network"><p class="muted">Metrics unavailable.</p></Card>{/if}
+				</div>
+				<div class="area top">
+					<TopDevicesCard top={live?.top ?? []} limit={10} />
+				</div>
+			</main>
+		{/if}
 	{/if}
 </div>
 
@@ -248,39 +270,9 @@
 		display: grid;
 		gap: 12px;
 	}
-	/* Live | Detections switch on the Cameras tab, styled like the top bar's tabs. */
-	.views {
-		align-self: flex-start;
-		display: flex;
-		padding: 3px;
-		border-radius: 999px;
-		background: var(--surface);
-		border: 1px solid var(--border);
-	}
-	.views button {
-		display: inline-flex;
-		align-items: center;
-		gap: 7px;
-		padding: 7px 16px;
-		font-size: 14px;
-		font-weight: 600;
-		border: 0;
-		border-radius: 999px;
-		background: transparent;
-		color: var(--muted);
-		cursor: pointer;
-	}
-	.views button.active {
-		background: rgba(255, 255, 255, 0.14);
-		color: var(--text);
-	}
-	.today {
-		min-width: 20px;
-		padding: 1px 7px;
-		font-size: 12px;
-		border-radius: 999px;
-		background: rgba(251, 191, 36, 0.18);
-		color: var(--warn);
+	/* Homelab → Components / Network: the diagram scrolls inside the page on one-screen layouts. */
+	.arch-page {
+		min-width: 0;
 	}
 	.wan {
 		grid-area: wan;
@@ -337,6 +329,11 @@
 	@media (min-width: 1000px) and (min-aspect-ratio: 5/4) {
 		.page {
 			height: 100dvh;
+		}
+		.arch-page {
+			flex: 1;
+			min-height: 0;
+			overflow-y: auto;
 		}
 		.grid {
 			flex: 1;
