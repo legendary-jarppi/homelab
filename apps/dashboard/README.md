@@ -20,12 +20,6 @@ SvelteKit 2 + Svelte 5, adapter-node. `server.js` wraps the SvelteKit handler an
 
 Browser refresh: live data 10 s, presence 30 s, Protect events 30 s, homelab/speed test/workouts/cabin pictures 60 s, calendar 5 min, weather 10 min, camera snapshots 5 s (only on *Cameras → Live*; paused at night and while live video is open).
 
-## Architecture diagrams
-
-*Homelab → Components* shows every namespace with its components and the connections between them (HTTP, video, MQTT, database and volumes, metrics, Kubernetes API, internet), each component with live pod status from Prometheus; components outside the cluster (family devices, the UDM Pro, cameras, ESPresense nodes, internet services) are on the left. *Network* shows the path through the network: internet and UDM Pro (NAT, port forward, DNS, Protect), the home LAN, the server's firewalld zones and ServiceLB, the host network, the pod and service networks, and which namespaces NetworkPolicies restrict. Tap a component to highlight its connections (labelled) and read what it does, what it talks to and its pods; on narrow screens the details stay pinned to the bottom.
-
-Groups, components and connections are written by hand in `src/lib/architecture.ts` (Kubernetes does not record who talks to whom); the layout is CSS grid areas per diagram, the lines are drawn from the components' measured positions (`src/lib/components/Diagram.svelte`). **Update it when adding an app, a namespace or a connection**: a workload running in the cluster that no component claims is listed in amber under the Components diagram.
-
 Calendar address (Google Calendar → the calendar's *Settings and sharing* → *Secret address in iCal format*). Resetting it there invalidates the old one; then store the new one:
 
 ```sh
@@ -54,6 +48,12 @@ kubectl -n dashboard rollout restart deploy/dashboard
 ```
 
 After changing that account's password, update `unifi-readonly` and run the above again.
+
+## Architecture diagrams
+
+*Homelab → Components* shows every namespace with its components and the connections between them (HTTP, video, MQTT, database and volumes, metrics, Kubernetes API, internet), each component with live pod status from Prometheus; components outside the cluster (family devices, the UDM Pro, cameras, ESPresense nodes, internet services) are on the left. *Network* shows the path through the network: internet and UDM Pro (NAT, port forward, DNS, Protect), the home LAN, the server's firewalld zones and ServiceLB, the host network, the pod and service networks, and which namespaces NetworkPolicies restrict. Tap a component to highlight its connections (labelled) and read what it does, what it talks to and its pods; on narrow screens the details stay pinned to the bottom.
+
+Groups, components and connections are written by hand in `src/lib/architecture.ts` (Kubernetes does not record who talks to whom); the layout is CSS grid areas per diagram, the lines are drawn from the components' measured positions (`src/lib/components/Diagram.svelte`). **Update it when adding an app, a namespace or a connection**: a workload running in the cluster that no component claims is listed in amber under the Components diagram.
 
 ## Access
 
