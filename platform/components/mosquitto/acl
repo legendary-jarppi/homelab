@@ -9,3 +9,10 @@ topic readwrite homeassistant/#
 # apps/presence: reads Bluetooth sightings.
 user presence
 topic read espresense/#
+
+# apps/homeassistant: MQTT discovery and its status topic; reads ESPresense's states (the nodes'
+# discovery entries point there) but cannot change node settings. Devices on other topics
+# (zigbee2mqtt/#, shellies/#, …) need a line here first.
+user homeassistant
+topic readwrite homeassistant/#
+topic read espresense/#

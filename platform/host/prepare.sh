@@ -42,7 +42,8 @@ firewall-cmd --permanent --zone=trusted --add-source="$POD_CIDR" --add-source="$
 # (platform/components/mosquitto, for the ESPresense Bluetooth nodes; password-protected, no TLS);
 # 2121 + 50000-50009: FTPS for the cabin camera (apps/cabin-camera; port-forwarded from the internet).
 firewall-cmd --permanent --zone="$zone" --add-port=6443/tcp --add-port=1883/tcp --add-port=2121/tcp --add-port=50000-50009/tcp
-firewall-cmd --permanent --zone="$zone" --add-service=http --add-service=https
+# mdns (UDP 5353): device announcements for Home Assistant's discovery (apps/homeassistant, host network).
+firewall-cmd --permanent --zone="$zone" --add-service=http --add-service=https --add-service=mdns
 firewall-cmd --reload
 
 echo

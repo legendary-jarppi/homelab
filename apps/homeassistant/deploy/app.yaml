@@ -1,0 +1,136 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: config
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homeassistant
+  labels:
+    app.kubernetes.io/name: homeassistant
+spec:
+  replicas: 1
+  # One instance owns /config and its SQLite database.
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: homeassistant
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: homeassistant
+    spec:
+      automountServiceAccountToken: false
+      # Host network: device discovery (mDNS/zeroconf, SSDP, DHCP), HomeKit and Matter need the LAN's
+      # multicast, which the pod network does not carry. NetworkPolicies do not apply to host-network
+      # pods. Port 8123 is not opened in firewalld: the UI is reached through Traefik only.
+      hostNetwork: true
+      dnsPolicy: ClusterFirstWithHostNet
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        # The UI editors' files that configuration.yaml includes, as Home Assistant creates them.
+        - name: include-files
+          image: ghcr.io/home-assistant/home-assistant:2026.9.4
+          command: [sh, -c, 'cd /config && { [ -e automations.yaml ] || echo "[]" > automations.yaml; } && touch scripts.yaml scenes.yaml']
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE, FOWNER]
+          volumeMounts:
+            - name: config
+              mountPath: /config
+      containers:
+        - name: homeassistant
+          image: ghcr.io/home-assistant/home-assistant:2026.9.4
+          env:
+            - name: TZ
+              value: Europe/Helsinki
+          ports:
+            - name: http
+              containerPort: 8123
+          # The image's init (s6-overlay) runs as root and drops to nothing else; no privileged mode,
+          # only the capabilities it needs (NET_RAW: ping and DHCP discovery).
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: [ALL]
+              add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID, KILL, NET_RAW]
+          # /manifest.json is served without a login.
+          startupProbe:
+            httpGet:
+              path: /manifest.json
+              port: http
+            periodSeconds: 10
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /manifest.json
+              port: http
+            periodSeconds: 30
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /manifest.json
+              port: http
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: 100m
+              memory: 384Mi
+            limits:
+              memory: 1536Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+            - name: configuration
+              mountPath: /config/configuration.yaml
+              subPath: configuration.yaml
+              readOnly: true
+      volumes:
+        - name: config
+          persistentVolumeClaim:
+            claimName: config
+        - name: configuration
+          configMap:
+            name: homeassistant-configuration
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: homeassistant
+spec:
+  selector:
+    app.kubernetes.io/name: homeassistant
+  ports:
+    - name: http
+      port: 8123
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homeassistant
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: homeassistant.lab.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homeassistant
+                port:
+                  name: http
