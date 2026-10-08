@@ -9,7 +9,8 @@ resources:
   - namespace.yaml
   - app.yaml
 configMapGenerator:
-  # Hashed name: a change to configuration.yaml rolls the pod.
+  # Hashed name: a change rolls the pod. http-storage.json seeds HA's HTTP settings (see app.yaml).
   - name: homeassistant-configuration
     files:
       - configuration.yaml
+      - http-storage.json

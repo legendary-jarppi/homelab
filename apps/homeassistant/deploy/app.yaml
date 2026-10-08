@@ -38,10 +38,24 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       initContainers:
-        # The UI editors' files that configuration.yaml includes, as Home Assistant creates them.
-        - name: include-files
+        # The UI editors' files that configuration.yaml includes, as Home Assistant creates them, and
+        # the HTTP settings (reverse proxy) when HA's storage has none yet: a fresh or restored volume.
+        - name: seed-config
           image: ghcr.io/home-assistant/home-assistant:2026.9.4
-          command: [sh, -c, 'cd /config && { [ -e automations.yaml ] || echo "[]" > automations.yaml; } && touch scripts.yaml scenes.yaml']
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              cd /config
+              [ -e automations.yaml ] || echo "[]" > automations.yaml
+              touch scripts.yaml scenes.yaml
+              mkdir -p .storage
+              if [ ! -e .storage/http ]; then
+                cp /seed/http-storage.json .storage/http
+                chmod 600 .storage/http
+                echo "seeded .storage/http"
+              fi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -50,6 +64,9 @@ spec:
           volumeMounts:
             - name: config
               mountPath: /config
+            - name: configuration
+              mountPath: /seed
+              readOnly: true
       containers:
         - name: homeassistant
           image: ghcr.io/home-assistant/home-assistant:2026.9.4

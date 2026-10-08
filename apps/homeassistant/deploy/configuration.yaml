@@ -1,20 +1,14 @@
 # Home Assistant's configuration.yaml, kept in git and mounted read-only (configMapGenerator in
 # kustomization.yaml; a change rolls the pod). Everything set up in the UI (integrations, users,
 # location, dashboards, automations) lives on the volume (/config).
+#
+# No http: block. Since 2026.9 HTTP settings live in HA's storage (.storage/http): YAML is migrated
+# once as an unconfirmed trial that reverts after 5 minutes unless an admin confirms it, and is
+# ignored afterwards. The reverse-proxy settings (Traefik) are seeded from http-storage.json.
 
 default_config:
 
-# Written by the UI editors; the files are created empty on the volume if missing (init container).
+# Written by the UI editors; the files are created on the volume if missing (init container).
 automation: !include automations.yaml
 script: !include scripts.yaml
 scene: !include scenes.yaml
-
-http:
-  # Reached only through Traefik (pod network); X-Forwarded-For carries the client's address, so
-  # logins and IP bans see real clients.
-  use_x_forwarded_for: true
-  trusted_proxies:
-    - 10.42.0.0/16
-  # Ban an address after this many failed logins (Settings → System → Logs shows bans).
-  ip_ban_enabled: true
-  login_attempts_threshold: 10
