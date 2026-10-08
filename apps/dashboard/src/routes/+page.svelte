@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
 	import CabinCard from '$lib/components/CabinCard.svelte';
+	import CabinTile from '$lib/components/CabinTile.svelte';
 	import CalendarCard from '$lib/components/CalendarCard.svelte';
 	import CameraTile from '$lib/components/CameraTile.svelte';
 	import CameraViewer from '$lib/components/CameraViewer.svelte';
@@ -17,6 +18,8 @@
 	import WanCard from '$lib/components/WanCard.svelte';
 	import WorkoutCard from '$lib/components/WorkoutCard.svelte';
 	import { backupProblem } from '$lib/backup';
+	import { cabinEvents } from '$lib/cabin';
+	import { dayOf } from '$lib/dates';
 	import { night } from '$lib/night.svelte';
 	import type { CabinData, CalendarData, DashboardTab, LiveData, PackagesData, PresenceData, ProtectData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 
@@ -34,6 +37,18 @@
 	let protect = $state<ProtectData | null>(untrack(() => data.protect));
 	let viewer = $state<number | null>(null);
 	let tab = $state<DashboardTab>('home');
+	/** The Cameras tab's view; opening the tab always starts on the live pictures. */
+	let cameraView = $state<'live' | 'detections'>('live');
+	$effect(() => {
+		if (tab !== 'cameras') cameraView = 'live';
+	});
+	const todayKey = $derived(dayOf(night.now.toISOString()));
+	/** Motion events today from the home cameras and the cabin, shown on the Detections switch. */
+	const motionToday = $derived(
+		(protect?.events.filter((e) => dayOf(new Date(e.start).toISOString()) === todayKey).length ?? 0) +
+			(cabin ? cabinEvents(cabin.snapshots).filter((e) => dayOf(new Date(e.time).toISOString()) === todayKey).length : 0)
+	);
+	const liveTiles = $derived(data.cameras.length + (data.cabinConfigured ? 1 : 0));
 
 	/** A wall display goes back to the main page by itself after this long untouched. */
 	const RETURN_HOME_MS = 2 * 60_000;
@@ -141,13 +156,6 @@
 
 	{#if tab === 'home'}
 		<main class="grid home-page" class:with-workout={data.workoutConfigured}>
-			{#if data.cameras.length > 0}
-				<div class="area cameras">
-					{#each data.cameras as camera, i (camera.id)}
-						<CameraTile id={camera.id} label={camera.label} refreshMs={5000} paused={night.active || viewer !== null} onopen={() => (viewer = i)} />
-					{/each}
-				</div>
-			{/if}
 			<div class="area presence">
 				<PresenceCard {presence} configured={data.presenceConfigured} />
 			</div>
@@ -164,20 +172,40 @@
 			{/if}
 		</main>
 	{:else if tab === 'cameras'}
-		<main class="grid cameras-page" class:single={!data.cabinConfigured || !data.protectConfigured}>
-			{#if data.cabinConfigured}
-				<div class="area cabin">
-					<CabinCard {cabin} />
-				</div>
-			{/if}
-			{#if data.protectConfigured}
-				<div class="area protect">
-					<ProtectCard {protect} />
-				</div>
-			{:else if !data.cabinConfigured}
-				<Card title="Cameras"><p class="muted">No camera events set up.</p></Card>
-			{/if}
-		</main>
+		<div class="views" role="tablist" aria-label="Cameras view">
+			<button role="tab" aria-selected={cameraView === 'live'} class:active={cameraView === 'live'} onclick={() => (cameraView = 'live')}>Live</button>
+			<button role="tab" aria-selected={cameraView === 'detections'} class:active={cameraView === 'detections'} onclick={() => (cameraView = 'detections')}>
+				Detections{#if motionToday > 0}<span class="today num" aria-label="{motionToday} today">{motionToday}</span>{/if}
+			</button>
+		</div>
+		{#if cameraView === 'live'}
+			<main class="grid live-page" style:--cols={liveTiles <= 1 ? 1 : liveTiles <= 4 ? 2 : 3}>
+				{#each data.cameras as camera, i (camera.id)}
+					<CameraTile id={camera.id} label={camera.label} refreshMs={5000} paused={night.active || viewer !== null} onopen={() => (viewer = i)} />
+				{/each}
+				{#if data.cabinConfigured}
+					<CabinTile {cabin} />
+				{/if}
+				{#if liveTiles === 0}
+					<Card title="Cameras"><p class="muted">No cameras set up.</p></Card>
+				{/if}
+			</main>
+		{:else}
+			<main class="grid cameras-page" class:single={!data.cabinConfigured || !data.protectConfigured}>
+				{#if data.cabinConfigured}
+					<div class="area cabin">
+						<CabinCard {cabin} />
+					</div>
+				{/if}
+				{#if data.protectConfigured}
+					<div class="area protect">
+						<ProtectCard {protect} />
+					</div>
+				{:else if !data.cabinConfigured}
+					<Card title="Detections"><p class="muted">No camera events set up.</p></Card>
+				{/if}
+			</main>
+		{/if}
 	{:else}
 		<main class="grid homelab-page">
 			<div class="area wan">
@@ -220,10 +248,39 @@
 		display: grid;
 		gap: 12px;
 	}
-	.cameras {
-		grid-area: cam;
-		display: grid;
-		gap: 12px;
+	/* Live | Detections switch on the Cameras tab, styled like the top bar's tabs. */
+	.views {
+		align-self: flex-start;
+		display: flex;
+		padding: 3px;
+		border-radius: 999px;
+		background: var(--surface);
+		border: 1px solid var(--border);
+	}
+	.views button {
+		display: inline-flex;
+		align-items: center;
+		gap: 7px;
+		padding: 7px 16px;
+		font-size: 14px;
+		font-weight: 600;
+		border: 0;
+		border-radius: 999px;
+		background: transparent;
+		color: var(--muted);
+		cursor: pointer;
+	}
+	.views button.active {
+		background: rgba(255, 255, 255, 0.14);
+		color: var(--text);
+	}
+	.today {
+		min-width: 20px;
+		padding: 1px 7px;
+		font-size: 12px;
+		border-radius: 999px;
+		background: rgba(251, 191, 36, 0.18);
+		color: var(--warn);
 	}
 	.wan {
 		grid-area: wan;
@@ -275,8 +332,8 @@
 	}
 
 	/* iPad landscape and laptops: exactly one screen. Home: who's home, packages and workouts on the
-	   left, the calendar full height in the middle, cameras stacked on the right. Homelab: internet,
-	   speed test and server on the left, the local network and its busiest devices on the right. */
+	   left, the calendar full height on the right. Cameras: the live pictures fill the screen. Homelab:
+	   internet, speed test and server on the left, the local network and its busiest devices on the right. */
 	@media (min-width: 1000px) and (min-aspect-ratio: 5/4) {
 		.page {
 			height: 100dvh;
@@ -289,15 +346,23 @@
 		.grid.home-page {
 			grid-template-rows: auto minmax(0, 1fr);
 			grid-template-areas:
-				'who who who who cal cal cal cal cam cam cam cam'
-				'pkg pkg pkg pkg cal cal cal cal cam cam cam cam';
+				'who who who who cal cal cal cal cal cal cal cal'
+				'pkg pkg pkg pkg cal cal cal cal cal cal cal cal';
 		}
 		.grid.home-page.with-workout {
 			grid-template-rows: auto minmax(0, 3fr) minmax(0, 2fr);
 			grid-template-areas:
-				'who who who who cal cal cal cal cam cam cam cam'
-				'pkg pkg pkg pkg cal cal cal cal cam cam cam cam'
-				'wo wo wo wo cal cal cal cal cam cam cam cam';
+				'who who who who cal cal cal cal cal cal cal cal'
+				'pkg pkg pkg pkg cal cal cal cal cal cal cal cal'
+				'wo wo wo wo cal cal cal cal cal cal cal cal';
+		}
+		.grid.live-page {
+			grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+			grid-auto-rows: minmax(0, 1fr);
+		}
+		.live-page > :global(.tile) {
+			aspect-ratio: auto;
+			height: 100%;
 		}
 		.grid.homelab-page {
 			grid-template-rows: auto minmax(0, 1fr) minmax(0, 1fr);
@@ -318,13 +383,6 @@
 		.calendar {
 			container: calendar / size;
 		}
-		.cameras {
-			grid-template-rows: repeat(auto-fit, minmax(0, 1fr));
-		}
-		.cameras > :global(.tile) {
-			aspect-ratio: auto;
-			height: 100%;
-		}
 	}
 
 	/* iPad portrait and narrower landscape windows. */
@@ -334,14 +392,12 @@
 		}
 		.grid.home-page {
 			grid-template-areas:
-				'cam cam'
 				'who who'
 				'cal cal'
 				'pkg pkg';
 		}
 		.grid.home-page.with-workout {
 			grid-template-areas:
-				'cam cam'
 				'who who'
 				'cal cal'
 				'pkg wo';
@@ -358,15 +414,12 @@
 				'cab cab'
 				'evt evt';
 		}
-		.cameras {
-			grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-		}
 		.wan {
 			min-height: 280px;
 		}
 	}
 
-	/* Phones: one column, cameras swipe sideways. */
+	/* Phones: one column. */
 	@media (max-width: 640px) {
 		.page {
 			padding-left: max(14px, env(safe-area-inset-left));
@@ -376,31 +429,16 @@
 			grid-template-columns: minmax(0, 1fr);
 		}
 		.grid.home-page {
-			grid-template-areas: 'cam' 'who' 'cal' 'pkg';
+			grid-template-areas: 'who' 'cal' 'pkg';
 		}
 		.grid.home-page.with-workout {
-			grid-template-areas: 'cam' 'who' 'cal' 'pkg' 'wo';
+			grid-template-areas: 'who' 'cal' 'pkg' 'wo';
 		}
 		.grid.homelab-page {
 			grid-template-areas: 'wan' 'net' 'spd' 'lab' 'top';
 		}
 		.grid.cameras-page {
 			grid-template-areas: 'cab' 'evt';
-		}
-		.cameras {
-			display: flex;
-			overflow-x: auto;
-			scroll-snap-type: x mandatory;
-			margin: 0 -14px;
-			padding: 0 14px;
-			scrollbar-width: none;
-		}
-		.cameras::-webkit-scrollbar {
-			display: none;
-		}
-		.cameras > :global(*) {
-			flex: 0 0 86%;
-			scroll-snap-align: center;
 		}
 	}
 </style>

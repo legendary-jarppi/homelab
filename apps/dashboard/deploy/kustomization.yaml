@@ -13,7 +13,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261008-204255"
+    newTag: "20261008-210440"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
