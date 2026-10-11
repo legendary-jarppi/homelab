@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { createSession, hashPassword, verifyPassword } from '$lib/core/auth';
 import { db } from '$lib/core/db';
+import { safeNext } from '$lib/server/next';
 import { setSessionCookie } from '$lib/server/session';
 import type { Actions, PageServerLoad } from './$types';
 
@@ -8,17 +9,6 @@ const MAX_FAILURES = 5;
 const WINDOW_MS = 15 * 60_000;
 /** Failed attempts per client address + username, in memory (one web pod). */
 const failures = new Map<string, { count: number; until: number }>();
-
-/** Same-origin path to return to after signing in; anything else goes to the front page. */
-function safeNext(raw: string | null, origin: string): string {
-	if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/\\')) return '/';
-	try {
-		const target = new URL(raw, origin);
-		return target.origin === origin ? target.pathname + target.search : '/';
-	} catch {
-		return '/';
-	}
-}
 
 // Verifying against a throwaway hash keeps unknown usernames as slow as wrong passwords.
 let decoyHash: Promise<string> | null = null;
@@ -49,12 +39,15 @@ export const actions: Actions = {
 			for (const [k, v] of failures) if (v.until <= now) failures.delete(k);
 			const current = failures.get(key);
 			failures.set(key, current && current.until > now ? { count: current.count + 1, until: current.until } : { count: 1, until: now + WINDOW_MS });
+			console.warn(`sign-in failed for "${username}" from ${getClientAddress()}`);
 			return fail(400, { username, message: 'That username and password don’t match.' });
 		}
 
 		failures.delete(key);
 		const session = await createSession(db(), user.id, request.headers.get('user-agent'));
-		setSessionCookie(cookies, url, session.token, session.maxAgeS);
-		redirect(303, safeNext(url.searchParams.get('next'), url.origin));
+		setSessionCookie(cookies, session.token, session.maxAgeS);
+		console.info(`signed in "${username}" from ${getClientAddress()} over ${url.protocol.replace(':', '')}`);
+		// Through /login/check, which tells the user when the browser did not keep the cookie.
+		redirect(303, `/login/check?next=${encodeURIComponent(safeNext(url.searchParams.get('next'), url.origin))}`);
 	}
 };

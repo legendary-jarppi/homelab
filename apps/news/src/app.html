@@ -7,7 +7,8 @@
 		<meta name="theme-color" content="#F7F4EC" media="(prefers-color-scheme: light)" />
 		<meta name="theme-color" content="#14120F" media="(prefers-color-scheme: dark)" />
 		<meta name="robots" content="noindex, nofollow" />
-		<meta name="referrer" content="no-referrer" />
+		<!-- same-origin, as the Referrer-Policy header: no-referrer makes browsers send "Origin: null" with forms submitted without JavaScript (sign in, sign out), which SvelteKit rejects with 403. -->
+		<meta name="referrer" content="same-origin" />
 		<link rel="icon" href="%sveltekit.assets%/favicon.svg" type="image/svg+xml" />
 		%sveltekit.head%
 	</head>

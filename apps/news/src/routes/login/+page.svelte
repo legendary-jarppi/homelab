@@ -5,6 +5,8 @@
 	let { form } = $props();
 	let pending = $state(false);
 	const next = $derived(page.url.searchParams.get('next'));
+	/** Set by /login/check: the password was accepted but the browser sent no session cookie back. */
+	const cookieMissing = $derived(page.url.searchParams.get('cookie') === 'missing');
 </script>
 
 <svelte:head>
@@ -26,7 +28,14 @@
 			};
 		}}
 	>
-		{#if form?.message}<p class="error" role="alert">{form.message}</p>{/if}
+		{#if form?.message}
+			<p class="error" role="alert">{form.message}</p>
+		{:else if cookieMissing}
+			<p class="error" role="alert">
+				Your password was right, but this browser didn’t keep the sign-in. On iPhone: Settings → Apps → Safari, turn off
+				<b>Block All Cookies</b>; then Advanced → Website Data, delete <b>news.lab.internal</b>, and sign in again.
+			</p>
+		{/if}
 		<div class="field">
 			<label for="username">Username</label>
 			<input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required value={form?.username ?? ''} />

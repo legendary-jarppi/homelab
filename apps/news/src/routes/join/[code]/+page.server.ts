@@ -13,7 +13,7 @@ export const load: PageServerLoad = async ({ params }) => {
 };
 
 export const actions: Actions = {
-	default: async ({ params, request, cookies, url }) => {
+	default: async ({ params, request, cookies }) => {
 		const form = await request.formData();
 		const username = String(form.get('username') ?? '').trim();
 		const displayName = String(form.get('displayName') ?? '').trim().replace(/\s+/g, ' ');
@@ -35,7 +35,7 @@ export const actions: Actions = {
 			throw e;
 		}
 		const session = await createSession(db(), userId, request.headers.get('user-agent'));
-		setSessionCookie(cookies, url, session.token, session.maxAgeS);
+		setSessionCookie(cookies, session.token, session.maxAgeS);
 		redirect(303, '/welcome');
 	}
 };

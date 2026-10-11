@@ -37,6 +37,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	});
 	response.headers.set('X-Frame-Options', 'DENY');
 	response.headers.set('X-Content-Type-Options', 'nosniff');
-	response.headers.set('Referrer-Policy', 'no-referrer');
+	// same-origin, not no-referrer (also in app.html): outlets still get no referrer, but under no-referrer
+	// browsers send "Origin: null" with forms submitted without JavaScript, and SvelteKit's CSRF check rejects them (403).
+	response.headers.set('Referrer-Policy', 'same-origin');
 	return response;
 };

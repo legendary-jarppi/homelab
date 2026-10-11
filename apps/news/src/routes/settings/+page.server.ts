@@ -2,7 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { createSession } from '$lib/core/auth';
 import { db } from '$lib/core/db';
 import { PRESETS, TOPICS } from '$lib/core/taxonomy';
-import { SESSION_COOKIE, setSessionCookie } from '$lib/server/session';
+import { clearSessionCookie, setSessionCookie } from '$lib/server/session';
 import {
 	addBlockedTerm,
 	applyPresetFor,
@@ -133,7 +133,7 @@ export const actions = {
 		return saved('name');
 	},
 
-	password: async ({ request, locals, cookies, url }) => {
+	password: async ({ request, locals, cookies }) => {
 		const form = await request.formData();
 		const next = String(form.get('next') ?? '');
 		if (next !== String(form.get('confirm') ?? '')) return failed('password', 'The two new passwords do not match.');
@@ -146,13 +146,13 @@ export const actions = {
 		}
 		// Every session ended with the old password; this device continues with a fresh one.
 		const session = await createSession(db(), userId, request.headers.get('user-agent'));
-		setSessionCookie(cookies, url, session.token, session.maxAgeS);
+		setSessionCookie(cookies, session.token, session.maxAgeS);
 		return saved('password');
 	},
 
 	signOutAll: async ({ locals, cookies }) => {
 		await db()`DELETE FROM sessions WHERE user_id = ${userIdOf(locals)}`;
-		cookies.delete(SESSION_COOKIE, { path: '/' });
+		clearSessionCookie(cookies);
 		redirect(303, '/login');
 	}
 } satisfies Actions;

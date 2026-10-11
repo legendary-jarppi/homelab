@@ -32,6 +32,7 @@ friends: keep it invite-only and never expose it publicly.
 | Outlet health, re-run discovery, re-extract, re-classify | Admin page *Outlets* |
 | Model latency, errors, tokens; queues | Admin page *Pipeline*; `kubectl -n news logs deploy/worker` |
 | First admin after a fresh install | `scripts/invite.ts --role admin` locally through the Postgres port-forward (see Develop), then open the printed link |
+| Someone cannot sign in | `kubectl -n news logs deploy/web \| grep sign` shows each attempt: `signed in`, `sign-in failed` (wrong username or password), or `sign-in cookie not returned` (the password was right but the browser did not keep the `news_session` cookie; the sign-in page then tells them to turn off Safari's *Block All Cookies* and delete the site's website data). The cookie is never Secure: the site is plain http, and a Secure cookie from an https visit (Safari upgrades the address by itself) would lock that browser out of http |
 | Misclassified article | Readers tap *This upset me* (hides it for them at once). Admin page *Reports* → correct tags (overrides the AI, survives re-classification, recorded in `tag_corrections`) |
 | Rights-holder request | Admin article page → *Purge stored text* (removes text and photo files; the article leaves every reader page) |
 | Change model | `LLM_MODEL` in `deploy/kustomization.yaml`, then `kubectl apply -k apps/news/deploy`. Re-classify from the admin page if wanted |
