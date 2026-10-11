@@ -316,17 +316,60 @@ export async function sectionEarlier(ctx: ReaderContext, edition: EditionInfo, s
 // ---------------------------------------------------------------------------------------------
 // Latest, search, saved
 
-export async function latest(ctx: ReaderContext, cursor: Cursor | null) {
+/** Newest first; `outletId` limits it to one paper (Papers page). */
+export async function latest(ctx: ReaderContext, cursor: Cursor | null, outletId?: number) {
 	const { sql, reader } = ctx;
 	const rows = await sql<CardRow[]>`
 		SELECT ${cardColumns(ctx)}
 		FROM articles a JOIN outlets o ON o.id = a.outlet_id
 		WHERE ${visibleTo(sql, reader)}
+			${outletId !== undefined ? sql`AND a.outlet_id = ${outletId}` : sql``}
 			${cursor ? sql`AND (a.published_at, a.id) < (${cursor.ts}::timestamptz, ${cursor.id})` : sql``}
 		ORDER BY a.published_at DESC, a.id DESC
 		LIMIT ${PAGE_SIZE + 1}`;
 	const p = page(rows, PAGE_SIZE);
 	return { cards: await toCards(ctx, p.rows), next: p.next };
+}
+
+export interface Paper {
+	id: number;
+	slug: string;
+	name: string;
+	homepage: string;
+	/** Hidden by this reader in Settings → Papers: none of its stories are shown anywhere. */
+	hidden: boolean;
+	/** Newest story this reader can see, if any. No counts (DESIGN.md: non-disclosure, no counters). */
+	newest: { id: number; headline: string; language: string | null; publishedAt: Date } | null;
+}
+
+/** Enabled papers, alphabetically, with what this reader can see of each. */
+export async function papers(ctx: ReaderContext): Promise<Paper[]> {
+	const { sql, reader } = ctx;
+	const rows = await sql<{ id: number; slug: string; name: string; homepage: string; hidden: boolean; newest_id: number | null; newest_title: string | null; newest_calm_title: string | null; newest_language: string | null; newest_at: Date | null }[]>`
+		SELECT o.id, o.slug, o.name, o.homepage,
+			EXISTS (SELECT 1 FROM user_hidden_outlets h WHERE h.user_id = ${reader.id} AND h.outlet_id = o.id) AS hidden,
+			newest.id AS newest_id, newest.title AS newest_title, newest.calm_title AS newest_calm_title,
+			newest.language AS newest_language, newest.published_at AS newest_at
+		FROM outlets o
+		LEFT JOIN LATERAL (
+			SELECT a.id, a.title, a.calm_title, a.language, a.published_at FROM articles a
+			WHERE a.outlet_id = o.id AND ${visibleTo(sql, reader)}
+			ORDER BY a.published_at DESC, a.id DESC
+			LIMIT 1
+		) newest ON true
+		WHERE o.enabled
+		ORDER BY o.name`;
+	return rows.map((r) => ({
+		id: r.id,
+		slug: r.slug,
+		name: r.name,
+		homepage: r.homepage,
+		hidden: r.hidden,
+		newest:
+			r.newest_id !== null && r.newest_title !== null && r.newest_at !== null
+				? { id: r.newest_id, headline: displayHeadline(ctx.settings, { title: r.newest_title, calm_title: r.newest_calm_title }), language: r.newest_language, publishedAt: r.newest_at }
+				: null
+	}));
 }
 
 export const SEARCH_LIMIT = 40;

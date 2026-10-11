@@ -157,6 +157,8 @@ first** puts every photo behind the button; **no photos** removes them.
 | `/` | Front page of the current edition: lead story (largest headline, photo, summary), 2-3 secondary stories, "In brief" column, then one block per section. One story per cluster. |
 | `/section/<key>` | Section front: same grid, that section's stories in the edition window, then "Earlier" (cursor). |
 | `/latest` | Everything visible, newest first, published after the edition too. Plain list, cursor pagination. |
+| `/papers`, `/papers/<slug>` | One paper at a time. `/papers`: each enabled paper with its newest visible headline (no counts). `/papers/<slug>`: that paper's visible stories, newest first, every cluster member (not one per cluster), with a picker to switch papers; cursor pagination. A paper the reader hid in settings says so instead of listing anything. |
+| `/login/check` | After signing in: on to the page asked for, or back to `/login` with an explanation when the browser did not return the session cookie. |
 | `/article/<id>` | Kicker, calm headline, standfirst, byline line (outlet, time, reading time), lead photo, body with drop cap and figures, original headline and "Read at <outlet>" link, actions, "Also in" (same cluster, visible only), more from the section. |
 | `/search` | Full-text search (Finnish and English stemming) over visible articles. |
 | `/saved` | Saved articles, still filtered (a saved article that a later settings change hides disappears). |

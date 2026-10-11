@@ -3,7 +3,14 @@
 
 	let { path }: { path: string } = $props();
 
-	const links = [{ href: '/', label: 'Front Page' }, ...SECTIONS.map((s) => ({ href: `/section/${s.key}`, label: s.label })), { href: '/latest', label: 'Latest' }];
+	const links = [
+		{ href: '/', label: 'Front Page' },
+		...SECTIONS.map((s) => ({ href: `/section/${s.key}`, label: s.label })),
+		{ href: '/latest', label: 'Latest' },
+		{ href: '/papers', label: 'Papers' }
+	];
+	/** Current for its own page and pages under it (a paper under Papers). */
+	const current = (href: string) => path === href || (href !== '/' && path.startsWith(`${href}/`));
 
 	let sentinel: HTMLElement | undefined = $state();
 	let stuck = $state(false);
@@ -23,7 +30,7 @@
 		<ul>
 			{#each links as link (link.href)}
 				<li>
-					<a href={link.href} aria-current={path === link.href ? 'page' : undefined}>{link.label}</a>
+					<a href={link.href} aria-current={current(link.href) ? 'page' : undefined}>{link.label}</a>
 				</li>
 			{/each}
 		</ul>
