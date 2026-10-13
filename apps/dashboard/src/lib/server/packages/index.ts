@@ -8,11 +8,13 @@ import { config } from '$lib/server/config';
 import { CARRIERS, carrierName, detectCarrier, LINK_ONLY, linkOnlyUntil, normalizeCode } from '$lib/packages';
 import type { Carrier, PackageTracking, PackagesData, TrackedPackage } from '$lib/types';
 import { NotFoundError } from './errors';
+import { trackMatkahuolto } from './matkahuolto';
 import { trackPosti } from './posti';
 import { trackUps } from './ups';
 
 const TRACKERS: Partial<Record<Carrier, { track: (code: string) => Promise<PackageTracking>; refreshMs: number }>> = {
 	posti: { track: trackPosti, refreshMs: 20 * 60_000 },
+	matkahuolto: { track: trackMatkahuolto, refreshMs: 20 * 60_000 },
 	ups: { track: trackUps, refreshMs: 20 * 60_000 }
 };
 /** Failed checks (including "not found yet") are retried less eagerly. */
@@ -52,6 +54,7 @@ async function save(): Promise<void> {
 
 export const carrierStatus = (): PackagesData['carriers'] => ({
 	posti: true,
+	matkahuolto: true,
 	dhl: true,
 	ups: config.upsClientId !== '' && config.upsClientSecret !== ''
 });

@@ -89,7 +89,7 @@ export const COMPONENTS: Diagram = {
 				{ id: 'cams', label: 'Protect cameras', sub: 'Front door, Backyard, Carport', info: 'UniFi G4/G5 Dome cameras, recorded continuously by Protect on the UDM Pro; smart detections (person, vehicle, animal) on the carport camera.' },
 				{ id: 'esp', label: 'ESPresense nodes', sub: 'Bluetooth, ESP32', info: 'ESP32 boards that recognise the family\'s phones over Bluetooth and publish sightings to Mosquitto (MQTT, port 1883 on 192.168.1.10).' },
 				{ id: 'cabincam', label: 'Cabin camera', sub: 'Reolink Go Plus, 4G', info: 'Battery camera at the cabin on a 4G connection. On motion it uploads a picture and a clip over FTPS to the home\'s public address; the UDM forwards ports 2121 and 50000-50009 to the server.' },
-				{ id: 'internet', label: 'Internet services', sub: 'weather, calendar, parcels, news, AI, Drive', info: 'Open-Meteo (weather), Google Calendar (iCal), Posti and UPS (parcels) for the dashboard; news outlets and the AI proxy for the news worker; Google Drive for the nightly backup.' }
+				{ id: 'internet', label: 'Internet services', sub: 'weather, calendar, parcels, news, AI, Drive', info: 'Open-Meteo (weather), Google Calendar (iCal), Posti, Matkahuolto and UPS (parcels) for the dashboard; news outlets and the AI proxy for the news worker; Google Drive for the nightly backup.' }
 			]
 		},
 		{

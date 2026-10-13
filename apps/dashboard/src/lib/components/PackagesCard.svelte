@@ -2,7 +2,7 @@
 	import Card from './Card.svelte';
 	import PackageSheet from './PackageSheet.svelte';
 	import { dayOf, eventTime } from '$lib/dates';
-	import { carrierName, LINK_ONLY, linkOnlyUntil, STATE_LABEL } from '$lib/packages';
+	import { carrierName, carrierShort, LINK_ONLY, linkOnlyUntil, STATE_LABEL } from '$lib/packages';
 	import type { PackageState, PackagesData, TrackedPackage } from '$lib/types';
 
 	let { data, onchange }: { data: PackagesData | null; onchange: () => void } = $props();
@@ -53,7 +53,7 @@
 				{@const linkOnly = LINK_ONLY.has(p.carrier)}
 				<li>
 					<button class="row {state}" class:link-only={linkOnly} onclick={() => (sheet = p.id)}>
-						<span class="carrier {p.carrier}">{carrierName(p.carrier)}</span>
+						<span class="carrier {p.carrier}" title={carrierName(p.carrier)}>{carrierShort(p.carrier)}</span>
 						<span class="main">
 							<span class="line">
 								<span class="name">{p.label ?? p.code}</span>
@@ -183,6 +183,10 @@
 	.carrier.posti {
 		color: #fff;
 		background: #ff6b00;
+	}
+	.carrier.matkahuolto {
+		color: #fff;
+		background: #0b3c96;
 	}
 	.carrier.dhl {
 		color: #d40511;

@@ -102,7 +102,7 @@
 				<label>
 					<span>Tracking code</span>
 					<!-- svelte-ignore a11y_autofocus -->
-					<input bind:value={code} autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus required placeholder="JJFI…, 1Z…, 00340…" />
+					<input bind:value={code} autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus required placeholder="JJFI…, MH…, 1Z…, 00340…" />
 				</label>
 				<label>
 					<span>Name <small class="muted">(optional)</small></span>
@@ -266,7 +266,7 @@
 	}
 	.carriers {
 		display: grid;
-		grid-template-columns: repeat(3, 1fr);
+		grid-template-columns: repeat(2, 1fr);
 		gap: 4px;
 		padding: 4px;
 		border-radius: 14px;
