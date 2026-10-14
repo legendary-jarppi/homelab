@@ -22,7 +22,7 @@ Records live on the UDM Pro (*Settings > Policy Table > DNS*). UniFi rejects wil
 | `ingress.lab.internal` | A | `192.168.1.10` (Traefik via ServiceLB) |
 | `<app>.lab.internal` | CNAME | `ingress.lab.internal` |
 
-Existing: `dashboard` ([apps/dashboard](dashboard/)), `homeassistant` ([apps/homeassistant](homeassistant/)), `news` ([apps/news](news/)), `workout` ([apps/workout](workout/)), `grafana`, `prometheus`, `kube` (Headlamp). `cameras` is no longer used (go2rtc is cluster-internal); delete its record.
+Existing: `dashboard` ([apps/dashboard](dashboard/)), `homeassistant` ([apps/homeassistant](homeassistant/)), `lists` ([apps/lists](lists/)), `news` ([apps/news](news/)), `workout` ([apps/workout](workout/)), `grafana`, `prometheus`, `kube` (Headlamp). `cameras` is no longer used (go2rtc is cluster-internal); delete its record.
 
 Cluster-internal apps (no hostname, no record): `presence` ([apps/presence](presence/)), who is home, read by the dashboard; `cabin-camera` ([apps/cabin-camera](cabin-camera/)), the cabin camera's motion snapshots for the dashboard, whose FTPS upload is the one service port-forwarded from the internet.
 

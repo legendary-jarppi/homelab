@@ -42,6 +42,11 @@ export const config = {
 	workoutToken: env.WORKOUT_TOKEN ?? '',
 	/** Where tapping the workout card goes (the app's address in the browser). */
 	workoutAppUrl: env.WORKOUT_APP_URL ?? 'http://workout.lab.internal',
+	/** apps/lists, cluster-internal; its cards are shown only when the token is set (secret dashboard-lists). */
+	listsUrl: env.LISTS_URL ?? 'http://localhost:3000',
+	listsToken: env.LISTS_TOKEN ?? '',
+	/** Where tapping a list card goes (the app's address in the browser). */
+	listsAppUrl: env.LISTS_APP_URL ?? 'http://lists.lab.internal',
 	/** apps/presence, cluster-internal (who is home); the card says "not set up" without it. */
 	presenceUrl: env.PRESENCE_URL ?? '',
 	/** apps/cabin-camera's snapshot service, cluster-internal; the cabin card is shown only when set. */

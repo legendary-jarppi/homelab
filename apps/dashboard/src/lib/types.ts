@@ -83,6 +83,22 @@ export interface WorkoutSummary {
 	}[];
 }
 
+/** apps/lists GET /api/dashboard: lists marked "Show on dashboard", each with its first items in the list's order. */
+export interface ListsData {
+	/** Everyone who can be on an item, in order; colours go by this order (as in apps/lists). `short`: "Ja", "AL". */
+	people: { id: number; name: string; short: string }[];
+	lists: {
+		slug: string;
+		name: string;
+		/** null when the list has no dates. */
+		dateLabel: string | null;
+		usesPeople: boolean;
+		usesService: boolean;
+		/** `day` "YYYY-MM-DD"; `people` are person ids. */
+		items: { id: number; title: string; day: string | null; people: number[]; service: string | null; link: string | null }[];
+	}[];
+}
+
 /** Family calendar (GET /api/calendar): events from today through the next days, sorted by start. */
 export interface CalendarData {
 	/** IANA zone the dates and day boundaries are in. */

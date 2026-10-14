@@ -64,7 +64,7 @@ export const COMPONENTS: Diagram = {
 			'out kube-system news presence mosquitto',
 			'out local-path-storage workout homeassistant mosquitto',
 			'out monitoring monitoring unpoller backup',
-			'out monitoring monitoring headlamp backup'
+			'out monitoring monitoring headlamp lists'
 		],
 		narrow: [
 			'out out',
@@ -75,7 +75,7 @@ export const COMPONENTS: Diagram = {
 			'homeassistant mosquitto',
 			'monitoring monitoring',
 			'unpoller headlamp',
-			'backup backup'
+			'backup lists'
 		]
 	},
 	groups: [
@@ -210,6 +210,15 @@ export const COMPONENTS: Diagram = {
 			]
 		},
 		{
+			id: 'lists',
+			label: 'lists',
+			kind: 'namespace',
+			nodes: [
+				{ id: 'listsweb', label: 'Web', sub: 'lists.lab.internal', workloads: ['lists/web'], href: 'http://lists.lab.internal', info: 'Lists of things done, watched or wanted (watched movies, movies to watch, …): any number of lists, each with the item fields it needs (people, date, service, link, note). Gives the dashboard the lists marked "Show on dashboard" (bearer token).' },
+				{ id: 'listspg', label: 'Postgres', sub: 'lists, items', workloads: ['lists/postgres'], info: 'Postgres for lists; only the web pod may connect. Dumped nightly by the backup.' }
+			]
+		},
+		{
 			id: 'backup',
 			label: 'backup',
 			kind: 'namespace',
@@ -247,6 +256,9 @@ export const COMPONENTS: Diagram = {
 		{ from: 'newsworker', to: 'newspg', label: 'SQL', kind: 'data' },
 		{ from: 'newsworker', to: 'internet', label: 'outlets, AI classification', kind: 'internet' },
 		{ from: 'workweb', to: 'workpg', label: 'SQL', kind: 'data' },
+		{ from: 'traefik', to: 'listsweb', label: 'lists.lab.internal', kind: 'web' },
+		{ from: 'dashboard', to: 'listsweb', label: 'lists on the dashboard', kind: 'web' },
+		{ from: 'listsweb', to: 'listspg', label: 'SQL', kind: 'data' },
 		{ from: 'ha', to: 'mosquitto', label: 'MQTT', kind: 'mqtt' },
 		{ from: 'presence', to: 'mosquitto', label: 'Bluetooth sightings', kind: 'mqtt' },
 		{ from: 'presence', to: 'prometheus', label: 'Wi-Fi clients', kind: 'metrics' },
@@ -351,7 +363,7 @@ export const NETWORK: Diagram = {
 			kind: 'zone',
 			row: true,
 			nodes: [
-				{ id: 'n-deny', label: 'Default deny', sub: 'news, workout', info: 'All traffic blocked except the listed paths: Traefik to web, web (and worker) to Postgres, DNS, the dashboard to workout, and the news worker to the internet on 80/443 (not the LAN).' },
+				{ id: 'n-deny', label: 'Default deny', sub: 'news, workout, lists', info: 'All traffic blocked except the listed paths: Traefik to web, web (and worker) to Postgres, DNS, the dashboard to workout and lists, and the news worker to the internet on 80/443 (not the LAN).' },
 				{ id: 'n-limited', label: 'Limited', sub: 'go2rtc, presence, cabin-camera, mosquitto, backup', info: 'go2rtc accepts only the dashboard; presence only the dashboard and Prometheus; Mosquitto only the LAN, presence and the server itself; cabin-camera\'s snapshot service only the dashboard; the backup may reach DNS, the API and the internet on 443 only.' },
 				{ id: 'n-open', label: 'No policy', sub: 'dashboard, monitoring, kube-system, …', info: 'dashboard, monitoring, headlamp, unpoller and kube-system have no NetworkPolicy; Home Assistant and node-exporter are on the host network, where policies do not apply.' }
 			]

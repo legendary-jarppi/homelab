@@ -7,6 +7,7 @@
 	import CameraTile from '$lib/components/CameraTile.svelte';
 	import CameraViewer from '$lib/components/CameraViewer.svelte';
 	import Card from '$lib/components/Card.svelte';
+	import ListCard from '$lib/components/ListCard.svelte';
 	import HomelabCard from '$lib/components/HomelabCard.svelte';
 	import NetworkCard from '$lib/components/NetworkCard.svelte';
 	import NightScreen from '$lib/components/NightScreen.svelte';
@@ -23,7 +24,7 @@
 	import { cabinEvents } from '$lib/cabin';
 	import { dayOf } from '$lib/dates';
 	import { night } from '$lib/night.svelte';
-	import type { CabinData, CalendarData, DashboardTab, LiveData, PackagesData, PresenceData, ProtectData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
+	import type { CabinData, CalendarData, DashboardTab, ListsData, LiveData, PackagesData, PresenceData, ProtectData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 
 	let { data } = $props();
 
@@ -37,6 +38,7 @@
 	let presence = $state<PresenceData | null>(untrack(() => data.presence));
 	let cabin = $state<CabinData | null>(untrack(() => data.cabin));
 	let protect = $state<ProtectData | null>(untrack(() => data.protect));
+	let lists = $state<ListsData | null>(untrack(() => data.lists));
 	let viewer = $state<number | null>(null);
 	let tab = $state<DashboardTab>('home');
 	/** The Cameras tab's view; opening the tab always starts on the live pictures. */
@@ -106,6 +108,9 @@
 		if (data.workoutConfigured) {
 			pollers.push({ url: '/api/workout', everyMs: 60_000, apply: (b) => (workout = b as WorkoutSummary), due: workout ? start + 60_000 : 0 });
 		}
+		if (data.listsConfigured) {
+			pollers.push({ url: '/api/lists', everyMs: 60_000, apply: (b) => (lists = b as ListsData), due: lists ? start + 60_000 : 0 });
+		}
 		if (data.calendarConfigured) {
 			pollers.push({ url: '/api/calendar', everyMs: 5 * 60_000, apply: (b) => (calendar = b as CalendarData), due: calendar ? start + 5 * 60_000 : 0 });
 		}
@@ -164,8 +169,18 @@
 			<div class="area presence">
 				<PresenceCard {presence} configured={data.presenceConfigured} />
 			</div>
-			<div class="area calendar">
-				<CalendarCard {calendar} configured={data.calendarConfigured} />
+			<!-- The calendar, with the lists marked "Show on dashboard" (apps/lists) below it. -->
+			<div class="area middle">
+				<div class="calendar">
+					<CalendarCard {calendar} configured={data.calendarConfigured} />
+				</div>
+				{#if lists && lists.lists.length > 0}
+					<div class="lists">
+						{#each lists.lists as list (list.slug)}
+							<ListCard {list} people={lists.people} appUrl={data.listsAppUrl} />
+						{/each}
+					</div>
+				{/if}
 			</div>
 			<div class="area packages">
 				<PackagesCard data={packages} onchange={refreshPackages} />
@@ -292,8 +307,16 @@
 	.workout {
 		grid-area: wo;
 	}
-	.calendar {
+	.middle {
 		grid-area: cal;
+		display: flex;
+		flex-direction: column;
+		gap: 12px;
+	}
+	.lists {
+		display: grid;
+		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+		gap: 12px;
 	}
 	.cabin {
 		grid-area: cab;
@@ -377,8 +400,15 @@
 		.workout {
 			container: workout / size;
 		}
-		.calendar {
+		/* The calendar keeps three fifths of the column when list cards are below it. */
+		.middle .calendar {
+			flex: 3 1 0;
+			min-height: 0;
 			container: calendar / size;
+		}
+		.middle .lists {
+			flex: 2 1 0;
+			min-height: 0;
 		}
 	}
 

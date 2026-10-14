@@ -9,5 +9,7 @@ export const load: PageServerLoad = () => ({
 	calendarConfigured: config.calendarIcsUrl !== '',
 	presenceConfigured: config.presenceUrl !== '',
 	cabinConfigured: config.cabinCameraUrl !== '',
-	protectConfigured: config.protectUser !== '' && config.protectPass !== ''
+	protectConfigured: config.protectUser !== '' && config.protectPass !== '',
+	listsConfigured: config.listsToken !== '',
+	listsAppUrl: config.listsAppUrl
 });
