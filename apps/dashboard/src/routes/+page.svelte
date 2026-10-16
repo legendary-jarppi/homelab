@@ -91,6 +91,10 @@
 		const response = await fetch('/api/packages', { cache: 'no-store' });
 		if (response.ok) packages = await response.json();
 	}
+	async function refreshCalendar() {
+		const response = await fetch('/api/calendar', { cache: 'no-store' });
+		if (response.ok) calendar = await response.json();
+	}
 	onMount(() => {
 		const stopNight = night.start();
 		const RETRY_MS = 30_000;
@@ -172,7 +176,7 @@
 			<!-- The calendar, with the lists marked "Show on dashboard" (apps/lists) below it. -->
 			<div class="area middle">
 				<div class="calendar">
-					<CalendarCard {calendar} configured={data.calendarConfigured} />
+					<CalendarCard {calendar} configured={data.calendarConfigured} onchange={refreshCalendar} />
 				</div>
 				{#if lists && lists.lists.length > 0}
 					<div class="lists">

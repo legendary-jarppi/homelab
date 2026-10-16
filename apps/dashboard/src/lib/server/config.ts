@@ -63,6 +63,12 @@ export const config = {
 		.map(([name, label]) => ({ name, label: label || name })),
 	/** Google Calendar "secret address in iCal format" (secret dashboard-calendar); never sent to the browser or logged. */
 	calendarIcsUrl: env.CALENDAR_ICS_URL ?? '',
+	/**
+	 * Google Calendar API (secret dashboard-calendar): a service account's JSON key and the calendar it
+	 * may change. With both, the card reads through the API and events can be added; never logged.
+	 */
+	googleServiceAccount: env.GOOGLE_SERVICE_ACCOUNT ?? '',
+	calendarId: env.CALENDAR_ID ?? '',
 	/** Colour of the calendar's events on the card. */
 	calendarColor: env.CALENDAR_COLOR ?? '#38bdf8',
 	/** Tracked packages (JSON) on the dashboard's volume. */

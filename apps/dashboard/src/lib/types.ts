@@ -105,6 +105,8 @@ export interface CalendarData {
 	timeZone: string;
 	events: CalendarEvent[];
 	updatedAt: number;
+	/** Events can be added from the dashboard (POST /api/calendar). */
+	writable: boolean;
 }
 
 export interface CalendarEvent {
@@ -115,9 +117,27 @@ export interface CalendarEvent {
 	end: string;
 	allDay: boolean;
 	location: string | null;
+	/** Plain text (Google's HTML reduced to lines). */
+	description: string | null;
 	/** Whose calendar or which shared calendar; `color` is a CSS colour for it. */
 	calendar: string;
 	color: string;
+}
+
+/** POST /api/calendar: wall-clock date and time in CalendarData.timeZone. */
+export interface NewCalendarEvent {
+	title: string;
+	/** "YYYY-MM-DD" */
+	date: string;
+	allDay: boolean;
+	/** "HH:MM"; timed events only. */
+	time: string | null;
+	/** Timed events: length in minutes. */
+	minutes: number | null;
+	/** All-day events: how many days. */
+	days: number | null;
+	location: string | null;
+	description: string | null;
 }
 
 export type Carrier = 'posti' | 'matkahuolto' | 'dhl' | 'ups' | 'dsv';

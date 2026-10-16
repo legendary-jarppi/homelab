@@ -1,3 +1,4 @@
+import { calendarConfigured } from '$lib/server/calendar';
 import { config } from '$lib/server/config';
 import type { PageServerLoad } from './$types';
 
@@ -6,7 +7,7 @@ export const load: PageServerLoad = () => ({
 	weatherConfigured: config.weatherLocations.length > 0,
 	workoutConfigured: config.workoutToken !== '',
 	workoutAppUrl: config.workoutAppUrl,
-	calendarConfigured: config.calendarIcsUrl !== '',
+	calendarConfigured: calendarConfigured(),
 	presenceConfigured: config.presenceUrl !== '',
 	cabinConfigured: config.cabinCameraUrl !== '',
 	protectConfigured: config.protectUser !== '' && config.protectPass !== '',

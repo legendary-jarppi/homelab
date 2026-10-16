@@ -1,10 +1,21 @@
 <script lang="ts">
 	import Card from './Card.svelte';
+	import CalendarSheet from './CalendarSheet.svelte';
 	import { shortDay, weekdayShort } from '$lib/dates';
 	import { night } from '$lib/night.svelte';
 	import type { CalendarData, CalendarEvent } from '$lib/types';
 
-	let { calendar, configured }: { calendar: CalendarData | null; configured: boolean } = $props();
+	let { calendar, configured, onchange }: { calendar: CalendarData | null; configured: boolean; onchange: () => void } = $props();
+
+	/** null = closed; 'add' = new event; otherwise that event's details. */
+	let sheet = $state<'add' | CalendarEvent | null>(null);
+	/** Events open their details on tap, or Enter/Space from the keyboard. */
+	const opens = (e: CalendarEvent) => ({
+		role: 'button',
+		tabindex: 0,
+		onclick: () => (sheet = e),
+		onkeydown: (k: KeyboardEvent) => (k.key === 'Enter' || k.key === ' ') && (k.preventDefault(), (sheet = e))
+	});
 
 	/** The calendar's name is worth a line only when events come from several calendars. */
 	const severalCalendars = $derived(new Set(calendar?.events.map((e) => e.calendar)).size > 1);
@@ -88,7 +99,14 @@
 
 <Card title="Calendar">
 	{#snippet accessory()}
-		{#if calendar && todayTimed.length > 0}<span>{remaining === 0 ? 'Nothing more today' : `${remaining} more today`}</span>{/if}
+		<span class="head">
+			{#if calendar && todayTimed.length > 0}<span>{remaining === 0 ? 'Nothing more today' : `${remaining} more today`}</span>{/if}
+			{#if calendar?.writable}
+				<button class="add" onclick={() => (sheet = 'add')} aria-label="Add an event">
+					<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Add
+				</button>
+			{/if}
+		</span>
 	{/snippet}
 	{#if calendar}
 		<div class="body">
@@ -96,7 +114,7 @@
 				{#if todayAllDay.length > 0}
 					<ul class="chips">
 						{#each todayAllDay as e (e.id)}
-							<li style:--c={e.color}><i></i>{e.title}{#if multiDay(e)}<span class="muted"> · {range(e, today)}</span>{/if}</li>
+							<li style:--c={e.color} {...opens(e)}><i></i>{e.title}{#if multiDay(e)}<span class="muted"> · {range(e, today)}</span>{/if}</li>
 						{/each}
 					</ul>
 				{/if}
@@ -104,7 +122,7 @@
 					<ol class="events">
 						{#each todayTimed as e (e.id)}
 							{@const s = status(e)}
-							<li class={s} style:--c={e.color}>
+							<li class={s} style:--c={e.color} {...opens(e)}>
 								<span class="time num">{time(e.start)}<small>{time(e.end)}</small></span>
 								<span class="bar" aria-hidden="true">{#if s === 'now'}<span class="fill" style:height="{progress(e)}%"></span>{/if}</span>
 								<span class="what">
@@ -133,7 +151,7 @@
 								<span class="label">{dayLabel(d.key, today)}</span>
 								<ul>
 									{#each d.events as { e, when } (e.id)}
-										<li style:--c={e.color}>
+										<li style:--c={e.color} {...opens(e)}>
 											<i></i>
 											<span class="when num">{when}</span>
 											<span class="title">{e.title}</span>
@@ -153,7 +171,49 @@
 	{/if}
 </Card>
 
+{#if sheet !== null && calendar}
+	<CalendarSheet
+		view={sheet}
+		zone={zone}
+		showCalendar={severalCalendars}
+		onclose={() => (sheet = null)}
+		onadded={() => {
+			sheet = null;
+			onchange();
+		}}
+	/>
+{/if}
+
 <style>
+	.head {
+		display: inline-flex;
+		align-items: center;
+		gap: 10px;
+	}
+	.add {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+		padding: 5px 12px 5px 8px;
+		font-size: 13px;
+		font-weight: 600;
+		color: var(--text);
+		border: 1px solid var(--border);
+		border-radius: 999px;
+		background: var(--surface-strong);
+		cursor: pointer;
+	}
+	.add svg {
+		width: 16px;
+		height: 16px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2.2;
+		stroke-linecap: round;
+	}
+	[role='button'] {
+		cursor: pointer;
+	}
 	.body {
 		flex: 1;
 		min-height: 0;
