@@ -120,7 +120,7 @@ export interface CalendarEvent {
 	color: string;
 }
 
-export type Carrier = 'posti' | 'matkahuolto' | 'dhl' | 'ups';
+export type Carrier = 'posti' | 'matkahuolto' | 'dhl' | 'ups' | 'dsv';
 
 /** Normalised across carriers; `pickup` = waiting at a pickup point or parcel locker. */
 export type PackageState = 'unknown' | 'info' | 'transit' | 'out' | 'pickup' | 'delivered' | 'exception';
@@ -167,7 +167,7 @@ export interface PackagesData {
 	packages: TrackedPackage[];
 	/** How many are in the archive (GET /api/packages/archive lists them). */
 	archived: number;
-	/** Carriers a package can be added for: Posti, Matkahuolto and DHL (link-only) always, UPS with credentials. */
+	/** Carriers a package can be added for: Posti, Matkahuolto, DSV and DHL (link-only) always, UPS with credentials. */
 	carriers: Record<Carrier, boolean>;
 }
 

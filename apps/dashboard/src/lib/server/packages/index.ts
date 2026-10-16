@@ -14,6 +14,7 @@ import { dayOf } from '$lib/dates';
 import type { Carrier, PackageTracking, PackagesData, TrackedPackage } from '$lib/types';
 import { notify, notifyConfigured } from '$lib/server/notify';
 import { NotFoundError } from './errors';
+import { trackDsv } from './dsv';
 import { trackMatkahuolto } from './matkahuolto';
 import { trackPosti } from './posti';
 import { trackUps } from './ups';
@@ -21,7 +22,8 @@ import { trackUps } from './ups';
 const TRACKERS: Partial<Record<Carrier, { track: (code: string) => Promise<PackageTracking>; refreshMs: number }>> = {
 	posti: { track: trackPosti, refreshMs: 20 * 60_000 },
 	matkahuolto: { track: trackMatkahuolto, refreshMs: 20 * 60_000 },
-	ups: { track: trackUps, refreshMs: 20 * 60_000 }
+	ups: { track: trackUps, refreshMs: 20 * 60_000 },
+	dsv: { track: trackDsv, refreshMs: 20 * 60_000 }
 };
 /** Failed checks (including "not found yet") are retried less eagerly. */
 const RETRY_MS = 30 * 60_000;
@@ -80,7 +82,8 @@ export const carrierStatus = (): PackagesData['carriers'] => ({
 	posti: true,
 	matkahuolto: true,
 	dhl: true,
-	ups: config.upsClientId !== '' && config.upsClientSecret !== ''
+	ups: config.upsClientId !== '' && config.upsClientSecret !== '',
+	dsv: true
 });
 
 /** How often due packages are looked at without anyone on the dashboard (notifications only). */

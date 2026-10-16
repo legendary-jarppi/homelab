@@ -33,4 +33,8 @@
 		color: #ffb500;
 		background: #351c15;
 	}
+	.dsv {
+		color: #fff;
+		background: #002664;
+	}
 </style>
