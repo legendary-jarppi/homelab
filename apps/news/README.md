@@ -1,6 +1,8 @@
 # news
 
-Shilly Shally News at http://news.lab.internal: a private, invite-only newspaper for readers who want
+Shilly Shally News at http://news.lab.internal (and https://news.shillyshally.org from anywhere, through
+the Cloudflare Tunnel behind Cloudflare Access: the Access policy *Family* first, then the site's own
+login; a reader invited with a `/join/` link also needs their email in *Family*): a private, invite-only newspaper for readers who want
 to avoid distressing news. Articles from Finnish outlets (and NPR) are fetched in full with their
 photos, classified by Claude (topics, sensitivity tags with intensity, per-photo tags, calm headline,
 summary, importance), de-duplicated across outlets, and shown to each reader only when they pass that

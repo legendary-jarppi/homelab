@@ -16,4 +16,7 @@ ingress:
   # video WebSocket.
   - hostname: dashboard.shillyshally.org
     service: http://dashboard.dashboard.svc:3000
+  # apps/news: the whole site (its own user login still applies).
+  - hostname: news.shillyshally.org
+    service: http://web.news.svc:3000
   - service: http_status:404
