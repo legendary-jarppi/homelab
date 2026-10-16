@@ -1,4 +1,4 @@
-# Cluster-internal only: viewers go through the dashboard (passcode login + WebSocket relay).
+# Cluster-internal only: viewers go through the dashboard's WebSocket relay.
 apiVersion: v1
 kind: Service
 metadata:
