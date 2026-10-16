@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: web
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: web
+          # Built locally and imported into k3s (deploy.sh); never pulled.
+          image: localhost/notify
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: notify-config
+            # VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY: the server's web push identity.
+            - secretRef:
+                name: notify-vapid
+          env:
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: notify-db
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: postgres://notify:$(DB_PASSWORD)@postgres:5432/notify
+            - name: TOPICS_FILE
+              value: /etc/notify/topics/topics.json
+            - name: SENDERS_DIR
+              value: /etc/notify/senders
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+            failureThreshold: 4
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: topics
+              mountPath: /etc/notify/topics
+              readOnly: true
+            - name: senders
+              mountPath: /etc/notify/senders
+              readOnly: true
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: topics
+          configMap:
+            name: notify-topics
+        # One key per sending app (key = sender name, value = its token); changes apply without a restart.
+        - name: senders
+          secret:
+            secretName: notify-senders
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels:
+    app.kubernetes.io/name: web
+spec:
+  selector:
+    app.kubernetes.io/name: web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http

@@ -69,5 +69,10 @@ export const config = {
 	packagesFile: env.PACKAGES_FILE ?? '.data/packages.json',
 	/** developer.ups.com OAuth app with the Tracking API (secret dashboard-packages). */
 	upsClientId: env.UPS_CLIENT_ID ?? '',
-	upsClientSecret: env.UPS_CLIENT_SECRET ?? ''
+	upsClientSecret: env.UPS_CLIENT_SECRET ?? '',
+	/** apps/notify's sending API, cluster-internal; notifications (package ready for pickup) only with NOTIFY_TOKEN (secret dashboard-notify). */
+	notifyUrl: env.NOTIFY_URL ?? 'http://localhost:3000',
+	notifyToken: env.NOTIFY_TOKEN ?? '',
+	/** The dashboard's own address, opened by tapping its notifications. */
+	dashboardAppUrl: env.DASHBOARD_APP_URL ?? 'http://dashboard.lab.internal'
 };

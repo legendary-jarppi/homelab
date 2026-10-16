@@ -52,6 +52,10 @@ spec:
             - secretRef:
                 name: dashboard-protect
                 optional: true
+            # NOTIFY_TOKEN for apps/notify's sending API (package ready for pickup); without it nothing is sent.
+            - secretRef:
+                name: dashboard-notify
+                optional: true
           env:
             - name: PACKAGES_FILE
               value: /data/packages.json

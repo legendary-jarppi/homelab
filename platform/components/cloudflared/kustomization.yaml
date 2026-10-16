@@ -1,0 +1,15 @@
+# cloudflared: the Cloudflare Tunnel that publishes chosen apps under shillyshally.org (README.md).
+# Needs secret tunnel-credentials (credentials.json) in namespace cloudflare, not in git.
+# Apply: kubectl apply -k platform/components/cloudflared
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cloudflare
+resources:
+  - namespace.yaml
+  - deployment.yaml
+  - networkpolicy.yaml
+configMapGenerator:
+  # Hashed name: a route change rolls the pod.
+  - name: cloudflared-config
+    files:
+      - config.yaml

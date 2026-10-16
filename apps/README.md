@@ -4,14 +4,14 @@ One directory per application, each with its own manifests or Helm values.
 
 ## Hostnames
 
-Internal zone: `lab.internal` (`.internal` is reserved by ICANN for private use). Becomes `lab.<domain>` once a domain is bought; only the suffix changes.
+Internal zone: `lab.internal` (`.internal` is reserved by ICANN for private use). The domain is `shillyshally.org` (Cloudflare Registrar and DNS); moving the internal zone to `lab.shillyshally.org` changes only the suffix.
 
 | Rule | Example |
 |---|---|
 | Hostname = directory under `apps/` = namespace | `apps/news/` → namespace `news` → `news.lab.internal` |
 | Extra endpoints of one app: single label, joined with `-` | `news-api.lab.internal`, not `api.news.lab.internal` (a `*.lab.<domain>` wildcard cert covers one level only) |
 | Platform UIs share the zone | `traefik.lab.internal`, `argocd.lab.internal` |
-| `lab.` names are never published; public apps (Cloudflare Tunnel) get a separate name directly under the domain | `news.<domain>` (Cloudflare's free cert covers one level only) |
+| `lab.` names are never published; public apps (Cloudflare Tunnel) get a separate name directly under the domain | `notify.shillyshally.org` (Cloudflare's free cert covers one level only) |
 
 ### DNS
 
@@ -26,6 +26,8 @@ Existing: `dashboard` ([apps/dashboard](dashboard/)), `homeassistant` ([apps/hom
 
 Cluster-internal apps (no hostname, no record): `presence` ([apps/presence](presence/)), who is home, read by the dashboard; `cabin-camera` ([apps/cabin-camera](cabin-camera/)), the cabin camera's motion snapshots for the dashboard, whose FTPS upload is the one service port-forwarded from the internet.
 
+Public apps (Cloudflare Tunnel, behind Cloudflare Access; DNS at Cloudflare, no UDM record): `notify` ([apps/notify](notify/)), notifications as web push, `notify.shillyshally.org`. Tunnel and routes: `cloudflared` in [platform/README.md](../platform/README.md#components).
+
 For other sites over site-to-site VPN: a *Forward Domain* record for `lab.internal` → `192.168.1.1`.
 
-No TLS for `lab.internal`: serve plain HTTP until the domain exists (then a Let's Encrypt `*.lab.<domain>` certificate via DNS-01).
+No TLS for `lab.internal`: plain HTTP (later a Let's Encrypt `*.lab.shillyshally.org` certificate via DNS-01).

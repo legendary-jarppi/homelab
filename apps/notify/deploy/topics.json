@@ -1,0 +1,8 @@
+[
+	{
+		"id": "packages",
+		"name": "Packages",
+		"description": "A package tracked on the home dashboard is ready for pickup.",
+		"default": true
+	}
+]

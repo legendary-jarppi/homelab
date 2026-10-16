@@ -1,0 +1,27 @@
+# Notify at https://notify.shillyshally.org (Cloudflare Tunnel + Access; no lab.internal address:
+# web push needs HTTPS). Sending API for apps in the cluster: http://web.notify.svc:3000/api/send.
+# Needs secrets notify-db (POSTGRES_PASSWORD), notify-vapid (VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY) and
+# notify-senders (one key per sending app), not in git; see apps/notify/README.md.
+# Build + apply: apps/notify/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: notify
+resources:
+  - namespace.yaml
+  - postgres.yaml
+  - app.yaml
+  - networkpolicy.yaml
+images:
+  - name: localhost/notify
+    newTag: "20261016-081639"
+configMapGenerator:
+  # Hashed names: changes roll the pod.
+  - name: notify-config
+    literals:
+      # The one public address; SvelteKit's form CSRF check compares against it.
+      - ORIGIN=https://notify.shillyshally.org
+      # Sent to push services as the contact for this sender.
+      - VAPID_SUBJECT=https://notify.shillyshally.org
+  - name: notify-topics
+    files:
+      - topics.json

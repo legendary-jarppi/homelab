@@ -64,7 +64,8 @@ export const COMPONENTS: Diagram = {
 			'out kube-system news presence mosquitto',
 			'out local-path-storage workout homeassistant mosquitto',
 			'out monitoring monitoring unpoller backup',
-			'out monitoring monitoring headlamp lists'
+			'out monitoring monitoring headlamp lists',
+			'out cloudflare notify notify lists'
 		],
 		narrow: [
 			'out out',
@@ -75,7 +76,8 @@ export const COMPONENTS: Diagram = {
 			'homeassistant mosquitto',
 			'monitoring monitoring',
 			'unpoller headlamp',
-			'backup lists'
+			'backup lists',
+			'cloudflare notify'
 		]
 	},
 	groups: [
@@ -84,12 +86,14 @@ export const COMPONENTS: Diagram = {
 			label: 'Outside the cluster',
 			kind: 'outside',
 			nodes: [
-				{ id: 'users', label: 'Family devices', sub: 'iPad, phones, laptops', info: 'Browsers on the home network (or the UDM\'s VPN). *.lab.internal names resolve on the UDM Pro to 192.168.1.10, where Traefik answers.' },
+				{ id: 'users', label: 'Family devices', sub: 'iPad, phones, laptops', info: 'Browsers on the home network (or the UDM\'s VPN). *.lab.internal names resolve on the UDM Pro to 192.168.1.10, where Traefik answers. The Notify app (Home Screen web app) opens through Cloudflare, also away from home.' },
 				{ id: 'udm', label: 'UDM Pro', sub: '192.168.1.1 · router, DNS, Protect', info: 'Router and firewall (NAT, port forward for the cabin camera), DNS for lab.internal, DHCP, and UniFi Protect: records the home cameras, serves their RTSPS streams and the event and clip API. UnPoller reads its network statistics.' },
 				{ id: 'cams', label: 'Protect cameras', sub: 'Front door, Backyard, Carport', info: 'UniFi G4/G5 Dome cameras, recorded continuously by Protect on the UDM Pro; smart detections (person, vehicle, animal) on the carport camera.' },
 				{ id: 'esp', label: 'ESPresense nodes', sub: 'Bluetooth, ESP32', info: 'ESP32 boards that recognise the family\'s phones over Bluetooth and publish sightings to Mosquitto (MQTT, port 1883 on 192.168.1.10).' },
 				{ id: 'cabincam', label: 'Cabin camera', sub: 'Reolink Go Plus, 4G', info: 'Battery camera at the cabin on a 4G connection. On motion it uploads a picture and a clip over FTPS to the home\'s public address; the UDM forwards ports 2121 and 50000-50009 to the server.' },
-				{ id: 'internet', label: 'Internet services', sub: 'weather, calendar, parcels, news, AI, Drive', info: 'Open-Meteo (weather), Google Calendar (iCal), Posti, Matkahuolto and UPS (parcels) for the dashboard; news outlets and the AI proxy for the news worker; Google Drive for the nightly backup.' }
+				{ id: 'internet', label: 'Internet services', sub: 'weather, calendar, parcels, news, AI, Drive', info: 'Open-Meteo (weather), Google Calendar (iCal), Posti, Matkahuolto and UPS (parcels) for the dashboard; news outlets and the AI proxy for the news worker; Google Drive for the nightly backup.' },
+				{ id: 'cfedge', label: 'Cloudflare', sub: 'notify.shillyshally.org · Access', info: 'Public HTTPS for the shillyshally.org apps: Cloudflare\'s certificate, then Cloudflare Access (email one-time code, listed emails only), then the tunnel to cloudflared. Nothing is port-forwarded for it.' },
+				{ id: 'pushsvc', label: 'Push services', sub: 'Apple, Google, Mozilla', info: 'Web Push: notify sends each message, encrypted for the device, to the push service of the browser that subscribed (web.push.apple.com for iPhones), which delivers it to the device.' }
 			]
 		},
 		{
@@ -219,6 +223,23 @@ export const COMPONENTS: Diagram = {
 			]
 		},
 		{
+			id: 'cloudflare',
+			label: 'cloudflare',
+			kind: 'namespace',
+			nodes: [
+				{ id: 'cloudflared', label: 'cloudflared', sub: 'tunnel homelab', workloads: ['cloudflare/cloudflared'], info: 'Keeps outbound connections to Cloudflare (QUIC, port 7844) and forwards the requests for the published hostnames (config in git: platform/components/cloudflared/config.yaml). Accepts no connections; may reach only Cloudflare and the apps it publishes.' }
+			]
+		},
+		{
+			id: 'notify',
+			label: 'notify',
+			kind: 'namespace',
+			nodes: [
+				{ id: 'notifyweb', label: 'Web', sub: 'notify.shillyshally.org', workloads: ['notify/web'], href: 'https://notify.shillyshally.org', info: 'The one place for notifications: apps send to a topic (POST /api/send, bearer token per sender, cluster-internal only), notify delivers web push to the devices of everyone who has that topic on. People install it on the Home Screen, choose topics and see recent messages; identity from Cloudflare Access.' },
+				{ id: 'notifypg', label: 'Postgres', sub: 'people, devices, messages', workloads: ['notify/postgres'], info: 'Postgres for notify; only the web pod may connect. Dumped nightly by the backup.' }
+			]
+		},
+		{
 			id: 'backup',
 			label: 'backup',
 			kind: 'namespace',
@@ -259,6 +280,13 @@ export const COMPONENTS: Diagram = {
 		{ from: 'traefik', to: 'listsweb', label: 'lists.lab.internal', kind: 'web' },
 		{ from: 'dashboard', to: 'listsweb', label: 'lists on the dashboard', kind: 'web' },
 		{ from: 'listsweb', to: 'listspg', label: 'SQL', kind: 'data' },
+		{ from: 'users', to: 'cfedge', label: 'HTTPS notify.shillyshally.org', kind: 'internet' },
+		{ from: 'cloudflared', to: 'cfedge', label: 'tunnel, outbound', kind: 'internet' },
+		{ from: 'cloudflared', to: 'notifyweb', label: 'the Notify app', kind: 'web' },
+		{ from: 'dashboard', to: 'notifyweb', label: 'package ready for pickup', kind: 'web' },
+		{ from: 'notifyweb', to: 'notifypg', label: 'SQL', kind: 'data' },
+		{ from: 'notifyweb', to: 'pushsvc', label: 'Web Push', kind: 'internet' },
+		{ from: 'pushsvc', to: 'users', label: 'notifications', kind: 'internet' },
 		{ from: 'ha', to: 'mosquitto', label: 'MQTT', kind: 'mqtt' },
 		{ from: 'presence', to: 'mosquitto', label: 'Bluetooth sightings', kind: 'mqtt' },
 		{ from: 'presence', to: 'prometheus', label: 'Wi-Fi clients', kind: 'metrics' },
@@ -294,6 +322,7 @@ export const NETWORK: Diagram = {
 			kind: 'zone',
 			nodes: [
 				{ id: 'n-internet', label: 'Internet services', sub: 'weather, calendar, parcels, news, AI, Drive', info: 'Everything the cluster fetches from outside. Pods reach it through the server (NAT to 192.168.1.10) and the UDM (NAT to the public address).' },
+				{ id: 'n-cloudflare', label: 'Cloudflare', sub: 'tunnel · Access · push services', info: 'shillyshally.org: the Notify app is reached at Cloudflare (HTTPS, Access login) and comes in over the tunnel that cloudflared keeps open from inside (outbound QUIC 7844), so no port is forwarded for it. Notifications go out to the push services (Apple, Google) on 443.' },
 				{ id: 'n-cabincam', label: 'Cabin camera', sub: '4G', info: 'Uploads over FTPS to the home\'s public address: control port 2121 and passive data ports 50000-50009. The only connection that comes in from the internet.' }
 			]
 		},
@@ -314,7 +343,7 @@ export const NETWORK: Diagram = {
 			sub: '192.168.1.0/24',
 			kind: 'zone',
 			nodes: [
-				{ id: 'n-family', label: 'Family devices', sub: 'iPad, phones, laptops', info: 'Open the web UIs by name: the UDM\'s DNS answers 192.168.1.10, Traefik routes by host name. kubectl uses the API on port 6443.' },
+				{ id: 'n-family', label: 'Family devices', sub: 'iPad, phones, laptops', info: 'Open the web UIs by name: the UDM\'s DNS answers 192.168.1.10, Traefik routes by host name. kubectl uses the API on port 6443. The Notify app goes through Cloudflare instead, at home and away.' },
 				{ id: 'n-cams', label: 'Protect cameras', sub: 'wired to the UDM', info: 'Stream to Protect only; nothing in the cluster talks to them directly.' },
 				{ id: 'n-esp', label: 'ESPresense nodes', sub: 'MQTT to .10:1883', info: 'Publish Bluetooth sightings to Mosquitto on port 1883 (password login, LAN only).' },
 				{ id: 'n-smart', label: 'Smart devices', sub: 'found over mDNS', info: 'Devices announcing themselves on the LAN (Chromecast, Hue, Shelly, ESPHome, HomeKit); Home Assistant sees them because it runs on the host network and firewalld allows mDNS.' }
@@ -363,14 +392,16 @@ export const NETWORK: Diagram = {
 			kind: 'zone',
 			row: true,
 			nodes: [
-				{ id: 'n-deny', label: 'Default deny', sub: 'news, workout, lists', info: 'All traffic blocked except the listed paths: Traefik to web, web (and worker) to Postgres, DNS, the dashboard to workout and lists, and the news worker to the internet on 80/443 (not the LAN).' },
-				{ id: 'n-limited', label: 'Limited', sub: 'go2rtc, presence, cabin-camera, mosquitto, backup', info: 'go2rtc accepts only the dashboard; presence only the dashboard and Prometheus; Mosquitto only the LAN, presence and the server itself; cabin-camera\'s snapshot service only the dashboard; the backup may reach DNS, the API and the internet on 443 only.' },
+				{ id: 'n-deny', label: 'Default deny', sub: 'news, workout, lists, notify', info: 'All traffic blocked except the listed paths: Traefik to web, web (and worker) to Postgres, DNS, the dashboard to workout, lists and notify, cloudflared to notify, the news worker to the internet on 80/443 and notify to the internet on 443 (not the LAN).' },
+				{ id: 'n-limited', label: 'Limited', sub: 'go2rtc, presence, cabin-camera, mosquitto, backup, cloudflared', info: 'go2rtc accepts only the dashboard; presence only the dashboard and Prometheus; Mosquitto only the LAN, presence and the server itself; cabin-camera\'s snapshot service only the dashboard; the backup may reach DNS, the API and the internet on 443 only; cloudflared accepts nothing and may reach only Cloudflare (7844, 443, not the LAN) and notify.' },
 				{ id: 'n-open', label: 'No policy', sub: 'dashboard, monitoring, kube-system, …', info: 'dashboard, monitoring, headlamp, unpoller and kube-system have no NetworkPolicy; Home Assistant and node-exporter are on the host network, where policies do not apply.' }
 			]
 		}
 	],
 	edges: [
 		{ from: 'n-internet', to: 'n-wan', label: 'public address', kind: 'internet' },
+		{ from: 'n-family', to: 'n-cloudflare', label: 'HTTPS notify.shillyshally.org', kind: 'web' },
+		{ from: 'n-wan', to: 'n-cloudflare', label: 'cloudflared tunnel, outbound', kind: 'internet' },
 		{ from: 'n-cabincam', to: 'n-wan', label: 'FTPS 2121, 50000-50009', kind: 'internet' },
 		{ from: 'n-wan', to: 'n-fw', label: 'port forward → 192.168.1.10', kind: 'internet' },
 		{ from: 'n-family', to: 'n-dns', label: 'look up *.lab.internal', kind: 'control' },

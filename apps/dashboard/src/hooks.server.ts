@@ -1,8 +1,11 @@
-import { redirect, type Handle } from '@sveltejs/kit';
+import { redirect, type Handle, type ServerInit } from '@sveltejs/kit';
+import { startBackgroundRefresh } from '$lib/server/packages';
 import { SESSION_COOKIE, verifySession } from '../session.js';
 
 /** Reachable without a session. Built assets (/_app, static files) are served before this hook. */
 const PUBLIC_PATHS = ['/login', '/manifest.webmanifest', '/icons/'];
+
+export const init: ServerInit = () => startBackgroundRefresh();
 
 export const handle: Handle = async ({ event, resolve }) => {
 	const path = event.url.pathname;

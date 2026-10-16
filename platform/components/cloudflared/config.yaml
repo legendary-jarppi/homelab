@@ -1,0 +1,15 @@
+# cloudflared: Cloudflare Tunnel "homelab" (locally managed: these routes are the tunnel's only config).
+# A hostname is public once its DNS record (CNAME to <tunnel id>.cfargotunnel.com, proxied) exists;
+# every public hostname must be behind a Cloudflare Access application first (README.md).
+tunnel: 85864a97-a4a9-42b6-b729-42ef8a4f356e
+credentials-file: /etc/cloudflared/credentials/credentials.json
+metrics: 0.0.0.0:2000
+no-autoupdate: true
+ingress:
+  # apps/notify: the web app; its sending API (/api/…) is for apps inside the cluster only.
+  - hostname: notify.shillyshally.org
+    path: ^/api/
+    service: http_status:404
+  - hostname: notify.shillyshally.org
+    service: http://web.notify.svc:3000
+  - service: http_status:404
