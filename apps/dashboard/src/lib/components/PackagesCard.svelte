@@ -1,15 +1,41 @@
 <script lang="ts">
 	import Card from './Card.svelte';
+	import CarrierChip from './CarrierChip.svelte';
 	import PackageSheet from './PackageSheet.svelte';
 	import { dayOf, eventTime } from '$lib/dates';
-	import { carrierName, carrierShort, LINK_ONLY, linkOnlyUntil, STATE_LABEL } from '$lib/packages';
+	import { carrierName, LINK_ONLY, linkOnlyUntil, STATE_LABEL } from '$lib/packages';
 	import type { PackageState, PackagesData, TrackedPackage } from '$lib/types';
 
 	let { data, onchange }: { data: PackagesData | null; onchange: () => void } = $props();
 
-	/** null = closed; 'add' = add form; otherwise the package whose details are open. */
-	let sheet = $state<'add' | string | null>(null);
-	const open = $derived(sheet && sheet !== 'add' ? (data?.packages.find((p) => p.id === sheet) ?? null) : null);
+	/** null = closed; 'add' = add form; 'archive' = the archive list; otherwise the package whose details are open. */
+	let sheet = $state<'add' | 'archive' | string | null>(null);
+	/** Loaded each time the archive is opened. */
+	let archive = $state<TrackedPackage[] | null>(null);
+	const open = $derived(
+		sheet && sheet !== 'add' && sheet !== 'archive'
+			? (data?.packages.find((p) => p.id === sheet) ?? archive?.find((p) => p.id === sheet) ?? null)
+			: null
+	);
+
+	async function showArchive() {
+		const response = await fetch('/api/packages/archive', { cache: 'no-store' });
+		archive = response.ok ? await response.json() : [];
+		sheet = 'archive';
+	}
+
+	/** A package opened from the archive goes back to the archive list. */
+	function close() {
+		if (open?.archivedAt != null) void showArchive();
+		else sheet = null;
+	}
+
+	async function changed() {
+		const fromArchive = sheet === 'archive' || open?.archivedAt != null;
+		onchange();
+		if (fromArchive) await showArchive();
+		else sheet = null;
+	}
 
 	/** Arriving soonest first: pickups and deliveries today, then the rest; delivered last. */
 	const ORDER: Record<PackageState, number> = { pickup: 0, out: 1, exception: 2, transit: 3, info: 4, unknown: 5, delivered: 6 };
@@ -37,7 +63,10 @@
 	{#snippet accessory()}
 		<span class="head">
 			{#if waiting > 0}<span class="waiting">{waiting} to pick up</span>{/if}
-			<button class="add" onclick={() => (sheet = 'add')} aria-label="Add a package">
+			<button class="pill" onclick={showArchive} aria-label="Archived packages">
+				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16v3H4zM5.5 10v8.5h13V10M10 13.5h4" /></svg>{data?.archived ?? ''}
+			</button>
+			<button class="pill" onclick={() => (sheet = 'add')} aria-label="Add a package">
 				<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>Add
 			</button>
 		</span>
@@ -53,7 +82,7 @@
 				{@const linkOnly = LINK_ONLY.has(p.carrier)}
 				<li>
 					<button class="row {state}" class:link-only={linkOnly} onclick={() => (sheet = p.id)}>
-						<span class="carrier {p.carrier}" title={carrierName(p.carrier)}>{carrierShort(p.carrier)}</span>
+						<CarrierChip carrier={p.carrier} />
 						<span class="main">
 							<span class="line">
 								<span class="name">{p.label ?? p.code}</span>
@@ -75,15 +104,14 @@
 	{/if}
 </Card>
 
-{#if sheet !== null && data}
+{#if data && (sheet === 'add' || sheet === 'archive' || open)}
 	<PackageSheet
-		pkg={open}
+		view={sheet === 'add' ? 'add' : sheet === 'archive' ? 'archive' : open!}
+		{archive}
 		carriers={data.carriers}
-		onclose={() => (sheet = null)}
-		onchange={() => {
-			sheet = null;
-			onchange();
-		}}
+		onopen={(id) => (sheet = id)}
+		onclose={close}
+		onchange={changed}
 	/>
 {/if}
 
@@ -97,7 +125,7 @@
 		color: var(--warn);
 		font-weight: 600;
 	}
-	.add {
+	.pill {
 		display: inline-flex;
 		align-items: center;
 		gap: 4px;
@@ -110,13 +138,14 @@
 		background: var(--surface-strong);
 		cursor: pointer;
 	}
-	.add svg {
+	.pill svg {
 		width: 16px;
 		height: 16px;
 		fill: none;
 		stroke: currentColor;
 		stroke-width: 2.2;
 		stroke-linecap: round;
+		stroke-linejoin: round;
 	}
 	p {
 		margin: 0;
@@ -170,31 +199,6 @@
 	}
 	.row.link-only {
 		--s: var(--text);
-	}
-	.carrier {
-		margin-top: 1px;
-		padding: 3px 0;
-		font-size: 11px;
-		font-weight: 800;
-		letter-spacing: 0.02em;
-		text-align: center;
-		border-radius: 7px;
-	}
-	.carrier.posti {
-		color: #fff;
-		background: #ff6b00;
-	}
-	.carrier.matkahuolto {
-		color: #fff;
-		background: #0b3c96;
-	}
-	.carrier.dhl {
-		color: #d40511;
-		background: #ffcc00;
-	}
-	.carrier.ups {
-		color: #ffb500;
-		background: #351c15;
 	}
 	.main {
 		display: grid;

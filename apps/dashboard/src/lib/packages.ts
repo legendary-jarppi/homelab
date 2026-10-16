@@ -27,11 +27,11 @@ export const TRACKING_URL: Record<Carrier, (code: string) => string> = {
  * and blocks automated use of its website. Their packages link to the carrier's tracking page.
  */
 export const LINK_ONLY: ReadonlySet<Carrier> = new Set(['dhl']);
-/** Nothing reports a link-only package as delivered, so it leaves the card this long after being added. */
+/** Nothing reports a link-only package as delivered, so it moves to the archive this long after being added (or restored). */
 const LINK_ONLY_KEEP_MS = 14 * 86_400_000;
 
-/** When a link-only package leaves the card (unix ms). */
-export const linkOnlyUntil = (p: TrackedPackage): number => p.addedAt + LINK_ONLY_KEEP_MS;
+/** When a link-only package leaves the card for the archive (unix ms). */
+export const linkOnlyUntil = (p: TrackedPackage): number => Math.max(p.addedAt, p.restoredAt ?? 0) + LINK_ONLY_KEEP_MS;
 
 /** Upper case, no spaces or dashes: codes are often copied with grouping. */
 export function normalizeCode(code: string): string {

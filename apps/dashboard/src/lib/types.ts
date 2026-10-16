@@ -153,14 +153,20 @@ export interface TrackedPackage {
 	checkedAt: number | null;
 	/** Last check failed (carrier unreachable, unknown code, carrier not configured). */
 	error: string | null;
-	/** When the package was first seen delivered; it leaves the card a few days later. */
+	/** When the package was first seen delivered; it moves to the archive a few days later. */
 	deliveredAt: number | null;
 	tracking: PackageTracking | null;
+	/** Set while in the archive: off the card, no longer checked. */
+	archivedAt: number | null;
+	/** Last taken back out of the archive; the automatic archiving counts from here too. */
+	restoredAt: number | null;
 }
 
-/** GET /api/packages */
+/** GET /api/packages: the packages on the card (not archived). */
 export interface PackagesData {
 	packages: TrackedPackage[];
+	/** How many are in the archive (GET /api/packages/archive lists them). */
+	archived: number;
 	/** Carriers a package can be added for: Posti, Matkahuolto and DHL (link-only) always, UPS with credentials. */
 	carriers: Record<Carrier, boolean>;
 }

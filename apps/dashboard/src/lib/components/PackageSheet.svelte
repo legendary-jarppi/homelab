@@ -1,16 +1,30 @@
 <script lang="ts">
 	import { fade, fly } from 'svelte/transition';
+	import CarrierChip from './CarrierChip.svelte';
 	import { dayOf, eventTime } from '$lib/dates';
 	import { CARRIERS, carrierName, detectCarrier, LINK_ONLY, linkOnlyUntil, normalizeCode, STATE_LABEL, TRACKING_URL } from '$lib/packages';
 	import type { Carrier, PackagesData, TrackedPackage } from '$lib/types';
 
-	/** `pkg` null = add form; otherwise that package's details. */
+	/** 'add' = add form; 'archive' = the archived packages; a package = its details. */
 	let {
-		pkg,
+		view,
+		archive,
 		carriers,
+		onopen,
 		onclose,
 		onchange
-	}: { pkg: TrackedPackage | null; carriers: PackagesData['carriers']; onclose: () => void; onchange: () => void } = $props();
+	}: {
+		view: 'add' | 'archive' | TrackedPackage;
+		archive: TrackedPackage[] | null;
+		carriers: PackagesData['carriers'];
+		onopen: (id: string) => void;
+		onclose: () => void;
+		onchange: () => void;
+	} = $props();
+
+	const pkg = $derived(typeof view === 'string' ? null : view);
+	const title = $derived(view === 'add' ? 'Add a package' : view === 'archive' ? 'Archive' : (view.label ?? view.code));
+	const dateOf = (ms: number) => dayOf(new Date(ms).toISOString());
 
 	let code = $state('');
 	let label = $state('');
@@ -50,6 +64,26 @@
 		onchange();
 	}
 
+	async function setArchived(archived: boolean) {
+		if (!pkg) return;
+		busy = true;
+		message = null;
+		try {
+			const response = await fetch(`/api/packages/${pkg.id}`, {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ archived })
+			});
+			if (!response.ok) {
+				message = ((await response.json().catch(() => null)) as { message?: string } | null)?.message ?? `Failed (${response.status}).`;
+				return;
+			}
+			onchange();
+		} finally {
+			busy = false;
+		}
+	}
+
 	function onkeydown(event: KeyboardEvent) {
 		if (event.key === 'Escape') onclose();
 	}
@@ -58,22 +92,42 @@
 <svelte:window {onkeydown} />
 
 <div class="backdrop" transition:fade={{ duration: 180 }} onclick={(e) => e.target === e.currentTarget && onclose()} role="presentation">
-	<div class="panel" transition:fly={{ y: 24, duration: 260 }} role="dialog" aria-modal="true" aria-label={pkg ? 'Package details' : 'Add a package'} tabindex="-1">
+	<div class="panel" transition:fly={{ y: 24, duration: 260 }} role="dialog" aria-modal="true" aria-label={title} tabindex="-1">
 		<header>
-			<h2>{pkg ? (pkg.label ?? pkg.code) : 'Add a package'}</h2>
+			<h2>{title}</h2>
 			<button class="close" onclick={onclose} aria-label="Close">
 				<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
 			</button>
 		</header>
 
-		{#if pkg}
+		{#if view === 'archive'}
+			{#if archive === null}
+				<p class="muted">Loading…</p>
+			{:else if archive.length === 0}
+				<p class="muted">Nothing archived yet. Archive a package from its details; delivered packages move here on their own two days after delivery.</p>
+			{:else}
+				<ul class="archived">
+					{#each archive as p (p.id)}
+						<li>
+							<button onclick={() => onopen(p.id)}>
+								<CarrierChip carrier={p.carrier} />
+								<span class="name">{p.label ?? p.code}</span>
+								<span class="muted">{LINK_ONLY.has(p.carrier) ? carrierName(p.carrier) : STATE_LABEL[p.tracking?.state ?? 'unknown']}</span>
+								<span class="muted num when">{p.archivedAt ? dateOf(p.archivedAt) : ''}</span>
+							</button>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+		{:else if pkg}
 			{@const t = pkg.tracking}
 			{@const linkOnly = LINK_ONLY.has(pkg.carrier)}
 			<dl class="facts">
 				<div><dt>Status</dt><dd>{linkOnly ? `On ${carrierName(pkg.carrier)}'s website` : STATE_LABEL[t?.state ?? 'unknown']}</dd></div>
 				<div><dt>Carrier</dt><dd>{carrierName(pkg.carrier)}</dd></div>
 				<div><dt>Code</dt><dd class="num">{pkg.code}</dd></div>
-				{#if linkOnly}<div><dt>On the card until</dt><dd>{dayOf(new Date(linkOnlyUntil(pkg)).toISOString())}</dd></div>{/if}
+				{#if linkOnly && pkg.archivedAt === null}<div><dt>On the card until</dt><dd>{dateOf(linkOnlyUntil(pkg))}</dd></div>{/if}
+				{#if pkg.archivedAt}<div><dt>Archived</dt><dd>{dateOf(pkg.archivedAt)}</dd></div>{/if}
 				{#if t?.eta}<div><dt>Arriving</dt><dd>{dayOf(t.eta)}</dd></div>{/if}
 				{#if t?.pickup}
 					<div class="wide">
@@ -93,9 +147,17 @@
 					{/each}
 				</ol>
 			{/if}
+			{#if message}<p class="error">{message}</p>{/if}
 			<div class="actions">
 				<a class="button" href={TRACKING_URL[pkg.carrier](pkg.code)} target="_blank" rel="noopener noreferrer">Open at {carrierName(pkg.carrier)}</a>
-				<button class="button danger" onclick={remove} disabled={busy}>Remove</button>
+				<span class="end">
+					{#if pkg.archivedAt}
+						<button class="button" onclick={() => setArchived(false)} disabled={busy}>Back to the card</button>
+					{:else}
+						<button class="button" onclick={() => setArchived(true)} disabled={busy}>Archive</button>
+					{/if}
+					<button class="button danger" onclick={remove} disabled={busy}>Delete</button>
+				</span>
 			</div>
 		{:else}
 			<form onsubmit={add}>
@@ -238,8 +300,60 @@
 	}
 	.actions {
 		display: flex;
+		flex-wrap: wrap;
 		gap: 10px;
 		justify-content: space-between;
+	}
+	.actions .end {
+		display: flex;
+		gap: 10px;
+	}
+	.archived {
+		margin: 0 -10px;
+		padding: 0;
+		list-style: none;
+		display: grid;
+		gap: 2px;
+	}
+	.archived button {
+		width: 100%;
+		display: grid;
+		grid-template-columns: 52px minmax(0, 1fr) auto;
+		grid-template-areas: 'chip name when' 'chip state when';
+		align-items: center;
+		column-gap: 12px;
+		row-gap: 2px;
+		padding: 8px 10px;
+		font: inherit;
+		text-align: left;
+		color: var(--text);
+		border: 0;
+		border-radius: 14px;
+		background: transparent;
+		cursor: pointer;
+	}
+	.archived button:active {
+		background: var(--surface-strong);
+	}
+	.archived button > :global(.carrier) {
+		grid-area: chip;
+		align-self: start;
+	}
+	.archived .name {
+		grid-area: name;
+		font-size: 15px;
+		font-weight: 600;
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+	.archived .muted:not(.when) {
+		grid-area: state;
+		font-size: 13px;
+	}
+	.archived .when {
+		grid-area: when;
+		font-size: 13px;
 	}
 	form {
 		display: grid;
