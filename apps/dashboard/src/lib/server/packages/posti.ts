@@ -17,7 +17,8 @@ const QUERY = `query SearchShipments($searchTerms: [String!]!) {
 
 interface Hit {
 	displayId: string | null;
-	status: { main: string | null; subStatus: string | null; exception: string | null } | null;
+	/** main e.g. IN_TRANSPORT; subStatus is a list (often empty). */
+	status: { main: string | null; subStatus: string[] | string | null; exception: string | null } | null;
 	delivery: { result: string | null; time: { type: string | null; timestamp: string | null; timestampLatest: string | null } | null } | null;
 	pickupPoint: {
 		status: string | null;
@@ -41,12 +42,20 @@ async function tokens() {
 	return token;
 }
 
-/** Posti's status enums are not documented; matched loosely, with the latest event as the fallback. */
+/**
+ * Posti's status enums are not documented; matched loosely, with the latest event as the fallback.
+ * pickupPoint.status is PLANNED as soon as a pickup point is reserved, while the parcel is still on
+ * its way (status.main IN_TRANSPORT), so only a status saying it is there counts.
+ */
 function stateOf(hit: Hit): PackageState {
-	const s = [hit.status?.main, hit.status?.subStatus, hit.delivery?.result].filter(Boolean).join(' ').toUpperCase();
+	const s = [hit.status?.main, hit.status?.subStatus, hit.delivery?.result].flat().filter(Boolean).join(' ').toUpperCase();
+	const point = (hit.pickupPoint?.status ?? '').toUpperCase();
+	const latest = [...(hit.events ?? [])].sort((a, b) => (b.timestamp ?? '').localeCompare(a.timestamp ?? ''))[0];
 	if (hit.status?.exception || /RETURN|FAIL|EXCEPTION|REFUSED/.test(s)) return 'exception';
 	if (/DELIVERED/.test(s)) return 'delivered';
-	if (/READY_FOR_PICKUP|WAITING_FOR_PICKUP|IN_PICKUP|PICKUP_POINT/.test(s) || hit.pickupPoint?.status) return 'pickup';
+	if (/READY_FOR_PICKUP|WAITING_FOR_PICKUP|IN_PICKUP|PICKUP_POINT/.test(s) || /READY|AVAILABLE|ARRIVED|WAITING/.test(point)) return 'pickup';
+	// "Lähetys on noudettavissa": waiting at the pickup point, in Posti's standard event text.
+	if (/noudettavissa/i.test(latest?.eventDescription ?? '')) return 'pickup';
 	if (/OUT_FOR_DELIVERY|IN_DELIVERY/.test(s)) return 'out';
 	if (/TRANSIT|TRANSPORT|ON_THE_WAY|RECEIVED|IN_PROGRESS|ARRIVED/.test(s)) return 'transit';
 	if (/WAITING|CREATED|INFO|ANNOUNCED|REGISTERED|PRE/.test(s)) return 'info';
