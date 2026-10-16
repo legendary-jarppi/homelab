@@ -1,13 +1,17 @@
 import { error, json } from '@sveltejs/kit';
-import { PackageInputError, removePackage, setArchived } from '$lib/server/packages';
+import { PackageInputError, removePackage, updatePackage } from '$lib/server/packages';
 import type { RequestHandler } from './$types';
 
-/** Body: { archived: boolean }: to the archive, or back to the card. */
+/** Body: { label?: string | null, archived?: boolean }: rename; to the archive, or back to the card. */
 export const PATCH: RequestHandler = async ({ params, request }) => {
-	const body = (await request.json().catch(() => null)) as { archived?: unknown } | null;
-	if (typeof body?.archived !== 'boolean') error(400, 'archived (true or false) missing');
+	const body = (await request.json().catch(() => null)) as { label?: unknown; archived?: unknown } | null;
+	const label = body?.label;
+	const archived = body?.archived;
+	if (label !== undefined && label !== null && typeof label !== 'string') error(400, 'label must be text or null');
+	if (archived !== undefined && typeof archived !== 'boolean') error(400, 'archived must be true or false');
+	if (label === undefined && archived === undefined) error(400, 'Nothing to change');
 	try {
-		const p = await setArchived(params.id, body.archived);
+		const p = await updatePackage(params.id, { label, archived });
 		if (!p) error(404, 'No such package');
 		return json(p);
 	} catch (e) {

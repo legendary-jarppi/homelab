@@ -18,9 +18,13 @@
 			: null
 	);
 
-	async function showArchive() {
+	async function loadArchive() {
 		const response = await fetch('/api/packages/archive', { cache: 'no-store' });
 		archive = response.ok ? await response.json() : [];
+	}
+
+	async function showArchive() {
+		await loadArchive();
 		sheet = 'archive';
 	}
 
@@ -35,6 +39,12 @@
 		onchange();
 		if (fromArchive) await showArchive();
 		else sheet = null;
+	}
+
+	/** Renamed: new data, same sheet. */
+	async function updated() {
+		onchange();
+		if (open?.archivedAt != null) await loadArchive();
 	}
 
 	/** Arriving soonest first: pickups and deliveries today, then the rest; delivered last. */
@@ -112,6 +122,7 @@
 		onopen={(id) => (sheet = id)}
 		onclose={close}
 		onchange={changed}
+		onupdate={updated}
 	/>
 {/if}
 

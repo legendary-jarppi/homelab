@@ -221,14 +221,21 @@ async function restore(p: TrackedPackage, onCard: number): Promise<TrackedPackag
 	return p;
 }
 
-/** Moves a package to the archive or back to the card; null when there is no such package. */
-export async function setArchived(id: string, archived: boolean): Promise<TrackedPackage | null> {
+/**
+ * Changes a package: its name (empty = none, the code is shown), and/or moves it to the archive or
+ * back to the card. null when there is no such package.
+ */
+export async function updatePackage(id: string, change: { label?: string | null; archived?: boolean }): Promise<TrackedPackage | null> {
 	return serial(async () => {
 		const list = await load();
 		const p = list.find((x) => x.id === id);
 		if (!p) return null;
-		if (!archived) return p.archivedAt === null ? p : restore(p, active(list).length);
-		if (p.archivedAt === null) {
+		if (change.label !== undefined) {
+			p.label = change.label?.trim().slice(0, 40) || null;
+			await save();
+		}
+		if (change.archived === false && p.archivedAt !== null) return restore(p, active(list).length);
+		if (change.archived === true && p.archivedAt === null) {
 			p.archivedAt = Date.now();
 			trimArchive();
 			await save();

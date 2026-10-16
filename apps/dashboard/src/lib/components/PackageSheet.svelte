@@ -12,14 +12,18 @@
 		carriers,
 		onopen,
 		onclose,
-		onchange
+		onchange,
+		onupdate
 	}: {
 		view: 'add' | 'archive' | TrackedPackage;
 		archive: TrackedPackage[] | null;
 		carriers: PackagesData['carriers'];
 		onopen: (id: string) => void;
 		onclose: () => void;
+		/** Added, archived, put back or deleted: the sheet moves on. */
 		onchange: () => void;
+		/** Renamed: the sheet stays on the package. */
+		onupdate: () => void;
 	} = $props();
 
 	const pkg = $derived(typeof view === 'string' ? null : view);
@@ -84,8 +88,35 @@
 		}
 	}
 
+	/** The name being edited; null when not renaming. */
+	let renaming = $state<string | null>(null);
+
+	async function saveName(event: SubmitEvent) {
+		event.preventDefault();
+		if (!pkg || renaming === null) return;
+		busy = true;
+		message = null;
+		try {
+			const response = await fetch(`/api/packages/${pkg.id}`, {
+				method: 'PATCH',
+				headers: { 'content-type': 'application/json' },
+				body: JSON.stringify({ label: renaming.trim() || null })
+			});
+			if (!response.ok) {
+				message = ((await response.json().catch(() => null)) as { message?: string } | null)?.message ?? `Failed (${response.status}).`;
+				return;
+			}
+			renaming = null;
+			onupdate();
+		} finally {
+			busy = false;
+		}
+	}
+
 	function onkeydown(event: KeyboardEvent) {
-		if (event.key === 'Escape') onclose();
+		if (event.key !== 'Escape') return;
+		if (renaming !== null) renaming = null;
+		else onclose();
 	}
 </script>
 
@@ -94,7 +125,22 @@
 <div class="backdrop" transition:fade={{ duration: 180 }} onclick={(e) => e.target === e.currentTarget && onclose()} role="presentation">
 	<div class="panel" transition:fly={{ y: 24, duration: 260 }} role="dialog" aria-modal="true" aria-label={title} tabindex="-1">
 		<header>
-			<h2>{title}</h2>
+			{#if pkg && renaming !== null}
+				<form class="rename" onsubmit={saveName}>
+					<!-- svelte-ignore a11y_autofocus -->
+					<input bind:value={renaming} maxlength="40" placeholder={pkg.code} aria-label="Name" autocomplete="off" autofocus />
+					<button class="button primary" disabled={busy}>Save</button>
+				</form>
+			{:else}
+				<span class="titlebar">
+					<h2>{title}</h2>
+					{#if pkg}
+						<button class="edit" onclick={() => (renaming = pkg.label ?? '')} aria-label="Rename" title="Rename">
+							<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4" /></svg>
+						</button>
+					{/if}
+				</span>
+			{/if}
 			<button class="close" onclick={onclose} aria-label="Close">
 				<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" /></svg>
 			</button>
@@ -234,6 +280,43 @@
 		font-size: 22px;
 		font-weight: 650;
 		overflow-wrap: anywhere;
+	}
+	.titlebar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		min-width: 0;
+	}
+	.edit {
+		width: 32px;
+		height: 32px;
+		flex: none;
+		display: grid;
+		place-items: center;
+		color: var(--muted);
+		border: 0;
+		border-radius: 50%;
+		background: transparent;
+		cursor: pointer;
+	}
+	.edit svg {
+		width: 18px;
+		height: 18px;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.8;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.rename {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		gap: 8px;
+	}
+	.rename input {
+		flex: 1;
+		min-width: 0;
 	}
 	.close {
 		width: 40px;
