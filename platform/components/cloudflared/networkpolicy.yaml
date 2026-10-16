@@ -1,7 +1,7 @@
 # Enforced by k3s's embedded network policy controller.
 #   cloudflared <- nothing
 #   cloudflared -> DNS; Cloudflare's edge (7844 QUIC/TCP, 443) on the internet, not the LAN;
-#                  the apps it publishes (notify web)
+#                  the apps it publishes (notify web, dashboard)
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -42,5 +42,14 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: web
+      ports:
+        - port: 3000
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dashboard
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dashboard
       ports:
         - port: 3000

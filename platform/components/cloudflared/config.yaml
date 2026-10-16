@@ -12,4 +12,8 @@ ingress:
     service: http_status:404
   - hostname: notify.shillyshally.org
     service: http://web.notify.svc:3000
+  # apps/dashboard: the whole dashboard (its own passcode login still applies), including the live
+  # video WebSocket.
+  - hostname: dashboard.shillyshally.org
+    service: http://dashboard.dashboard.svc:3000
   - service: http_status:404

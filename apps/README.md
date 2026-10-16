@@ -26,7 +26,7 @@ Existing: `dashboard` ([apps/dashboard](dashboard/)), `homeassistant` ([apps/hom
 
 Cluster-internal apps (no hostname, no record): `presence` ([apps/presence](presence/)), who is home, read by the dashboard; `cabin-camera` ([apps/cabin-camera](cabin-camera/)), the cabin camera's motion snapshots for the dashboard, whose FTPS upload is the one service port-forwarded from the internet.
 
-Public apps (Cloudflare Tunnel, behind Cloudflare Access; DNS at Cloudflare, no UDM record): `notify` ([apps/notify](notify/)), notifications as web push, `notify.shillyshally.org`. Tunnel and routes: `cloudflared` in [platform/README.md](../platform/README.md#components).
+Public apps (Cloudflare Tunnel, behind Cloudflare Access; DNS at Cloudflare, no UDM record): `notify` ([apps/notify](notify/)), notifications as web push, `notify.shillyshally.org`; the dashboard also at `dashboard.shillyshally.org` (besides `dashboard.lab.internal`). Both share the Access policy *Family*. Tunnel and routes: `cloudflared` in [platform/README.md](../platform/README.md#components).
 
 For other sites over site-to-site VPN: a *Forward Domain* record for `lab.internal` → `192.168.1.1`.
 

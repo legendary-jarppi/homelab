@@ -59,6 +59,8 @@ Groups, components and connections are written by hand in `src/lib/architecture.
 
 ## Access
 
+Two addresses: http://dashboard.lab.internal at home (or over the UDM's VPN), and https://dashboard.shillyshally.org from anywhere, through the Cloudflare Tunnel behind Cloudflare Access (email one-time code; the Access policy *Family*, shared with apps/notify; `/manifest.webmanifest` and `/icons/*` bypass Access so iOS can add it to the Home Screen). The passcode applies on both; their session cookies are separate (per host). Cards that link to other apps (lists, workout) open their `lab.internal` addresses, which work only at home. Notifications open the public address (`DASHBOARD_APP_URL`).
+
 Passcode login, session cookie valid for a year (HttpOnly, HMAC-signed with `SESSION_SECRET`). Five wrong passcodes from one address lock that address out for 15 minutes; failed attempts are logged (`kubectl -n dashboard logs deploy/dashboard`).
 
 | Task | Command |

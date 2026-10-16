@@ -79,8 +79,8 @@ Non-secret settings are literals in `deploy/kustomization.yaml`: `ORIGIN`, `VAPI
 ## Cloudflare
 
 - **Tunnel** `homelab` (`platform/components/cloudflared`): `notify.shillyshally.org` → `http://web.notify.svc:3000`, `/api/` → 404. DNS: proxied `CNAME notify` → `<tunnel id>.cfargotunnel.com`.
-- **Access application** *Notify* on `notify.shillyshally.org`: policy *allow* for the listed emails, one-time PIN login, long session. A second application on the same host's `/manifest.webmanifest`, `/sw.js` and `/icons/` with a *bypass* policy: iOS fetches those without the Access cookie while installing the app.
-- Adding a person: add their email to the *Notify* application's allow policy. They appear in the app on their first visit.
+- **Access application** *Notify* on `notify.shillyshally.org`: the reusable policy *Family* (allow the listed emails; shared with the *Dashboard* application), one-time PIN login, 730 h session. A second application, *Notify install files*, on the same host's `/manifest.webmanifest`, `/sw.js` and `/icons/*` with the reusable *bypass* policy *Everyone: app install files*: iOS fetches those without the Access cookie while installing the app.
+- Adding a person: add their email to the *Family* policy (*Zero Trust → Access controls → Policies*); that lets them into Notify and the dashboard. They appear in Notify on their first visit.
 
 ## Develop
 
