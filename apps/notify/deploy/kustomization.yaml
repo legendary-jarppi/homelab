@@ -22,6 +22,9 @@ configMapGenerator:
       - ORIGIN=https://notify.shillyshally.org
       # Sent to push services as the contact for this sender.
       - VAPID_SUBJECT=https://notify.shillyshally.org
+      # Cloudflare Access: team (token issuer, signing keys) and the "Notify" application's audience tag.
+      - ACCESS_TEAM_DOMAIN=https://shillyshally.cloudflareaccess.com
+      - ACCESS_AUD=0bd9e20c53bcf5aa2c36ad8640599a4a5eba92ed382d53c1cc346c2839299c50
   - name: notify-topics
     files:
       - topics.json
