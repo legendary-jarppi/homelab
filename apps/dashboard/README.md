@@ -74,27 +74,9 @@ Groups, components and connections are written by hand in `src/lib/architecture.
 
 ## Access
 
-Two addresses: http://dashboard.lab.internal at home (or over the UDM's VPN), and https://dashboard.shillyshally.org from anywhere, through the Cloudflare Tunnel behind Cloudflare Access (email one-time code; the Access policy *Family*, shared with apps/notify; `/manifest.webmanifest` and `/icons/*` bypass Access so iOS can add it to the Home Screen). The passcode applies on both; their session cookies are separate (per host). Cards that link to other apps (lists, workout) open their `lab.internal` addresses, which work only at home. Notifications open the public address (`DASHBOARD_APP_URL`).
+Two addresses: http://dashboard.lab.internal at home (or over the UDM's VPN), and https://dashboard.shillyshally.org from anywhere, through the Cloudflare Tunnel behind Cloudflare Access (email one-time code; the Access policy *Family*, shared with apps/notify and apps/news; `/manifest.webmanifest` and `/icons/*` bypass Access so iOS can add it to the Home Screen). Cards that link to other apps (lists, workout) open their `lab.internal` addresses, which work only at home. Notifications open the public address (`DASHBOARD_APP_URL`).
 
-Passcode login, session cookie valid for a year (HttpOnly, HMAC-signed with `SESSION_SECRET`). Five wrong passcodes from one address lock that address out for 15 minutes; failed attempts are logged (`kubectl -n dashboard logs deploy/dashboard`).
-
-| Task | Command |
-|---|---|
-| Set or change the passcode (existing sessions stay valid) | see below |
-| Log out every device | `kubectl -n dashboard patch secret dashboard-auth -p "{\"stringData\":{\"SESSION_SECRET\":\"$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')\"}}" && kubectl -n dashboard rollout restart deploy/dashboard` |
-
-Set or change the passcode:
-
-```sh
-read -rsp 'New passcode: ' P && echo
-kubectl -n dashboard create secret generic dashboard-auth --from-literal=PASSCODE="$P" \
-  --from-literal=SESSION_SECRET="$(kubectl -n dashboard get secret dashboard-auth -o jsonpath='{.data.SESSION_SECRET}' | base64 -d)" \
-  --dry-run=client -o yaml | kubectl apply -f -
-unset P
-kubectl -n dashboard rollout restart deploy/dashboard
-```
-
-First-time secret: `kubectl -n dashboard create secret generic dashboard-auth --from-literal=SESSION_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')" --from-literal=PASSCODE=<passcode>`.
+**No login of its own**: Cloudflare Access is the only protection on the public address, and on the home network (and the UDM's VPN) the dashboard is open to every device, cameras included. The live video relay (`server.js`) accepts a WebSocket only when its `Origin` is the dashboard's own address, so another website a family member visits cannot open a camera through their browser; other cross-site requests cannot read the responses (no CORS), and SvelteKit refuses cross-site form posts.
 
 ## Configuration
 
@@ -106,8 +88,7 @@ Non-secret settings are literals in `deploy/kustomization.yaml` (`dashboard-conf
 cd apps/dashboard
 npm install
 kubectl -n go2rtc port-forward svc/go2rtc 1984 &   # go2rtc is cluster-internal
-PASSCODE=dev SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))') \
-  PROMETHEUS_URL=http://prometheus.lab.internal GO2RTC_URL=http://localhost:1984 \
+PROMETHEUS_URL=http://prometheus.lab.internal GO2RTC_URL=http://localhost:1984 \
   CAMERAS='front-door:Front door,backyard:Backyard,carport:Carport' npm run dev
 npm run check   # svelte-check / TypeScript
 ```

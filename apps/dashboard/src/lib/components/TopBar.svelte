@@ -122,9 +122,6 @@
 						{/each}
 					</div>
 					<span class="hint muted">Auto dims the screen 22:00–06:30.</span>
-					<form method="POST" action="/logout">
-						<button class="logout">Log out this device</button>
-					</form>
 				</div>
 			{/if}
 		</div>
@@ -362,20 +359,6 @@
 	}
 	.hint {
 		font-size: 12px;
-	}
-	form {
-		margin: 0;
-	}
-	.logout {
-		width: 100%;
-		padding: 10px;
-		font-size: 14px;
-		font-weight: 600;
-		border: 1px solid rgba(248, 113, 113, 0.25);
-		border-radius: 12px;
-		background: rgba(248, 113, 113, 0.08);
-		color: var(--bad);
-		cursor: pointer;
 	}
 	/* Hourly strip and latency (also on the Homelab tab's internet card) only where they fit beside
 	   both locations, the clock and the controls (measured with both status pills). */

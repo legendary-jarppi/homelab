@@ -1,10 +1,9 @@
-// Production entry: SvelteKit's adapter-node handler plus an authenticated WebSocket relay
-// for live camera video (browser <-> /cameras/live?src=<id> <-> go2rtc /api/ws?src=<id>).
+// Production entry: SvelteKit's adapter-node handler plus a WebSocket relay for live camera video
+// (browser <-> /cameras/live?src=<id> <-> go2rtc /api/ws?src=<id>).
 // SvelteKit endpoints cannot accept WebSocket upgrades, hence this wrapper.
 import http from 'node:http';
 import net from 'node:net';
 import { handler } from './build/handler.js';
-import { SESSION_COOKIE, readCookie, verifySession } from './session.js';
 
 const port = Number(process.env.PORT ?? 3000);
 const go2rtc = new URL(process.env.GO2RTC_URL ?? 'http://localhost:1984');
@@ -24,8 +23,12 @@ server.on('upgrade', (req, socket, head) => {
 		socket.end('HTTP/1.1 404 Not Found\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
 		return;
 	}
-	if (!verifySession(readCookie(req.headers.cookie, SESSION_COOKIE))) {
-		socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
+	// The dashboard has no login of its own (Cloudflare Access guards the public address), so only
+	// its own pages may open the relay: browsers send Origin on WebSocket upgrades and other sites
+	// cannot fake it. Host is the address the browser used (Traefik and cloudflared keep it).
+	const origin = req.headers.origin ? new URL(req.headers.origin).host : null;
+	if (!origin || origin !== req.headers.host) {
+		socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\nContent-Length: 0\r\n\r\n');
 		return;
 	}
 

@@ -14,7 +14,6 @@
 		const load = async () => {
 			try {
 				const response = await fetch('/api/architecture', { cache: 'no-store' });
-				if (response.status === 401) return location.assign('/login');
 				if (!response.ok) throw new Error(String(response.status));
 				const body: ArchitectureData = await response.json();
 				if (!stopped) {

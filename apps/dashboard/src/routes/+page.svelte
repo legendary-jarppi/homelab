@@ -139,8 +139,6 @@
 						p.due = now + p.everyMs;
 						try {
 							const response = await fetch(p.url, { cache: 'no-store' });
-							// Session expired (e.g. secret rotated): back to the login page.
-							if (response.status === 401) return location.assign('/login');
 							if (!response.ok) throw new Error(String(response.status));
 							p.apply(await response.json());
 						} catch {

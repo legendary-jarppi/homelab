@@ -36,7 +36,6 @@ export const config = {
 		.filter(([name, lat, lon]) => name && lat && lon)
 		.map(([name, lat, lon]): WeatherLocation => ({ name, latitude: Number(lat), longitude: Number(lon) }))
 		.filter((l) => Number.isFinite(l.latitude) && Number.isFinite(l.longitude)),
-	passcode: env.PASSCODE ?? '',
 	/** apps/workout, cluster-internal; the workout card is shown only when the token is set. */
 	workoutUrl: env.WORKOUT_URL ?? 'http://localhost:3000',
 	workoutToken: env.WORKOUT_TOKEN ?? '',
