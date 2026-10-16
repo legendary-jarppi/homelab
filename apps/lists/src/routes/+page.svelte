@@ -35,10 +35,6 @@
 	{/each}
 </div>
 
-<form method="POST" action="/logout" class="logout">
-	<button class="link">Sign out</button>
-</form>
-
 <style>
 	.top {
 		display: flex;
@@ -76,16 +72,5 @@
 		margin: 0;
 		padding: 0;
 		list-style: none;
-	}
-	.logout {
-		text-align: center;
-	}
-	.link {
-		padding: 8px;
-		font-size: 14px;
-		color: var(--muted);
-		background: none;
-		border: 0;
-		cursor: pointer;
 	}
 </style>

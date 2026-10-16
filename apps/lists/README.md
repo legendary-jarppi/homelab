@@ -36,31 +36,18 @@ Starting point (`migrations/001_init.sql`): the four people, *Watched movies* (p
 
 ## Access
 
-Passcode login like the dashboard and workout: session cookie valid for a year (HttpOnly, HMAC-signed with `SESSION_SECRET`), five wrong passcodes lock an address out for 15 minutes. The passcode was initially copied from the dashboard's.
+No login: the app is reachable only on the home network (and the UDM's VPN), where every device can use it. It is not published through Cloudflare.
 
 Secrets (not in git):
 
 ```sh
 kubectl apply -f apps/lists/deploy/namespace.yaml
 kubectl -n lists create secret generic lists-db --from-literal=POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-kubectl -n lists create secret generic lists-auth --from-literal=PASSCODE=<passcode> \
-  --from-literal=SESSION_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
 # Dashboard feed: the same token on both sides.
 T=$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')
 kubectl -n lists create secret generic lists-api --from-literal=DASHBOARD_TOKEN="$T"
 kubectl -n dashboard create secret generic dashboard-lists --from-literal=LISTS_TOKEN="$T"
 unset T
-```
-
-Change the passcode (sessions stay valid):
-
-```sh
-read -rsp 'New passcode: ' P && echo
-kubectl -n lists create secret generic lists-auth --from-literal=PASSCODE="$P" \
-  --from-literal=SESSION_SECRET="$(kubectl -n lists get secret lists-auth -o jsonpath='{.data.SESSION_SECRET}' | base64 -d)" \
-  --dry-run=client -o yaml | kubectl apply -f -
-unset P
-kubectl -n lists rollout restart deploy/web
 ```
 
 ## Operating
@@ -72,8 +59,7 @@ NetworkPolicies: default deny; web accepts Traefik and the dashboard, Postgres o
 ```sh
 cd apps/lists && npm install
 kubectl -n lists port-forward svc/postgres 55434:5432 &
-DATABASE_URL="postgres://lists:$(kubectl -n lists get secret lists-db -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d)@127.0.0.1:55434/lists" \
-  PASSCODE=dev SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))') npm run dev
+DATABASE_URL="postgres://lists:$(kubectl -n lists get secret lists-db -o jsonpath='{.data.POSTGRES_PASSWORD}' | base64 -d)@127.0.0.1:55434/lists" npm run dev
 npm run check   # svelte-check / TypeScript
 ```
 

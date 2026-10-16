@@ -1,7 +1,6 @@
 import { env } from '$env/dynamic/private';
 
 export const config = {
-	passcode: env.PASSCODE ?? '',
 	/** "Today" (default date of new items) is taken in this zone. */
 	timeZone: env.TIME_ZONE ?? 'Europe/Helsinki',
 	migrationsDir: env.MIGRATIONS_DIR ?? 'migrations',

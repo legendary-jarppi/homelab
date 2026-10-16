@@ -11,20 +11,16 @@
 	]);
 </script>
 
-{#if page.url.pathname === '/login'}
+<header>
+	<nav class="segmented" aria-label="Main">
+		{#each links as link (link.href)}
+			<a href={link.href} class:selected={link.active} aria-current={link.active ? 'page' : undefined}>{link.label}</a>
+		{/each}
+	</nav>
+</header>
+<main>
 	{@render children()}
-{:else}
-	<header>
-		<nav class="segmented" aria-label="Main">
-			{#each links as link (link.href)}
-				<a href={link.href} class:selected={link.active} aria-current={link.active ? 'page' : undefined}>{link.label}</a>
-			{/each}
-		</nav>
-	</header>
-	<main>
-		{@render children()}
-	</main>
-{/if}
+</main>
 
 <style>
 	header {

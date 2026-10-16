@@ -5,7 +5,6 @@ metadata:
   labels:
     app.kubernetes.io/name: web
 spec:
-  # One replica: login rate limiting is in memory.
   replicas: 1
   selector:
     matchLabels:
@@ -30,8 +29,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: lists-config
-            - secretRef:
-                name: lists-auth
             # DASHBOARD_TOKEN for /api/dashboard (home dashboard); without it the endpoint is off.
             - secretRef:
                 name: lists-api

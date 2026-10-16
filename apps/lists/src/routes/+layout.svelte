@@ -5,23 +5,19 @@
 	let { children } = $props();
 </script>
 
-{#if page.url.pathname === '/login'}
+<header>
+	<div class="inner">
+		<a class="brand" href="/" aria-current={page.url.pathname === '/' ? 'page' : undefined}>
+			<span class="mark" aria-hidden="true">
+				<svg viewBox="0 0 24 24"><path d="M4 6h2v2H4zm4 0h12v2H8zm-4 5h2v2H4zm4 0h12v2H8zm-4 5h2v2H4zm4 0h12v2H8z" /></svg>
+			</span>
+			Lists
+		</a>
+	</div>
+</header>
+<main>
 	{@render children()}
-{:else}
-	<header>
-		<div class="inner">
-			<a class="brand" href="/" aria-current={page.url.pathname === '/' ? 'page' : undefined}>
-				<span class="mark" aria-hidden="true">
-					<svg viewBox="0 0 24 24"><path d="M4 6h2v2H4zm4 0h12v2H8zm-4 5h2v2H4zm4 0h12v2H8zm-4 5h2v2H4zm4 0h12v2H8z" /></svg>
-				</span>
-				Lists
-			</a>
-		</div>
-	</header>
-	<main>
-		{@render children()}
-	</main>
-{/if}
+</main>
 
 <style>
 	header {

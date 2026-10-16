@@ -5,7 +5,6 @@ metadata:
   labels:
     app.kubernetes.io/name: web
 spec:
-  # One replica: login rate limiting is in memory.
   replicas: 1
   selector:
     matchLabels:
@@ -30,8 +29,6 @@ spec:
           envFrom:
             - configMapRef:
                 name: workout-config
-            - secretRef:
-                name: workout-auth
             # SUMMARY_TOKEN for /api/summary (home dashboard); without it the endpoint is off.
             - secretRef:
                 name: workout-api

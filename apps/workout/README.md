@@ -38,25 +38,12 @@ DATABASE_URL="postgres://workout:$(kubectl -n workout get secret workout-db -o j
 
 ## Access
 
-Passcode login like the dashboard: session cookie valid for a year (HttpOnly, HMAC-signed with `SESSION_SECRET`), five wrong passcodes lock an address out for 15 minutes. The passcode was initially copied from the dashboard's.
+No login: the app is reachable only on the home network (and the UDM's VPN), where every device can use it. It is not published through Cloudflare.
 
 Secrets (not in git):
 
 ```sh
 kubectl -n workout create secret generic workout-db --from-literal=POSTGRES_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-kubectl -n workout create secret generic workout-auth --from-literal=PASSCODE=<passcode> \
-  --from-literal=SESSION_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(48))')"
-```
-
-Change the passcode (sessions stay valid):
-
-```sh
-read -rsp 'New passcode: ' P && echo
-kubectl -n workout create secret generic workout-auth --from-literal=PASSCODE="$P" \
-  --from-literal=SESSION_SECRET="$(kubectl -n workout get secret workout-auth -o jsonpath='{.data.SESSION_SECRET}' | base64 -d)" \
-  --dry-run=client -o yaml | kubectl apply -f -
-unset P
-kubectl -n workout rollout restart deploy/web
 ```
 
 `POSTGRES_PASSWORD` only takes effect when the database volume is first created.
@@ -81,8 +68,7 @@ kubectl -n workout rollout restart deploy/web && kubectl -n dashboard rollout re
 cd apps/workout
 npm install
 podman run -d --name workout-pg -e POSTGRES_USER=workout -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=workout -p 127.0.0.1:55432:5432 docker.io/library/postgres:17-alpine
-DATABASE_URL=postgres://workout:dev@127.0.0.1:55432/workout PASSCODE=dev \
-  SESSION_SECRET=$(python3 -c 'import secrets; print(secrets.token_hex(32))') npm run dev
+DATABASE_URL=postgres://workout:dev@127.0.0.1:55432/workout npm run dev
 npm run check   # svelte-check / TypeScript
 ```
 
