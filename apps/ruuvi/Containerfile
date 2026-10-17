@@ -1,0 +1,11 @@
+# Build: apps/ruuvi/deploy.sh. Node 22 runs the TypeScript sources directly (type stripping);
+# only the runtime dependency (mqtt) is installed.
+FROM docker.io/library/node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=8080 NODE_NO_WARNINGS=1
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev --no-fund --no-audit
+COPY src ./src
+USER node
+EXPOSE 8080
+CMD ["node", "src/main.ts"]

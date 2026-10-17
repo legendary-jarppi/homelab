@@ -1,11 +1,11 @@
 # mosquitto
 
-Mosquitto 2.0.22 MQTT broker for the ESPresense Bluetooth nodes (ESP32 boards) that feed [apps/presence](../../../apps/presence/), and for [Home Assistant](../../../apps/homeassistant/). On the LAN at `mqtt://192.168.1.10:1883` (ServiceLB; firewalld opens 1883 in `platform/host/prepare.sh`), in the cluster at `mosquitto.mosquitto.svc:1883`.
+Mosquitto 2.0.22 MQTT broker for the ESPresense Bluetooth nodes (ESP32 boards) that feed [apps/presence](../../../apps/presence/), the cabin's Ruuvi Gateway that feeds [apps/ruuvi](../../../apps/ruuvi/), and for [Home Assistant](../../../apps/homeassistant/). On the LAN at `mqtt://192.168.1.10:1883` (ServiceLB; firewalld opens 1883 in `platform/host/prepare.sh`), in the cluster at `mosquitto.mosquitto.svc:1883`.
 
 | | |
 |---|---|
-| Access | Password login only (no anonymous); plain MQTT, no TLS, so LAN only: a NetworkPolicy admits `192.168.1.0/24` (client addresses are kept, `externalTrafficPolicy: Local`) and the presence pod; the node itself (Home Assistant runs on the host network) is always admitted by k3s's policy controller |
-| Users | `espresense` (nodes: read/write `espresense/#`, `homeassistant/#`), `presence` (read `espresense/#`), `homeassistant` (read/write `homeassistant/#`, read `espresense/#`); topic rules in `acl`, anything else denied |
+| Access | Password login only (no anonymous); plain MQTT, no TLS, so LAN only: a NetworkPolicy admits the home LAN `192.168.1.0/24`, the cabin LAN `192.168.20.0/24` over the Site Magic VPN (client addresses are kept, `externalTrafficPolicy: Local`), and the presence and ruuvi pods; the node itself (Home Assistant runs on the host network) is always admitted by k3s's policy controller |
+| Users | `espresense` (nodes: read/write `espresense/#`, `homeassistant/#`), `presence` (read `espresense/#`), `homeassistant` (read/write `homeassistant/#`, read `espresense/#`), `ruuvigateway` (the cabin's Ruuvi Gateway: write `ruuvi/#`), `ruuvi` (read `ruuvi/#`); topic rules in `acl`, anything else denied |
 | Data | Retained messages persist on PVC `mosquitto-data` (backed up nightly). ESPresense keeps each enrolled phone's identity key there (`espresense/settings/irk:…/config`); losing it means enrolling the phones again |
 
 Users and passwords (secrets, not in git), created or kept by `users.sh`:
@@ -14,9 +14,10 @@ Users and passwords (secrets, not in git), created or kept by `users.sh`:
 ./platform/components/mosquitto/users.sh                    # missing users get a password; existing ones are kept
 ./platform/components/mosquitto/users.sh --rotate presence  # new password for one user (rolls the broker and presence)
 kubectl -n mosquitto get secret mqtt-espresense -o jsonpath='{.data.password}' | base64 -d   # node password
+kubectl -n mosquitto get secret mqtt-ruuvigateway -o jsonpath='{.data.password}' | base64 -d # Ruuvi Gateway password
 ```
 
-Rotating `espresense` means entering the new password on every node (its web UI → *Settings*).
+Rotating `espresense` means entering the new password on every node (its web UI → *Settings*); rotating `ruuvigateway`, entering it in the Ruuvi Gateway ([apps/ruuvi](../../../apps/ruuvi/README.md#ruuvi-gateway-settings)).
 
 Watch traffic (needs podman; any MQTT client works):
 

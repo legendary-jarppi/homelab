@@ -1,0 +1,17 @@
+{
+	"name": "ruuvi",
+	"private": true,
+	"type": "module",
+	"description": "RuuviTag readings from the cabin's Ruuvi Gateway (MQTT) as Prometheus metrics; runs TypeScript directly on Node 22 (type stripping)",
+	"scripts": {
+		"start": "node src/main.ts",
+		"check": "tsc"
+	},
+	"devDependencies": {
+		"@types/node": "^22.18.0",
+		"typescript": "^5.9.0"
+	},
+	"dependencies": {
+		"mqtt": "^5.16.0"
+	}
+}

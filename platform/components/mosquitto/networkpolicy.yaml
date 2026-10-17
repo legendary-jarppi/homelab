@@ -1,5 +1,6 @@
 # Enforced by k3s's embedded network policy controller.
-#   mosquitto <- home LAN (ESPresense nodes, through ServiceLB), apps/presence
+#   mosquitto <- home LAN (ESPresense nodes, through ServiceLB), the cabin LAN over the Site Magic
+#                VPN (Ruuvi Gateway), apps/presence, apps/ruuvi
 #   mosquitto -> nothing
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -14,11 +15,19 @@ spec:
     - from:
         - ipBlock:
             cidr: 192.168.1.0/24
+        - ipBlock:
+            cidr: 192.168.20.0/24
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: presence
           podSelector:
             matchLabels:
               app.kubernetes.io/name: presence
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: ruuvi
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ruuvi
       ports:
         - port: mqtt

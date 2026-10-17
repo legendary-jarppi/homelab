@@ -1,0 +1,33 @@
+# RuuviTag readings from the cabin's Ruuvi Gateway as Prometheus metrics, plus the Grafana dashboard
+# "Ruuvi". Cluster-internal (no Ingress).
+# Needs secret ruuvi-mqtt (platform/components/mosquitto/users.sh), not in git.
+# Build + apply: apps/ruuvi/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ruuvi
+resources:
+  - namespace.yaml
+  - app.yaml
+  - networkpolicy.yaml
+images:
+  - name: localhost/ruuvi
+    newTag: "20261017-181610"
+configMapGenerator:
+  # Hashed name: changes roll the pod.
+  - name: ruuvi-config
+    literals:
+      - MQTT_URL=mqtt://mosquitto.mosquitto.svc:1883
+      # Tag names for metrics and the dashboard, MAC=Name, comma-separated; unlisted tags are
+      # named by their MAC. Renaming starts a new series in Prometheus.
+      - TAGS=
+      # A tag unheard this long drops out of the readings (the gateway sends every 60 s).
+      - STALE_AFTER_MIN=10
+  # Grafana's sidecar loads ConfigMaps labelled grafana_dashboard=1 from all namespaces. Stable
+  # name: a hashed one would leave stale copies behind on change.
+  - name: ruuvi-dashboard
+    files:
+      - dashboard.json
+    options:
+      disableNameSuffixHash: true
+      labels:
+        grafana_dashboard: "1"

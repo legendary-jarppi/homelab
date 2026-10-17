@@ -16,3 +16,12 @@ topic read espresense/#
 user homeassistant
 topic readwrite homeassistant/#
 topic read espresense/#
+
+# The Ruuvi Gateway at the cabin: publishes ruuvi/<gateway MAC>/<tag MAC> (one reading) and
+# ruuvi/<gateway MAC>/gw_status (online/offline, retained; offline is its last will).
+user ruuvigateway
+topic write ruuvi/#
+
+# apps/ruuvi: reads the readings for Prometheus.
+user ruuvi
+topic read ruuvi/#

@@ -11,7 +11,7 @@ Hardware still to buy (2026-10). Prices only where checked on OpenELAB (2026-10-
 
 - One node per main living area or floor: phones are detected within one or two rooms of a node.
 - One USB-C *data* cable for flashing them from the browser (Chrome or Edge); setup in [platform/components/mosquitto/README.md](../platform/components/mosquitto/README.md#adding-an-espresense-node).
-- **Cabin nodes need two homelab changes first:** the MQTT broker's NetworkPolicy admits only `192.168.1.0/24` and must also admit the cabin's `192.168.20.0/24`; and [apps/presence](../apps/presence/) counts every Bluetooth sighting as home, so it needs to know which nodes (rooms) are at the cabin.
+- **Cabin nodes need one homelab change first:** [apps/presence](../apps/presence/) counts every Bluetooth sighting as home, so it needs to know which nodes (rooms) are at the cabin. (The MQTT broker already admits the cabin's `192.168.20.0/24`, for the Ruuvi Gateway.)
 
 ## 2. Swegon Casa W3 (Modbus adapter, in the network closet)
 
@@ -48,4 +48,4 @@ The plan in [future-plans.md](future-plans.md#cabin-lorawan-sensors). Order the 
 
 1. **Swegon adapter**: one evening's setup, and it adds the third device to the Cabin tab.
 2. **Home ESPresense nodes**.
-3. **Cabin nodes and LoRaWAN**: both need the MQTT broker change above.
+3. **Cabin nodes and LoRaWAN**: cabin nodes need the presence change above.
