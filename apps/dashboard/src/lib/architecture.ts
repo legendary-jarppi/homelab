@@ -93,7 +93,8 @@ export const COMPONENTS: Diagram = {
 				{ id: 'cabincam', label: 'Cabin camera', sub: 'Reolink Go Plus, 4G', info: 'Battery camera at the cabin on a 4G connection. On motion it uploads a picture and a clip over FTPS to the home\'s public address; the UDM forwards ports 2121 and 50000-50009 to the server.' },
 				{ id: 'internet', label: 'Internet services', sub: 'weather, calendar, parcels, news, AI, Drive', info: 'Open-Meteo (weather), Google Calendar (iCal), Posti, Matkahuolto and UPS (parcels) for the dashboard; news outlets and the AI proxy for the news worker; Google Drive for the nightly backup.' },
 				{ id: 'cfedge', label: 'Cloudflare', sub: 'notify, dashboard, news .shillyshally.org · Access', info: 'Public HTTPS for the shillyshally.org apps (Notify, the dashboard, News): Cloudflare\'s certificate, then Cloudflare Access (email one-time code, listed emails only), then the tunnel to cloudflared. Nothing is port-forwarded for it.' },
-				{ id: 'pushsvc', label: 'Push services', sub: 'Apple, Google, Mozilla', info: 'Web Push: notify sends each message, encrypted for the device, to the push service of the browser that subscribed (web.push.apple.com for iPhones), which delivers it to the device.' }
+				{ id: 'pushsvc', label: 'Push services', sub: 'Apple, Google, Mozilla', info: 'Web Push: notify sends each message, encrypted for the device, to the push service of the browser that subscribed (web.push.apple.com for iPhones), which delivers it to the device.' },
+				{ id: 'ucg', label: 'Cabin UCG Max', sub: '192.168.20.1 · Site Magic VPN', info: 'The cabin\'s UniFi console, behind a Teltonika RUTX50 on mobile, joined to home by a Site Magic mesh VPN (home 192.168.1.0/24 ↔ cabin 192.168.20.0/24). UnPoller reads its statistics and clients; the cabin resolves *.lab.internal through the UDM Pro.' }
 			]
 		},
 		{
@@ -174,7 +175,7 @@ export const COMPONENTS: Diagram = {
 			label: 'presence',
 			kind: 'namespace',
 			nodes: [
-				{ id: 'presence', label: 'presence', sub: 'who is home', workloads: ['presence/presence'], info: 'Decides who is home from Wi-Fi (phones connected, via UnPoller\'s data in Prometheus) and Bluetooth (ESPresense sightings over MQTT).' }
+				{ id: 'presence', label: 'presence', sub: 'who is where', workloads: ['presence/presence'], info: 'Decides where everyone is (home, the cabin or away) from Wi-Fi (phones connected to each site\'s network, via UnPoller\'s data in Prometheus) and Bluetooth at home (ESPresense sightings over MQTT). Someone at a site that stops reporting (cabin link or VPN down) stays there, marked as no fresh data.' }
 			]
 		},
 		{
@@ -202,7 +203,7 @@ export const COMPONENTS: Diagram = {
 			label: 'unpoller',
 			kind: 'namespace',
 			nodes: [
-				{ id: 'unpoller', label: 'UnPoller', sub: 'UniFi → metrics', workloads: ['unpoller/unpoller'], info: 'Reads the UDM Pro\'s statistics every 10 s with a read-only account (WAN traffic, clients, access points, speed tests) and exposes them to Prometheus.' }
+				{ id: 'unpoller', label: 'UnPoller', sub: 'UniFi → metrics', workloads: ['unpoller/unpoller'], info: 'Reads the UDM Pro\'s statistics every 10 s and the cabin UCG Max\'s every 30 s (over the VPN) with a read-only account (WAN traffic, clients, access points, speed tests) and exposes them to Prometheus, one scrape per console.' }
 			]
 		},
 		{
@@ -299,6 +300,7 @@ export const COMPONENTS: Diagram = {
 		{ from: 'prometheus', to: 'traefik', label: 'scrape', kind: 'metrics' },
 		{ from: 'grafana', to: 'prometheus', label: 'dashboards', kind: 'metrics' },
 		{ from: 'unpoller', to: 'udm', label: 'UniFi API, read-only', kind: 'control' },
+		{ from: 'unpoller', to: 'ucg', label: 'UniFi API over the VPN', kind: 'control' },
 		{ from: 'operator', to: 'prometheus', label: 'runs, configures', kind: 'control' },
 		{ from: 'ksm', to: 'api', label: 'watches objects', kind: 'control' },
 		{ from: 'headlamp', to: 'api', label: 'Kubernetes UI', kind: 'control' },
@@ -419,7 +421,7 @@ export const NETWORK: Diagram = {
 		{ from: 'n-svc', to: 'n-pods', label: 'to a ready pod', kind: 'web' },
 		{ from: 'n-pods', to: 'n-coredns', label: 'DNS', kind: 'control' },
 		{ from: 'n-pods', to: 'n-egress', label: 'outbound', kind: 'internet' },
-		{ from: 'n-egress', to: 'n-wan', label: 'to the internet', kind: 'internet' },
+		{ from: 'n-egress', to: 'n-wan', label: 'to the internet; Site Magic VPN to the cabin (192.168.20.0/24)', kind: 'internet' },
 		{ from: 'n-egress', to: 'n-protect', label: 'RTSPS, Protect and UniFi API', kind: 'video' },
 		{ from: 'n-hostnet', to: 'n-smart', label: 'mDNS discovery', kind: 'control' },
 		{ from: 'n-trusted', to: 'n-hostnet', label: 'pods ↔ host', kind: 'control' }

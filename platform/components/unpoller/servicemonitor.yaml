@@ -6,8 +6,26 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: unpoller
+  # One scrape per console: a slow or unreachable cabin (mobile link, VPN) cannot delay or fail
+  # the home data, and each site has its own `up` series. `instance` names the console.
   endpoints:
     - port: metrics
+      path: /scrape
+      params:
+        target: [https://192.168.1.1]
+      # The UDM Pro's counters change every 10 s (measured); feeds the dashboard's live chart.
       interval: 10s
-      # Cached poll is served in ~15 ms (measured).
       scrapeTimeout: 9s
+      relabelings:
+        - targetLabel: instance
+          replacement: https://192.168.1.1
+    - port: metrics
+      path: /scrape
+      params:
+        target: [https://192.168.20.1]
+      # The cabin over the VPN and its mobile link: logging in alone takes about a second.
+      interval: 30s
+      scrapeTimeout: 25s
+      relabelings:
+        - targetLabel: instance
+          replacement: https://192.168.20.1

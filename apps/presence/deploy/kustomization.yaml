@@ -1,4 +1,4 @@
-# Presence (who is home), cluster-internal at http://presence.presence.svc:8080
+# Presence (where everyone is: home, the cabin, away), cluster-internal at http://presence.presence.svc:8080
 # Needs secrets presence-people (people.json; see apps/presence/README.md) and presence-mqtt
 # (platform/components/mosquitto/users.sh), not in git.
 # Build + apply: apps/presence/deploy.sh (sets newTag below).
@@ -11,15 +11,17 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/presence
-    newTag: "20261007-151050"
+    newTag: "20261017-151001"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: presence-config
     literals:
       - PROMETHEUS_URL=http://kube-prometheus-stack-prometheus.monitoring.svc:9090
-      # UnPoller's source label for the home UDM Pro (same as the dashboard's UNIFI_SOURCE).
-      - UNIFI_SOURCE=https://192.168.1.1
-      # Unseen this long by Wi-Fi and Bluetooth: away. Phones drop off Wi-Fi briefly now and then.
+      # id:Label:UnPoller source label of the site's UniFi console; the first is home (Bluetooth
+      # nodes there; same source as the dashboard's UNIFI_SOURCE). The cabin over the VPN.
+      - SITES=home:Home:https://192.168.1.1,cabin:Cabin:https://192.168.20.1
+      # Unseen this long by Wi-Fi and Bluetooth: away (only while the site they were at is
+      # reporting). Phones drop off Wi-Fi briefly now and then.
       - AWAY_AFTER_MIN=10
       # Bluetooth sightings from ESPresense nodes (platform/components/mosquitto).
       - MQTT_URL=mqtt://mosquitto.mosquitto.svc:1883

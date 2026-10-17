@@ -1,6 +1,6 @@
-# Other site: renumbering and site-to-site VPN (pending)
+# Other site: renumbering and site-to-site VPN
 
-To do on the next visit to the other site (UCG Max behind a Teltonika RUTX50 on mobile).
+Done (2026-10): the cabin (UCG Max behind a Teltonika RUTX50 on mobile) is renumbered and joined to home by Site Magic; `lab.internal` resolves there. The on-site steps are kept for reference.
 
 ## Why
 
@@ -29,8 +29,8 @@ Be on site (or have other access): if the UCG Max does not pick up a new WAN add
 6. **Check** from a client at the other site: `ping 192.168.1.10`, and open `http://grafana.lab.internal`.
 7. **Phones for presence**: have everyone's iPhone join the site's Wi-Fi while there. iPhones use a separate private Wi-Fi address per network, so the phones (except Ansku's, which uses its hardware address) will likely appear here with addresses different from home; note each one from the UCG Max client list (*Client Devices*: name, MAC), or leave them connected after the VPN is up so UnPoller records them (Prometheus keeps 15 days).
 
-## Afterwards (with the agent)
+## Afterwards (with the agent): done
 
-- Confirm whether the `unpoller` UniFi account has the same password on both consoles.
-- UnPoller: add the UCG Max (`https://192.168.20.1`) as a second controller, one Prometheus scrape per site; check its devices appear in the Grafana UniFi dashboards.
-- Presence ([apps/presence](../apps/presence/)): add the other site's phone addresses to `presence-people`, and extend the service to more than one site: a place per person (home / other site / away), and each site's UniFi source tracked separately, so someone last seen there stays "there, no fresh data" while the mobile link or VPN is down instead of turning away.
+- The `unpoller` UniFi account has the same password on both consoles (logins checked on both).
+- UnPoller polls the UCG Max (`https://192.168.20.1`) as a second controller, one Prometheus scrape per console ([platform/README.md](../platform/README.md#components)); the cabin is a second *Controller* in the Grafana UniFi dashboards.
+- Presence ([apps/presence](../apps/presence/)) is multi-site: a place per person (home / cabin / away), each site's console tracked separately, and someone last seen at a site that stops reporting stays there with "no fresh data". Remaining: the cabin addresses of each phone in `presence-people` (each person reads theirs in *Settings → Wi-Fi → Rauhakallio → Wi-Fi Address*).

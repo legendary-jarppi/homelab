@@ -196,13 +196,18 @@ export interface PresenceData {
 	people: {
 		id: string;
 		name: string;
-		/** null until the presence service has heard from a source. */
-		home: boolean | null;
-		/** Home since (arrival) or away since (last seen); null when unknown. */
+		/** A site id (`sites`) or "away"; null until the presence service has heard from a source. */
+		place: string | null;
+		/** At the place since (arrival) or away since (last seen); null when unknown. */
 		since: number | null;
 		lastSeen: number | null;
+		lastSite: string | null;
 		via: string | null;
+		/** At a site that is not reporting now (mobile link or VPN down): as far as anyone knows. */
+		stale: boolean;
 	}[];
+	/** In order; the first is home. `ok`: its UniFi console reported at the last poll. */
+	sites: { id: string; label: string; ok: boolean; lastOk: number | null }[];
 	sources: Record<string, { ok: boolean; lastOk: number | null; error: string | null }>;
 	awayAfterS: number;
 	updatedAt: number;

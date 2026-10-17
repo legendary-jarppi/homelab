@@ -11,11 +11,38 @@ function positive(name: string, fallback: number): number {
 	return value;
 }
 
+export interface Site {
+	/** In the API and metrics ("home", "cabin"); never "away". */
+	id: string;
+	/** Shown on the dashboard ("Home", "Cabin"). */
+	label: string;
+	/** UnPoller's `source` label for the site's UniFi console. */
+	unifiSource: string;
+}
+
+/** SITES="home:Home:https://192.168.1.1,cabin:Cabin:https://192.168.20.1"; the first is home (the ESPresense nodes are there). */
+function parseSites(raw: string): Site[] {
+	const sites = raw
+		.split(',')
+		.map((entry) => entry.trim())
+		.filter(Boolean)
+		.map((entry): Site => {
+			const [id, label, ...url] = entry.split(':');
+			const site = { id: id?.trim() ?? '', label: label?.trim() ?? '', unifiSource: url.join(':').trim() };
+			if (!/^[a-z0-9-]{1,32}$/.test(site.id) || site.id === 'away' || !site.label || !/^https?:\/\//.test(site.unifiSource)) {
+				throw new Error(`SITES: "${entry}" is not id:Label:https://console`);
+			}
+			return site;
+		});
+	if (sites.length === 0) throw new Error('SITES lists no site');
+	if (new Set(sites.map((s) => s.id)).size !== sites.length) throw new Error('SITES lists a site twice');
+	return sites;
+}
+
 export const config = {
 	port: positive('PORT', 8080),
 	prometheusUrl: env.PROMETHEUS_URL ?? 'http://kube-prometheus-stack-prometheus.monitoring.svc:9090',
-	/** UnPoller's `source` label of the home UniFi controller. */
-	unifiSource: env.UNIFI_SOURCE ?? 'https://192.168.1.1',
+	sites: parseSites(env.SITES ?? 'home:Home:https://192.168.1.1'),
 	peopleFile: env.PEOPLE_FILE ?? '/etc/presence/people.json',
 	/** Unseen this long by every source: away. Phones drop off Wi-Fi briefly now and then. */
 	awayAfterS: positive('AWAY_AFTER_MIN', 10) * 60,

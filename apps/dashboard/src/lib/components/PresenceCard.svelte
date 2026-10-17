@@ -13,7 +13,18 @@
 	const fresh = $derived(presence !== null && night.now.getTime() - presence.updatedAt < 3 * 60_000);
 	/** A source down freezes the state at its last answer. */
 	const sourcesOk = $derived(presence !== null && Object.values(presence.sources).every((s) => s.ok));
-	const homeCount = $derived(presence?.people.filter((p) => p.home === true).length ?? 0);
+	const homeId = $derived(presence?.sites[0]?.id ?? 'home');
+	const label = (place: string) => presence?.sites.find((s) => s.id === place)?.label ?? place;
+	/** "Everyone home", "2 of 4 home · 2 at Cabin", "Nobody home · 1 at Cabin". */
+	const summary = $derived.by(() => {
+		if (!presence) return '';
+		const at = (place: string) => presence.people.filter((p) => p.place === place).length;
+		const home = at(homeId);
+		const total = presence.people.length;
+		const others = presence.sites.slice(1).flatMap((s) => (at(s.id) > 0 ? [`${at(s.id)} at ${s.label}`] : []));
+		const first = home === 0 ? 'Nobody home' : home === total ? 'Everyone home' : `${home} of ${total} home`;
+		return [first, ...others].join(' · ');
+	});
 
 	/** Today: "16:59"; earlier: just the day, "ti 6.10." (the card's columns are narrow). */
 	function at(unixS: number): string {
@@ -22,8 +33,10 @@
 	}
 
 	function status(p: Person): string {
-		if (p.home === null) return 'Unknown';
-		const word = p.home ? 'Home' : 'Away';
+		if (p.place === null) return 'Unknown';
+		const word = p.place === 'away' ? 'Away' : label(p.place);
+		// Not reporting: as far as anyone knows, without a time that would look current.
+		if (p.stale) return `${word}, no fresh data`;
 		// Non-breaking: a narrow column wraps before "since", never inside the date.
 		return p.since === null ? word : `${word} since\u00a0${at(p.since).replaceAll(' ', '\u00a0')}`;
 	}
@@ -34,7 +47,7 @@
 		{#if presence && (!fresh || !sourcesOk)}
 			<span class="warn">No fresh data</span>
 		{:else if presence}
-			<span>{homeCount === 0 ? 'Nobody home' : homeCount === presence.people.length ? 'Everyone home' : `${homeCount} of ${presence.people.length} home`}</span>
+			<span>{summary}</span>
 		{/if}
 	{/snippet}
 	{#if !configured}
@@ -44,7 +57,7 @@
 	{:else}
 		<ul class="people" class:stale={!fresh || !sourcesOk}>
 			{#each presence.people as p (p.id)}
-				<li class:home={p.home === true} class:away={p.home === false}>
+				<li class:home={p.place === homeId} class:elsewhere={p.place !== null && p.place !== 'away' && p.place !== homeId} class:away={p.place === 'away'} class:stale={p.stale}>
 					<span class="avatar" aria-hidden="true">{p.name.slice(0, 1).toUpperCase()}</span>
 					<span class="text">
 						<span class="name">{p.name}</span>
@@ -86,6 +99,12 @@
 	li.home {
 		--c: var(--ok);
 	}
+	li.elsewhere {
+		--c: var(--down);
+	}
+	li.stale {
+		opacity: 0.6;
+	}
 	.avatar {
 		width: 34px;
 		height: 34px;
@@ -102,6 +121,9 @@
 	li.home .avatar {
 		background: rgba(52, 211, 153, 0.12);
 		box-shadow: 0 0 10px rgba(52, 211, 153, 0.25);
+	}
+	li.elsewhere .avatar {
+		background: color-mix(in srgb, var(--c) 12%, transparent);
 	}
 	li.away .avatar {
 		opacity: 0.6;
@@ -121,7 +143,7 @@
 		font-size: 12px;
 		color: var(--muted);
 	}
-	li.home .status {
-		color: var(--ok);
+	li:is(.home, .elsewhere) .status {
+		color: var(--c);
 	}
 </style>

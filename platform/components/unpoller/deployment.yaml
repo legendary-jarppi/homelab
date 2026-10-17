@@ -25,9 +25,14 @@ spec:
         - name: unpoller
           image: ghcr.io/unpoller/unpoller:v5.5.0
           env:
-            - name: UP_UNIFI_DEFAULT_URL
+            # Both consoles, over the Site Magic VPN for the cabin; Prometheus scrapes each one
+            # separately (/scrape?target=<url>, servicemonitor.yaml), so the URLs must match.
+            - name: UP_UNIFI_CONTROLLER_0_URL
               value: https://192.168.1.1
-            # Read-only local UniFi admin.
+            - name: UP_UNIFI_CONTROLLER_1_URL
+              value: https://192.168.20.1
+            # Defaults for both controllers. The read-only local UniFi admin exists on both
+            # consoles with the same password.
             - name: UP_UNIFI_DEFAULT_USER
               valueFrom:
                 secretKeyRef:
@@ -38,7 +43,7 @@ spec:
                 secretKeyRef:
                   name: unifi-readonly
                   key: pass
-            # The UDM Pro serves a self-signed certificate.
+            # Both consoles serve self-signed certificates.
             - name: UP_UNIFI_DEFAULT_VERIFY_SSL
               value: "false"
             - name: UP_UNIFI_DEFAULT_SAVE_SITES

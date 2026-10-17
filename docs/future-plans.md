@@ -4,7 +4,7 @@ Ideas agreed in principle but not started. Each lists what it depends on, the ha
 
 ## Cabin: LoRaWAN sensors
 
-**Status:** idea (2026-10). **Depends on:** the site-to-site VPN and the renumbering in [other-site-network.md](other-site-network.md), still pending on site.
+**Status:** idea (2026-10). **Depends on:** the site-to-site VPN in [other-site-network.md](other-site-network.md) (done, 2026-10) and the hardware below (not bought yet).
 
 Battery sensors around the cabin plot (lake water, doors, leaks, septic tank) reporting over LoRa to one gateway in the house, which forwards their readings home over the VPN into Mosquitto, where Home Assistant and the dashboard pick them up.
 
