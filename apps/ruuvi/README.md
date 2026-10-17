@@ -1,6 +1,6 @@
 # ruuvi
 
-RuuviTag readings from the cabin for Prometheus and Grafana. The Ruuvi Gateway at the cabin (`RuuviGateway942E`, `192.168.20.223`, firmware 1.16.3) relays every tag it hears to Mosquitto at home over the Site Magic VPN; this service keeps the latest reading per tag and serves it as metrics. Grafana dashboard: *Ruuvi* (http://grafana.lab.internal/d/ruuvi/ruuvi).
+RuuviTag readings from the cabin for Prometheus and Grafana. The Ruuvi Gateway at the cabin (`RuuviGateway942E`, `192.168.20.223`, firmware 1.16.3; publishes as `CD:D5:36:D4:94:2E`, its Bluetooth MAC) relays every tag it hears to Mosquitto at home over the Site Magic VPN; this service keeps the latest reading per tag and serves it as metrics. Grafana dashboard: *Ruuvi* (http://grafana.lab.internal/d/ruuvi/ruuvi). Configured and reporting since 2026-10-17 (three tags).
 
 ```mermaid
 flowchart LR
