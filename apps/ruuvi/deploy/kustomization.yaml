@@ -19,7 +19,7 @@ configMapGenerator:
       - MQTT_URL=mqtt://mosquitto.mosquitto.svc:1883
       # Tag names for metrics and the dashboard, MAC=Name, comma-separated; unlisted tags are
       # named by their MAC. Renaming starts a new series in Prometheus.
-      - TAGS=
+      - TAGS=CD:D0:A5:4D:F4:03=Vesitalo,DA:90:88:94:4E:5B=Olohuone,F8:5E:2D:D7:10:75=Terassi,F6:AB:F7:5B:EE:05=Kylppari
       # A tag unheard this long drops out of the readings (the gateway sends every 60 s).
       - STALE_AFTER_MIN=10
   # Grafana's sidecar loads ConfigMaps labelled grafana_dashboard=1 from all namespaces. Stable
