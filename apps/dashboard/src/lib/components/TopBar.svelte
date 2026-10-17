@@ -30,6 +30,7 @@
 	const TABS: { id: DashboardTab; label: string }[] = [
 		{ id: 'home', label: 'Home' },
 		{ id: 'cameras', label: 'Cameras' },
+		{ id: 'cabin', label: 'Cabin' },
 		{ id: 'homelab', label: 'Homelab' }
 	];
 	const time = $derived(night.now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));

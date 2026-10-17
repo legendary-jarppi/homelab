@@ -54,6 +54,8 @@ export const config = {
 	protectUrl: env.PROTECT_URL ?? 'https://192.168.1.1',
 	protectUser: env.PROTECT_USER ?? '',
 	protectPass: env.PROTECT_PASS ?? '',
+	/** apps/climate, cluster-internal (the cabin's heat pumps); the Cabin tab says "not set up" without it. */
+	climateUrl: env.CLIMATE_URL ?? '',
 	/** PROTECT_CAMERAS="Ulko-ovi:Front door,…": Protect camera name -> label, in display order. */
 	protectCameras: (env.PROTECT_CAMERAS ?? '')
 		.split(',')

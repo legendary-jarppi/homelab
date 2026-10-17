@@ -10,6 +10,7 @@ export const load: PageServerLoad = () => ({
 	calendarConfigured: calendarConfigured(),
 	presenceConfigured: config.presenceUrl !== '',
 	cabinConfigured: config.cabinCameraUrl !== '',
+	climateConfigured: config.climateUrl !== '',
 	protectConfigured: config.protectUser !== '' && config.protectPass !== '',
 	listsConfigured: config.listsToken !== '',
 	listsAppUrl: config.listsAppUrl

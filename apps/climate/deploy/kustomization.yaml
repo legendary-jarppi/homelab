@@ -1,0 +1,21 @@
+# Climate (the cabin's heat pumps), cluster-internal at http://climate.climate.svc:8080; see
+# apps/climate/README.md. No secrets. Build + apply: apps/climate/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: climate
+resources:
+  - namespace.yaml
+  - app.yaml
+  - networkpolicy.yaml
+images:
+  - name: localhost/climate
+    newTag: "20261017-155055"
+configMapGenerator:
+  # Hashed name: changes roll the pod.
+  - name: climate-config
+    literals:
+      # NIBE VVM S320 (Modbus TCP on, menu 7.5.9) and the Innova's Gree Wi-Fi module, at the cabin;
+      # fixed addresses in the UCG Max. A changed address also needs networkpolicy.yaml.
+      - NIBE_HOST=192.168.20.49
+      - INNOVA_HOST=192.168.20.28
+      - POLL_S=60

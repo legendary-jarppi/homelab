@@ -14,7 +14,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261017-151235"
+    newTag: "20261017-155806"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -47,6 +47,8 @@ configMapGenerator:
       - DASHBOARD_APP_URL=https://dashboard.shillyshally.org
       # Cabin camera snapshots (apps/cabin-camera, cluster-internal).
       - CABIN_CAMERA_URL=http://snapshots.cabin-camera.svc:8080
+      # The cabin's heat pumps (apps/climate, cluster-internal): the Cabin tab.
+      - CLIMATE_URL=http://climate.climate.svc:8080
       # UniFi Protect motion events for the Cameras tab (login in secret dashboard-protect).
       - PROTECT_URL=https://192.168.1.1
       # Protect camera name:label, in display order.

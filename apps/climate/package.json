@@ -1,0 +1,14 @@
+{
+	"name": "climate",
+	"private": true,
+	"type": "module",
+	"description": "Cabin heating and cooling (NIBE over Modbus TCP, Innova over the Gree LAN protocol); runs TypeScript directly on Node 22 (type stripping), no runtime dependencies",
+	"scripts": {
+		"start": "node src/main.ts",
+		"check": "tsc"
+	},
+	"devDependencies": {
+		"@types/node": "^22.18.0",
+		"typescript": "^5.9.0"
+	}
+}

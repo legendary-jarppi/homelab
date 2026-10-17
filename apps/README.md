@@ -24,7 +24,7 @@ Records live on the UDM Pro (*Settings > Policy Table > DNS*). UniFi rejects wil
 
 Existing: `dashboard` ([apps/dashboard](dashboard/)), `homeassistant` ([apps/homeassistant](homeassistant/)), `lists` ([apps/lists](lists/)), `news` ([apps/news](news/)), `workout` ([apps/workout](workout/)), `grafana`, `prometheus`, `kube` (Headlamp). `cameras` is no longer used (go2rtc is cluster-internal); delete its record.
 
-Cluster-internal apps (no hostname, no record): `presence` ([apps/presence](presence/)), who is home, read by the dashboard; `cabin-camera` ([apps/cabin-camera](cabin-camera/)), the cabin camera's motion snapshots for the dashboard, whose FTPS upload is the one service port-forwarded from the internet.
+Cluster-internal apps (no hostname, no record): `presence` ([apps/presence](presence/)), who is where, read by the dashboard; `cabin-camera` ([apps/cabin-camera](cabin-camera/)), the cabin camera's motion snapshots for the dashboard, whose FTPS upload is the one service port-forwarded from the internet; `climate` ([apps/climate](climate/)), the cabin's heat pumps for the dashboard's Cabin tab.
 
 Public apps (Cloudflare Tunnel, behind Cloudflare Access; DNS at Cloudflare, no UDM record): `notify` ([apps/notify](notify/)), notifications as web push, `notify.shillyshally.org`; the dashboard also at `dashboard.shillyshally.org` and news at `news.shillyshally.org` (besides their `lab.internal` names). All share the Access policy *Family*. Tunnel and routes: `cloudflared` in [platform/README.md](../platform/README.md#components).
 

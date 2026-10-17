@@ -65,7 +65,7 @@ export const COMPONENTS: Diagram = {
 			'out local-path-storage workout homeassistant mosquitto',
 			'out monitoring monitoring unpoller backup',
 			'out monitoring monitoring headlamp lists',
-			'out cloudflare notify notify lists'
+			'out cloudflare notify climate lists'
 		],
 		narrow: [
 			'out out',
@@ -77,7 +77,8 @@ export const COMPONENTS: Diagram = {
 			'monitoring monitoring',
 			'unpoller headlamp',
 			'backup lists',
-			'cloudflare notify'
+			'cloudflare notify',
+			'climate climate'
 		]
 	},
 	groups: [
@@ -241,6 +242,14 @@ export const COMPONENTS: Diagram = {
 			]
 		},
 		{
+			id: 'climate',
+			label: 'climate',
+			kind: 'namespace',
+			nodes: [
+				{ id: 'climate', label: 'Climate', sub: 'cabin heat pumps', workloads: ['climate/climate'], info: 'Reads the cabin\'s NIBE heat pump (Modbus TCP) and Innova air heat pump (Gree LAN protocol) every minute over the VPN and changes them for the dashboard\'s Cabin tab: heating offset, hot water amount; power, mode, target and fan.' }
+			]
+		},
+		{
 			id: 'backup',
 			label: 'backup',
 			kind: 'namespace',
@@ -287,6 +296,8 @@ export const COMPONENTS: Diagram = {
 		{ from: 'cloudflared', to: 'dashboard', label: 'dashboard.shillyshally.org', kind: 'web' },
 		{ from: 'cloudflared', to: 'newsweb', label: 'news.shillyshally.org', kind: 'web' },
 		{ from: 'dashboard', to: 'notifyweb', label: 'package ready for pickup', kind: 'web' },
+		{ from: 'dashboard', to: 'climate', label: 'Cabin tab, changes', kind: 'web' },
+		{ from: 'climate', to: 'ucg', label: 'heat pumps: Modbus TCP, Gree UDP', kind: 'control' },
 		{ from: 'notifyweb', to: 'notifypg', label: 'SQL', kind: 'data' },
 		{ from: 'notifyweb', to: 'pushsvc', label: 'Web Push', kind: 'internet' },
 		{ from: 'pushsvc', to: 'users', label: 'notifications', kind: 'internet' },
@@ -397,7 +408,7 @@ export const NETWORK: Diagram = {
 			row: true,
 			nodes: [
 				{ id: 'n-deny', label: 'Default deny', sub: 'news, workout, lists, notify', info: 'All traffic blocked except the listed paths: Traefik to web, web (and worker) to Postgres, DNS, the dashboard to workout, lists and notify, cloudflared to notify and news, the news worker to the internet on 80/443 and notify to the internet on 443 (not the LAN).' },
-				{ id: 'n-limited', label: 'Limited', sub: 'go2rtc, presence, cabin-camera, mosquitto, backup, cloudflared', info: 'go2rtc accepts only the dashboard; presence only the dashboard and Prometheus; Mosquitto only the LAN, presence and the server itself; cabin-camera\'s snapshot service only the dashboard; the backup may reach DNS, the API and the internet on 443 only; cloudflared accepts nothing and may reach only Cloudflare (7844, 443, not the LAN), notify, the dashboard and news.' },
+				{ id: 'n-limited', label: 'Limited', sub: 'go2rtc, presence, cabin-camera, mosquitto, backup, cloudflared, climate', info: 'go2rtc accepts only the dashboard; presence only the dashboard and Prometheus; Mosquitto only the LAN, presence and the server itself; cabin-camera\'s snapshot service only the dashboard; the backup may reach DNS, the API and the internet on 443 only; cloudflared accepts nothing and may reach only Cloudflare (7844, 443, not the LAN), notify, the dashboard and news; climate accepts the dashboard and Prometheus and may reach only the cabin\'s two heat pumps.' },
 				{ id: 'n-open', label: 'No policy', sub: 'dashboard, monitoring, kube-system, …', info: 'dashboard, monitoring, headlamp, unpoller and kube-system have no NetworkPolicy; Home Assistant and node-exporter are on the host network, where policies do not apply.' }
 			]
 		}

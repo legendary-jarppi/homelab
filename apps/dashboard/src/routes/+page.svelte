@@ -7,6 +7,7 @@
 	import CameraTile from '$lib/components/CameraTile.svelte';
 	import CameraViewer from '$lib/components/CameraViewer.svelte';
 	import Card from '$lib/components/Card.svelte';
+	import ClimateCard from '$lib/components/ClimateCard.svelte';
 	import ListCard from '$lib/components/ListCard.svelte';
 	import HomelabCard from '$lib/components/HomelabCard.svelte';
 	import NetworkCard from '$lib/components/NetworkCard.svelte';
@@ -24,7 +25,7 @@
 	import { cabinEvents } from '$lib/cabin';
 	import { dayOf } from '$lib/dates';
 	import { night } from '$lib/night.svelte';
-	import type { CabinData, CalendarData, DashboardTab, ListsData, LiveData, PackagesData, PresenceData, ProtectData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
+	import type { CabinData, CalendarData, ClimateData, DashboardTab, ListsData, LiveData, PackagesData, PresenceData, ProtectData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 
 	let { data } = $props();
 
@@ -39,6 +40,8 @@
 	let cabin = $state<CabinData | null>(untrack(() => data.cabin));
 	let protect = $state<ProtectData | null>(untrack(() => data.protect));
 	let lists = $state<ListsData | null>(untrack(() => data.lists));
+	/** Fetched after the page loads (the heat pumps answer over the VPN). */
+	let climate = $state<ClimateData | null>(null);
 	let viewer = $state<number | null>(null);
 	let tab = $state<DashboardTab>('home');
 	/** The Cameras tab's view; opening the tab always starts on the live pictures. */
@@ -126,6 +129,9 @@
 		}
 		if (data.protectConfigured) {
 			pollers.push({ url: '/api/protect', everyMs: 30_000, apply: (b) => (protect = b as ProtectData), due: protect ? start + 30_000 : 0 });
+		}
+		if (data.climateConfigured) {
+			pollers.push({ url: '/api/climate', everyMs: 60_000, apply: (b) => (climate = b as ClimateData), due: 0 });
 		}
 
 		const tick = async (force = false) => {
@@ -230,6 +236,10 @@
 				{/if}
 			</main>
 		{/if}
+	{:else if tab === 'cabin'}
+		<main class="grid cabin-page">
+			<ClimateCard {climate} configured={data.climateConfigured} onchange={(next) => (climate = next)} />
+		</main>
 	{:else}
 		<ViewSwitch
 			label="Homelab view"
@@ -333,6 +343,11 @@
 	.cameras-page.single > :global(*) {
 		grid-area: auto;
 		grid-column: 1 / -1;
+	}
+	/* Cabin: the climate card across the whole width (its two devices side by side when they fit). */
+	.grid.cabin-page {
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas: none;
 	}
 	.packages {
 		grid-area: pkg;

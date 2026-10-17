@@ -1,0 +1,42 @@
+# Enforced by k3s's embedded network policy controller. The heat pumps can be changed through this
+# service, so only the dashboard may call it; Prometheus scrapes it.
+#   climate <- dashboard (API), Prometheus (scrape)
+#   climate -> the cabin's NIBE (Modbus TCP 502) and Innova (Gree UDP 7000) over the Site Magic VPN
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: climate
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: climate
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dashboard
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dashboard
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: http
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 192.168.20.49/32
+      ports:
+        - port: 502
+          protocol: TCP
+    - to:
+        - ipBlock:
+            cidr: 192.168.20.28/32
+      ports:
+        - port: 7000
+          protocol: UDP

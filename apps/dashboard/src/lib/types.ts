@@ -1,5 +1,50 @@
-/** Everyday page (`home`), motion events from all cameras (`cameras`) and the technical page (network, server, backups). */
-export type DashboardTab = 'home' | 'cameras' | 'homelab';
+/** Everyday page (`home`), motion events from all cameras (`cameras`), the cabin's heating and cooling (`cabin`) and the technical page (network, server, backups). */
+export type DashboardTab = 'home' | 'cameras' | 'cabin' | 'homelab';
+
+/** One device of apps/climate: the last good reading is kept while it does not answer. */
+export interface ClimateEntry<T> {
+	ok: boolean;
+	error: string | null;
+	/** Unix ms of the last successful reading. */
+	updatedAt: number | null;
+	state: T | null;
+}
+
+/** GET /api/climate, as apps/climate serves it. Temperatures °C; null where the device has no such value. */
+export interface ClimateData {
+	nibe: ClimateEntry<{
+		outdoor: number | null;
+		supply: number | null;
+		return: number | null;
+		calculatedSupply: number | null;
+		hotWaterTop: number | null;
+		hotWaterCharging: number | null;
+		compressorHz: number | null;
+		defrosting: boolean | null;
+		compressorStarts: number | null;
+		compressorHours: number | null;
+		degreeMinutes: number | null;
+		priority: string | null;
+		additionalHeatSteps: number | null;
+		alarm: number | null;
+		operatingMode: string | null;
+		/** Heating curve offset, -10…10. */
+		offset: number | null;
+		/** Key of `hotWaterDemands`. */
+		hotWaterDemand: number | null;
+	}>;
+	innova: ClimateEntry<{
+		power: boolean;
+		mode: 'auto' | 'cool' | 'dry' | 'fan' | 'heat' | null;
+		/** 16…30 */
+		target: number | null;
+		room: number | null;
+		fan: 'auto' | 'low' | 'medium-low' | 'medium' | 'medium-high' | 'high' | null;
+		quiet: boolean;
+		turbo: boolean;
+	}>;
+	hotWaterDemands: Record<string, string>;
+}
 
 /** [unix seconds, value] */
 export type Point = [number, number];
