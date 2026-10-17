@@ -21,10 +21,10 @@ The ASIAIR shares its storage over SMB with a guest login: `EMMC Images` (intern
 | Poll | Every 30 s (`POLL_S`): the folder listings (about 5 s over the VPN for ~350 frames) and the newest Autorun log when its size changed |
 | Frames | Every new light frame is downloaded (about 5 s each) and rendered: 2×2 superpixel debayer (RGGB, 1504² preview and a 300 px one), per-channel screen stretch (black point below the sky, background at 20 %, which also removes the light-pollution colour cast). At start the newest 12 (`STARTUP_FRAMES`); after an outage the newest 5. The latest 40 are kept in memory. A frame still being written is retried at the next poll |
 | Sky quality | Per frame: background median (ADU; rises with moonlight, clouds lit from below, dawn), stars (local maxima 8σ above the sky, not saturated, not single hot pixels), median HFR of the brightest 400 in camera pixels (focus and seeing) |
-| Session | The frames in the newest frame's folder without a gap over 2 h, if the last is under 12 h old: target, mode, count, total exposure. `active` while a frame is due |
-| Plan | The newest Autorun log (under 24 h old): plan name, target, planned and current frame, state (`running`, `finished`, `stopped`; a log that stops without an end line for one exposure + 30 min counts as stopped), what it is doing (exposing, auto focus, centering, guiding settle) and its recent lines. Times in the log and file names are the ASIAIR's clock (`ASIAIR_TZ`) |
+| Session | The frames in the newest frame's folder without a gap over 2 h, if the last is under 12 h old: target, mode, count, total exposure. `active` while a frame is due and the run has not ended |
+| Plan | The run's Autorun log: plan name, target, planned and taken frames, state (`finished`, `stopped`), what it did (auto focus, centering, guiding) and its recent lines. **The ASIAIR puts the log on its share only when the run ends** (seen 2026-10-17: no log file during a running plan), so there is no plan progress while imaging: `plan` is null during a run and filled in at its end. Times in the log and file names are the ASIAIR's clock (`ASIAIR_TZ`) |
 
-Not used: the ASIAIR app's own TCP ports (4400 guider, 4700 imager: JSON events). They would give live guiding and exposure progress, but a second client on the app's control channel is not something to try without being at the telescope.
+Not used: the ASIAIR app's own TCP ports (4400 guider, 4700 imager: JSON events). They are the only live source of plan progress, guiding and exposure state, but a second client on the app's control channel is not something to try without being at the telescope.
 
 ## Notifications
 
@@ -33,8 +33,8 @@ Topic `telescope` (off by default: turn it on in the notify app). Each links to 
 | When | |
 |---|---|
 | Imaging started: *target* | A new run's first frames appear (a frame less than 30 min old in a new folder or after a 2 h gap) |
-| Imaging finished: *target* | The Autorun log ends its plan or autorun with *Finish* |
-| No new frames: *target* | A plan is running and no frame has arrived for one exposure + `STALL_MIN` (15 min): clouds stopping the plate solve or guiding, the mount, power, or the ASIAIR off the network (said in the text). Once per stall |
+| Imaging finished: *target* | The run's Autorun log appears with *Finish* (at the end of a plan or autorun) |
+| No new frames: *target* | An Autorun/Plan run whose log has not appeared yet (so it has not ended) and no frame for one exposure + `STALL_MIN` (15 min): clouds stopping the plate solve or guiding, the mount, power, or the ASIAIR off the network (said in the text). Once per stall. Not for Live stacking, which is ended by hand without a log |
 
 A restart does not repeat notifications for what was already there.
 
@@ -44,7 +44,7 @@ A restart does not repeat notifications for what was already there.
 |---|---|
 | `GET /api/status` | `{ online, lastContact, error, session, plan, frames, updatedAt }`, shapes in `src/main.py` (`status`) |
 | `GET /frames/<id>.jpg`, `/frames/<id>-small.jpg` | Previews; ids change with the file, so they are cacheable forever |
-| `GET /metrics` | `telescope_asiair_up`, and for the newest frame `telescope_last_frame_timestamp_seconds{target}`, `telescope_frame_background_adu`, `telescope_frame_stars`, `telescope_frame_hfr_pixels`, `telescope_sensor_temperature_celsius`; `telescope_plan_frames{target,kind=planned|current}` while a plan runs |
+| `GET /metrics` | `telescope_asiair_up`, and for the newest frame `telescope_last_frame_timestamp_seconds{target}`, `telescope_frame_background_adu`, `telescope_frame_stars`, `telescope_frame_hfr_pixels`, `telescope_sensor_temperature_celsius` |
 
 Logs: `kubectl -n telescope logs deploy/telescope` (one line per rendered frame with its numbers; the ASIAIR going away and coming back; notifications sent).
 

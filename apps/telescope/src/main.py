@@ -128,9 +128,11 @@ class Telescope:
 
         todo = sorted((f for f in files if self.key(f) not in self.done), key=lambda f: f.saved_at)
         # At start only the latest frames; after an outage only the newest few (each is ~18 MB).
-        for f in todo[-(STARTUP_FRAMES if first else 5):]:
+        # Newest first, so the dashboard has the current frame within seconds.
+        keep = STARTUP_FRAMES if first else 5
+        for f in reversed(todo[-keep:]):
             self.render(f)
-        self.done.update(self.key(f) for f in todo[: -(STARTUP_FRAMES if first else 5)])
+        self.done.update(self.key(f) for f in todo[:-keep])
 
         now = time.time()
         session = self.session(now)
@@ -208,7 +210,8 @@ class Telescope:
         if now - run[-1].saved_at > SESSION_MAX_AGE_S:
             return None
         exposure = run[-1].exposure_s
-        plan = self.relevant_plan(newest.mode, newest.target, now)
+        first_frame_at = run[0].saved_at - run[0].exposure_s
+        plan = self.relevant_plan(newest.mode, newest.target, first_frame_at, now)
         recent = now - run[-1].saved_at <= exposure + STALL_S
         return {
             "target": newest.target,
@@ -216,16 +219,18 @@ class Telescope:
             "root": newest.root,
             "frames": len(run),
             "integrationS": round(sum(f.exposure_s for f in run)),
-            "firstFrameAt": run[0].saved_at - run[0].exposure_s,
+            "firstFrameAt": first_frame_at,
             "lastFrameAt": run[-1].saved_at,
             "exposureS": exposure,
             "active": recent and (plan is None or plan.state == "running"),
         }
 
-    def relevant_plan(self, mode: str, target: str, now: float) -> autorun.Plan | None:
-        """The Autorun log describes Autorun and Plan runs (not Live stacking) of its own target."""
+    def relevant_plan(self, mode: str, target: str, first_frame_at: float, now: float) -> autorun.Plan | None:
+        """The Autorun log of this run: Autorun and Plan runs (not Live stacking) of the same target,
+        ending after the run's first frame. The ASIAIR puts the log on its share only when the run
+        ends, so while a run is going there is none."""
         plan = self.current_plan(now)
-        if plan and mode != "Live" and plan.target == target:
+        if plan and mode != "Live" and plan.target == target and (plan.updated_at or 0) >= first_frame_at:
             return plan
         return None
 
@@ -256,7 +261,7 @@ class Telescope:
         if key == self.started_key:
             return
         self.started_key = key
-        plan = self.relevant_plan(session["mode"], session["target"], now)
+        plan = self.relevant_plan(session["mode"], session["target"], session["firstFrameAt"], now)
         if plan and plan.planned:
             body = f"{plan.planned} × {plan.exposure_s:g} s" + (f", plan {plan.name}" if plan.name else "")
         else:
@@ -276,10 +281,12 @@ class Telescope:
 
     def check_stall(self, now: float) -> None:
         session = self.session(now)
-        if not session:
+        # Live stacking is ended by hand and leaves no log, so silence there means nothing.
+        if not session or session["mode"] == "Live":
             return
-        plan = self.relevant_plan(session["mode"], session["target"], now)
-        if not plan or plan.state != "running" or (plan.planned and (plan.current or 0) >= plan.planned):
+        # A run that ended (finished or stopped by hand) has put its log on the share; no log yet
+        # means it should still be producing frames.
+        if self.relevant_plan(session["mode"], session["target"], session["firstFrameAt"], now):
             return
         silent = now - session["lastFrameAt"]
         if silent <= session["exposureS"] + STALL_S:
@@ -297,7 +304,11 @@ class Telescope:
     def status(self) -> dict:
         now = time.time()
         session = self.session(now)
-        plan = self.current_plan(now)
+        # During a run its own log is not there yet: no plan rather than an earlier run's.
+        plan = (
+            self.relevant_plan(session["mode"], session["target"], session["firstFrameAt"], now)
+            if session else self.current_plan(now)
+        )
         with self.lock:
             frames = [f.info for f in reversed(self.frames.values())]
             online, last_contact, error = self.online, self.last_contact, self.error
@@ -340,13 +351,6 @@ class Telescope:
             ):
                 if f.get(key) is not None:
                     lines += [f"# HELP {name} {help_}", f"# TYPE {name} gauge", f"{name}{{{labels}}} {f[key]}"]
-        plan = status["plan"]
-        if plan and plan["state"] == "running":
-            lines += ["# HELP telescope_plan_frames Light frames of the running plan's target: planned and started.",
-                      "# TYPE telescope_plan_frames gauge"]
-            for kind in ("planned", "current"):
-                if plan[kind] is not None:
-                    lines.append(f'telescope_plan_frames{{target="{escape(plan["target"] or "")}",kind="{kind}"}} {plan[kind]}')
         return "\n".join(lines) + "\n"
 
 
