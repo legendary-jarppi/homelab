@@ -31,7 +31,12 @@ spec:
         - ipBlock:
             cidr: 192.168.20.121/32
       ports:
+        # SMB (frames, logs) and the app's JSON-RPC ports (imager 4700, guider 4400; read only).
         - port: 445
+          protocol: TCP
+        - port: 4700
+          protocol: TCP
+        - port: 4400
           protocol: TCP
     - to:
         - namespaceSelector:

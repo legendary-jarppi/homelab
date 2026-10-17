@@ -11,6 +11,7 @@
 	import Card from '$lib/components/Card.svelte';
 	import ClimateCard from '$lib/components/ClimateCard.svelte';
 	import FilmstripCard from '$lib/components/FilmstripCard.svelte';
+	import GuidingCard from '$lib/components/GuidingCard.svelte';
 	import LatestFrameCard from '$lib/components/LatestFrameCard.svelte';
 	import ListCard from '$lib/components/ListCard.svelte';
 	import HomelabCard from '$lib/components/HomelabCard.svelte';
@@ -312,6 +313,9 @@
 			<div class="area session">
 				<TelescopeSessionCard {telescope} configured={data.telescopeConfigured} failedSince={telescopeFailedSince} />
 			</div>
+			<div class="area guiding">
+				<GuidingCard {telescope} />
+			</div>
 			<div class="area sky">
 				<SkyQualityCard {telescope} />
 			</div>
@@ -447,6 +451,9 @@
 	.tonight {
 		grid-area: ton;
 	}
+	.guiding {
+		grid-area: gui;
+	}
 	.film {
 		grid-area: fil;
 	}
@@ -514,14 +521,14 @@
 			grid-template-rows: minmax(0, 1fr);
 			grid-template-areas: 'cab cab cab cab evt evt evt evt evt evt evt evt';
 		}
-		/* Telescope: the latest frame on the left, the session above the sky quality in the middle,
-		   tonight's sky on the right, the recent frames along the bottom. */
+		/* Telescope: the latest frame on the left, the session above the guiding in the middle, tonight's sky
+		   on the right, the recent frames and the sky quality along the bottom. */
 		.grid.telescope-page {
 			grid-template-rows: minmax(0, 1fr) auto auto;
 			grid-template-areas:
 				'img img img img ses ses ses ses ton ton ton ton'
-				'img img img img sky sky sky sky ton ton ton ton'
-				'fil fil fil fil fil fil fil fil fil fil fil fil';
+				'img img img img gui gui gui gui ton ton ton ton'
+				'fil fil fil fil fil fil fil fil sky sky sky sky';
 		}
 		/* Size containers: the cards drop details that do not fit their grid slot. */
 		.workout {
@@ -576,6 +583,7 @@
 				'img img'
 				'fil fil'
 				'ses ton'
+				'gui ton'
 				'sky ton';
 		}
 		.wan {
@@ -605,7 +613,7 @@
 			grid-template-areas: 'cab' 'evt';
 		}
 		.grid.telescope-page {
-			grid-template-areas: 'img' 'fil' 'ses' 'sky' 'ton';
+			grid-template-areas: 'img' 'fil' 'ses' 'gui' 'sky' 'ton';
 		}
 	}
 </style>

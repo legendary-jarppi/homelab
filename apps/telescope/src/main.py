@@ -1,10 +1,11 @@
 """Telescope: the cabin's ZWO ASIAIR imaging session for the dashboard's Telescope tab.
 
 Polls the ASIAIR's SMB shares (over the Site Magic VPN): renders each new light frame into preview
-JPEGs with sky-quality numbers, follows the newest Autorun log for plan progress, and sends push
-notifications (session started, plan finished, frames stopped coming). Read-only towards the ASIAIR.
-Cluster-internal:
-    GET /api/status              JSON (session, plan, recent frames)
+JPEGs with sky-quality numbers and reads each run's Autorun log once it ends. Follows the ASIAIR's
+own control ports read only (live.py) for what it is doing right now: exposure, plan progress,
+guiding. Sends push notifications (imaging started, finished, stopped). Never changes anything on
+the ASIAIR. Cluster-internal:
+    GET /api/status              JSON (session, plan, live, recent frames)
     GET /frames/<id>.jpg         preview (~1504 px); /frames/<id>-small.jpg (~300 px)
     GET /metrics                 Prometheus
     GET /healthz
@@ -17,6 +18,7 @@ import json
 import logging
 import os
 import re
+import signal
 import threading
 import time
 from collections import OrderedDict
@@ -28,6 +30,7 @@ from zoneinfo import ZoneInfo
 import autorun
 import fits
 from asiair import Asiair, FrameFile
+from live import Live
 from notify import Notifier
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
@@ -61,8 +64,10 @@ PORT = int(env_number("PORT", 8080))
 POLL_S = env_number("POLL_S", 30)
 KEEP_FRAMES = int(env_number("KEEP_FRAMES", 40))
 STARTUP_FRAMES = int(env_number("STARTUP_FRAMES", 12))
-# A plan is "stalled" when no frame has arrived for one exposure plus this (auto focus, centering and
-# meridian flips take a few minutes).
+LIVE = os.environ.get("LIVE", "on") != "off"
+# Live: the ASIAIR idle this long during a run that has not ended → "Imaging stopped".
+# Without live: no frame for one exposure plus twice this (a meridian flip with refocusing and
+# re-centering took 22 min on 2026-10-17).
 STALL_S = env_number("STALL_MIN", 15) * 60
 SESSION_GAP_S = 2 * 3600
 SESSION_MAX_AGE_S = 12 * 3600
@@ -73,7 +78,6 @@ FRAME_ID = re.compile(r"^/frames/([0-9a-f]{16})(-small)?\.jpg$")
 @dataclass
 class Frame:
     id: str
-    key: tuple[str, int, float]
     file: FrameFile
     info: dict
     large: bytes
@@ -81,12 +85,13 @@ class Frame:
 
 
 class Telescope:
-    def __init__(self, asiair: Asiair, notifier: Notifier):
+    def __init__(self, asiair: Asiair, live: Live | None, notifier: Notifier):
         self.asiair = asiair
+        self.live = live
         self.notifier = notifier
         self.lock = threading.Lock()
         self.frames: OrderedDict[str, Frame] = OrderedDict()  # oldest first
-        self.done: set[tuple[str, int, float]] = set()  # rendered, or failed for good
+        self.done: set[tuple[str, int]] = set()  # rendered, or failed for good
         self.files: list[FrameFile] = []
         self.plan: autorun.Plan | None = None
         self.log_key: tuple[str, int] | None = None
@@ -96,8 +101,9 @@ class Telescope:
         self.polls = 0
         # Notification memory (seeded on the first poll, so a restart does not repeat them).
         self.started_key: tuple | None = None
-        self.finished_key: tuple | None = None
+        self.finished: set[tuple] = set()
         self.stalled_key: tuple | None = None
+        self.idle_since: float | None = None
 
     # --- polling -------------------------------------------------------------------------------
 
@@ -135,17 +141,18 @@ class Telescope:
         self.done.update(self.key(f) for f in todo[:-keep])
 
         now = time.time()
-        session = self.session(now)
+        session = self.session(now, self.live_now())
         if first:
-            self.seed_notifications(session)
+            self.seed_notifications(session, now)
         else:
             self.check_started(session, now)
-            self.check_finished(session)
+            self.check_finished(session, now)
         self.check_stall(now)
 
     @staticmethod
-    def key(f: FrameFile) -> tuple[str, int, float]:
-        return (f.path, f.size, f.mtime)
+    def key(f: FrameFile) -> tuple[str, int]:
+        # Not the modification time: the ASIAIR touches a frame again after writing it.
+        return (f.path, f.size)
 
     def render(self, f: FrameFile) -> None:
         started = time.time()
@@ -180,7 +187,9 @@ class Telescope:
             "height": rendered.height,
         }
         with self.lock:
-            self.frames[frame_id] = Frame(frame_id, self.key(f), f, info, rendered.large, rendered.small)
+            for old in [k for k, v in self.frames.items() if v.file.path == f.path]:
+                del self.frames[old]
+            self.frames[frame_id] = Frame(frame_id, f, info, rendered.large, rendered.small)
             self.frames = OrderedDict(sorted(self.frames.items(), key=lambda kv: kv[1].info["at"]))
             while len(self.frames) > KEEP_FRAMES:
                 self.frames.popitem(last=False)
@@ -192,7 +201,10 @@ class Telescope:
 
     # --- derived state -------------------------------------------------------------------------
 
-    def session(self, now: float) -> dict | None:
+    def live_now(self) -> dict | None:
+        return self.live.snapshot() if self.live else None
+
+    def session(self, now: float, live: dict | None = None) -> dict | None:
         """The run of frames in the newest frame's folder with no gap over 2 h, if under 12 h old."""
         with self.lock:
             files = list(self.files)
@@ -211,9 +223,7 @@ class Telescope:
             return None
         exposure = run[-1].exposure_s
         first_frame_at = run[0].saved_at - run[0].exposure_s
-        plan = self.relevant_plan(newest.mode, newest.target, first_frame_at, now)
-        recent = now - run[-1].saved_at <= exposure + STALL_S
-        return {
+        session = {
             "target": newest.target,
             "mode": newest.mode,
             "root": newest.root,
@@ -222,15 +232,30 @@ class Telescope:
             "firstFrameAt": first_frame_at,
             "lastFrameAt": run[-1].saved_at,
             "exposureS": exposure,
-            "active": recent and (plan is None or plan.state == "running"),
         }
+        session["active"] = not self.ended(session, now, live) and (
+            live["activity"] != "Idle" if live else now - run[-1].saved_at <= exposure + 2 * STALL_S
+        )
+        return session
 
-    def relevant_plan(self, mode: str, target: str, first_frame_at: float, now: float) -> autorun.Plan | None:
+    def ended(self, session: dict, now: float, live: dict | None) -> bool:
+        """The run is over: its Autorun log is on the share, or live says the plan ended."""
+        if self.relevant_plan(session, now):
+            return True
+        plan = live and live.get("plan")
+        return bool(plan and plan["ended"] and plan["target"] == session["target"])
+
+    def relevant_plan(self, session: dict, now: float) -> autorun.Plan | None:
         """The Autorun log of this run: Autorun and Plan runs (not Live stacking) of the same target,
         ending after the run's first frame. The ASIAIR puts the log on its share only when the run
         ends, so while a run is going there is none."""
         plan = self.current_plan(now)
-        if plan and mode != "Live" and plan.target == target and (plan.updated_at or 0) >= first_frame_at:
+        if (
+            plan
+            and session["mode"] != "Live"
+            and plan.target == session["target"]
+            and (plan.updated_at or 0) >= session["firstFrameAt"]
+        ):
             return plan
         return None
 
@@ -239,76 +264,107 @@ class Telescope:
             plan = self.plan
         if plan is None or plan.updated_at is None or now - plan.updated_at > PLAN_MAX_AGE_S:
             return None
-        if plan.state == "running" and now - plan.updated_at > (plan.exposure_s or 600) + 2 * STALL_S:
-            # The log stopped without an end line: the ASIAIR was switched off or lost power.
-            stale = autorun.Plan(**{**plan.__dict__, "state": "stopped", "activity": None})
-            return stale
         return plan
+
+    @staticmethod
+    def session_key(session: dict) -> tuple:
+        return (session["root"], session["mode"], session["target"], session["firstFrameAt"])
 
     # --- notifications -------------------------------------------------------------------------
 
-    def seed_notifications(self, session: dict | None) -> None:
+    def seed_notifications(self, session: dict | None, now: float) -> None:
         if session:
-            self.started_key = (session["root"], session["mode"], session["target"], session["firstFrameAt"])
-        plan = self.current_plan(time.time())
-        if plan and plan.state == "finished":
-            self.finished_key = self.log_key
+            self.started_key = self.session_key(session)
+            if self.ended(session, now, self.live_now()):
+                self.finished.add(self.session_key(session))
 
     def check_started(self, session: dict | None, now: float) -> None:
         if not session or now - session["lastFrameAt"] > 1800:
             return
-        key = (session["root"], session["mode"], session["target"], session["firstFrameAt"])
+        key = self.session_key(session)
         if key == self.started_key:
             return
         self.started_key = key
-        plan = self.relevant_plan(session["mode"], session["target"], session["firstFrameAt"], now)
-        if plan and plan.planned:
-            body = f"{plan.planned} × {plan.exposure_s:g} s" + (f", plan {plan.name}" if plan.name else "")
+        self.idle_since = None
+        plan = (self.live_now() or {}).get("plan")
+        if plan and plan["target"] == session["target"] and plan["targetTotal"]:
+            body = f"{plan['targetTotal']} × {session['exposureS']:g} s"
+            if (plan["targets"] or 1) > 1:
+                body += f", target {plan['targetIndex']} of {plan['targets']}"
         else:
             body = f"{session['exposureS']:g} s frames ({session['mode']})"
         self.notifier.send(f"Imaging started: {session['target']}", body)
 
-    def check_finished(self, session: dict | None) -> None:
-        plan = self.current_plan(time.time())
-        if not plan or plan.state != "finished" or self.log_key == self.finished_key:
+    def check_finished(self, session: dict | None, now: float) -> None:
+        if not session or self.session_key(session) in self.finished:
             return
-        self.finished_key = self.log_key
-        if session and session["target"] == plan.target:
-            body = f"{session['frames']} frames, {duration(session['integrationS'])} in total"
+        if not self.ended(session, now, self.live_now()):
+            return
+        self.finished.add(self.session_key(session))
+        plan = self.relevant_plan(session, now)
+        if plan and plan.state != "finished":
+            title = f"Imaging stopped: {session['target']}"
         else:
-            body = f"{plan.current or 0} frames of {plan.planned or '?'}"
-        self.notifier.send(f"Imaging finished: {plan.target or plan.name}", body)
+            title = f"Imaging finished: {session['target']}"
+        self.notifier.send(title, f"{session['frames']} frames, {duration(session['integrationS'])} in total")
 
     def check_stall(self, now: float) -> None:
-        session = self.session(now)
+        live = self.live_now()
+        session = self.session(now, live)
         # Live stacking is ended by hand and leaves no log, so silence there means nothing.
-        if not session or session["mode"] == "Live":
+        if not session or session["mode"] == "Live" or self.ended(session, now, live):
+            self.idle_since = None
             return
-        # A run that ended (finished or stopped by hand) has put its log on the share; no log yet
-        # means it should still be producing frames.
-        if self.relevant_plan(session["mode"], session["target"], session["firstFrameAt"], now):
-            return
-        silent = now - session["lastFrameAt"]
-        if silent <= session["exposureS"] + STALL_S:
-            return
-        key = (session["target"], session["lastFrameAt"])
+        last = datetime.fromtimestamp(session["lastFrameAt"], TZ).strftime("%H:%M")
+        if live:
+            # The ASIAIR says what it is doing: meridian flips and refocusing are not stalls.
+            if live["activity"] != "Idle":
+                self.idle_since = None
+                return
+            self.idle_since = self.idle_since or now
+            if now - self.idle_since < STALL_S:
+                return
+            key = ("idle", session["target"], self.idle_since)
+            title, body = f"Imaging stopped: {session['target']}", f"The ASIAIR is idle; last frame at {last}"
+        else:
+            if now - session["lastFrameAt"] <= session["exposureS"] + 2 * STALL_S:
+                return
+            key = ("silent", session["target"], session["lastFrameAt"])
+            why = "the ASIAIR is not answering" if not self.online else "its control ports are not answering"
+            title, body = f"No new frames: {session['target']}", f"Last frame at {last}; {why}"
         if key == self.stalled_key:
             return
         self.stalled_key = key
-        last = datetime.fromtimestamp(session["lastFrameAt"], TZ).strftime("%H:%M")
-        why = "" if self.online else "; the ASIAIR is not answering"
-        self.notifier.send(f"No new frames: {session['target']}", f"Last frame at {last}{why}")
+        self.notifier.send(title, body)
 
     # --- output --------------------------------------------------------------------------------
 
     def status(self) -> dict:
         now = time.time()
-        session = self.session(now)
-        # During a run its own log is not there yet: no plan rather than an earlier run's.
-        plan = (
-            self.relevant_plan(session["mode"], session["target"], session["firstFrameAt"], now)
-            if session else self.current_plan(now)
-        )
+        live = self.live_now()
+        session = self.session(now, live)
+        plan = None
+        if session:
+            live_plan = live and live.get("plan")
+            log_plan = self.relevant_plan(session, now)
+            if log_plan:
+                plan = log_plan.json()
+            elif live_plan and live_plan["target"] == session["target"]:
+                plan = {
+                    "name": None,
+                    "target": live_plan["target"],
+                    "planned": live_plan["targetTotal"],
+                    "current": live_plan["targetDone"],
+                    "exposureS": session["exposureS"],
+                    "state": "finished" if live_plan["ended"] else "running",
+                    "activity": "Finished" if live_plan["ended"] else live["activity"],
+                    "startedAt": session["firstFrameAt"],
+                    "updatedAt": live["updatedAt"],
+                    "events": [],
+                }
+        else:
+            current = self.current_plan(now)
+            plan = current.json() if current else None
         with self.lock:
             frames = [f.info for f in reversed(self.frames.values())]
             online, last_contact, error = self.online, self.last_contact, self.error
@@ -319,7 +375,8 @@ class Telescope:
             "lastContact": last_contact,
             "error": error,
             "session": session,
-            "plan": plan.json() if plan else None,
+            "plan": plan,
+            "live": live,
             "frames": frames,
             "updatedAt": now,
         }
@@ -335,6 +392,9 @@ class Telescope:
             "# HELP telescope_asiair_up 1 when the ASIAIR's storage answered the last poll.",
             "# TYPE telescope_asiair_up gauge",
             f"telescope_asiair_up {1 if status['online'] else 0}",
+            "# HELP telescope_live_up 1 while the ASIAIR's control port answers.",
+            "# TYPE telescope_live_up gauge",
+            f"telescope_live_up {1 if status['live'] else 0}",
         ]
         frames = status["frames"]
         if frames:
@@ -351,6 +411,12 @@ class Telescope:
             ):
                 if f.get(key) is not None:
                     lines += [f"# HELP {name} {help_}", f"# TYPE {name} gauge", f"{name}{{{labels}}} {f[key]}"]
+        guiding = (status["live"] or {}).get("guiding")
+        if guiding and guiding["rmsArcsec"] is not None:
+            lines += ["# HELP telescope_guiding_rms_arcsec Guiding error RMS over the last 50 steps.",
+                      "# TYPE telescope_guiding_rms_arcsec gauge"]
+            for axis, key in (("total", "rmsArcsec"), ("ra", "rmsRaArcsec"), ("dec", "rmsDecArcsec")):
+                lines.append(f'telescope_guiding_rms_arcsec{{axis="{axis}"}} {guiding[key]}')
         return "\n".join(lines) + "\n"
 
 
@@ -408,15 +474,18 @@ def serve(telescope: Telescope) -> ThreadingHTTPServer:
 def main() -> None:
     if not HOST:
         raise SystemExit("ASIAIR_HOST is not set")
+    # PID 1 in the container: SIGTERM has no default action there.
+    signal.signal(signal.SIGTERM, lambda *_: os._exit(0))
     notifier = Notifier(
         os.environ.get("NOTIFY_URL", "http://web.notify.svc:3000"),
         os.environ.get("NOTIFY_TOKEN", ""),
         os.environ.get("NOTIFY_LINK", "https://dashboard.shillyshally.org/?tab=telescope"),
     )
-    telescope = Telescope(Asiair(HOST, ROOTS, TZ), notifier)
+    telescope = Telescope(Asiair(HOST, ROOTS, TZ), Live(HOST) if LIVE else None, notifier)
     serve(telescope)
-    log.info("telescope: ASIAIR %s, roots %s, notifications %s, listening on :%d",
-             HOST, ", ".join(f"{s}\\{r}".rstrip("\\") for s, r in ROOTS), "on" if notifier.token else "off", PORT)
+    log.info("telescope: ASIAIR %s, roots %s, live %s, notifications %s, listening on :%d",
+             HOST, ", ".join(f"{s}\\{r}".rstrip("\\") for s, r in ROOTS), "on" if LIVE else "off",
+             "on" if notifier.token else "off", PORT)
     while True:
         started = time.time()
         telescope.poll()

@@ -60,7 +60,51 @@ export interface TelescopeData {
 	} | null;
 	/** Newest first, recent light frames of all targets. */
 	frames: TelescopeFrame[];
+	/** The ASIAIR's own control ports (read only); null when they are not answering, missing from older services. */
+	live?: TelescopeLive | null;
 	updatedAt: number;
+}
+
+/** Live state from the ASIAIR's JSON-RPC ports (unix seconds; any field may be null). */
+export interface TelescopeLive {
+	connected: boolean;
+	updatedAt: number | null;
+	/** "Exposing", "Meridian flip", "Auto focus", "GoTo", "Plate solving", "Finding star", "Polar alignment", "Live stacking", "Idle". */
+	activity: string | null;
+	/** Only while a frame is exposing. */
+	exposure: { startedAt: number | null; totalS: number | null; elapsedS: number | null } | null;
+	/** Only during a plan or autorun. */
+	plan: {
+		target: string | null;
+		/** 1-based. */
+		targetIndex: number | null;
+		targets: number | null;
+		targetDone: number | null;
+		targetTotal: number | null;
+		planDone: number | null;
+		planTotal: number | null;
+		ended: boolean | null;
+	} | null;
+	/** Null when the guider is not running. */
+	guiding: {
+		/** Guider state: "Guiding", "Looping", "Calibrating", "Stopped", "Paused", "LostLock", "Selected", … */
+		state: string | null;
+		/** RMS of the guiding error over the last steps (settling and dithering excluded), arcsec. */
+		rmsArcsec: number | null;
+		rmsRaArcsec: number | null;
+		rmsDecArcsec: number | null;
+		samples: number | null;
+		snr: number | null;
+		pixelScaleArcsec: number | null;
+		/** Last ≤120 steps, oldest first: [time, RA error ″, Dec error ″]. */
+		history: [number, number, number][] | null;
+	} | null;
+	/** Main camera sensor. */
+	sensorTempC: number | null;
+	/** The ASIAIR's own board. */
+	controllerTempC: number | null;
+	/** The ASIAIR's Wi-Fi signal. */
+	wifiDbm: number | null;
 }
 
 /** A time window, unix ms. */

@@ -309,7 +309,7 @@ export const COMPONENTS: Diagram = {
 		{ from: 'dashboard', to: 'climate', label: 'Cabin tab, changes', kind: 'web' },
 		{ from: 'climate', to: 'ucg', label: 'heat pumps: Modbus TCP, Gree UDP', kind: 'control' },
 		{ from: 'dashboard', to: 'telescope', label: 'Telescope tab, frame previews', kind: 'web' },
-		{ from: 'telescope', to: 'asiair', label: 'frames and logs, SMB 445 (read only) over the VPN', kind: 'data' },
+		{ from: 'telescope', to: 'asiair', label: 'frames and logs (SMB 445), live state (JSON-RPC 4700/4400, getters only) over the VPN', kind: 'data' },
 		{ from: 'telescope', to: 'notifyweb', label: 'imaging notifications', kind: 'web' },
 		{ from: 'prometheus', to: 'telescope', label: 'scrape', kind: 'metrics' },
 		{ from: 'notifyweb', to: 'notifypg', label: 'SQL', kind: 'data' },
