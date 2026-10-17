@@ -26,7 +26,7 @@ The ASIAIR shares its storage over SMB with a guest login: `EMMC Images` (intern
 
 ### Live state (`live.py`, `LIVE=off` disables it)
 
-The ASIAIR app talks to two JSON-RPC servers on the ASIAIR (one JSON object per line). This service keeps a connection to each and only calls getters, every 5 s (a client that sends nothing is dropped after ~18 s). Found on 2026-10-17 (firmware 13.41) with the app connected at the same time:
+The ASIAIR app talks to two JSON-RPC servers on the ASIAIR (one JSON object per line). This service keeps a connection to each and only calls getters, every 5 s (a client that sends nothing is dropped after ~18 s). Found on 2026-10-17 (firmware 13.41) with the app connected at the same time; the app showed no disconnects, warnings or slowness with this service connected alongside it:
 
 | Port | |
 |---|---|
