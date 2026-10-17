@@ -1,5 +1,100 @@
-/** Everyday page (`home`), motion events from all cameras (`cameras`), the cabin's heating and cooling (`cabin`) and the technical page (network, server, backups). */
-export type DashboardTab = 'home' | 'cameras' | 'cabin' | 'homelab';
+/** Everyday page (`home`), motion events from all cameras (`cameras`), the cabin's heating and cooling (`cabin`), the cabin telescope's imaging (`telescope`) and the technical page (network, server, backups). */
+export type DashboardTab = 'home' | 'cameras' | 'cabin' | 'telescope' | 'homelab';
+
+/** One light frame from apps/telescope; unix seconds, null where unknown. */
+export interface TelescopeFrame {
+	/** Content-addressed: previews at /telescope/frames/<id>.jpg and <id>-small.jpg. */
+	id: string;
+	target: string;
+	mode: string;
+	number: number | null;
+	/** Exposure start. */
+	at: number;
+	exposureS: number | null;
+	gain: number | null;
+	sensorTempC: number | null;
+	setTempC: number | null;
+	camera: string | null;
+	focalLengthMm: number | null;
+	/** Sky background median, raw ADU (16-bit scale): rises with the moon, lit clouds, dawn. */
+	backgroundAdu: number | null;
+	/** Detected stars: drop with clouds, fog, dew. */
+	stars: number | null;
+	/** Median half-flux radius, pixels: rises when focus drifts or seeing is bad. */
+	hfr: number | null;
+	width: number | null;
+	height: number | null;
+}
+
+/** GET /api/telescope: apps/telescope's /api/status (unix seconds). */
+export interface TelescopeData {
+	/** The ASIAIR answered the last poll. */
+	online: boolean;
+	lastContact: number | null;
+	error: string | null;
+	/** Current or most recent imaging run (frames within the last 12 h). */
+	session: {
+		target: string;
+		mode: string;
+		frames: number;
+		integrationS: number;
+		firstFrameAt: number;
+		lastFrameAt: number;
+		exposureS: number | null;
+		/** A frame is due. */
+		active: boolean;
+	} | null;
+	/** From the newest Autorun log on the ASIAIR. */
+	plan: {
+		name: string | null;
+		target: string | null;
+		planned: number | null;
+		current: number | null;
+		exposureS: number | null;
+		state: string;
+		activity: string | null;
+		startedAt: number | null;
+		updatedAt: number | null;
+		/** Newest first. */
+		events: { at: number; text: string }[];
+	} | null;
+	/** Newest first, recent light frames of all targets. */
+	frames: TelescopeFrame[];
+	updatedAt: number;
+}
+
+/** A time window, unix ms. */
+export interface TimeWindow {
+	start: number;
+	end: number;
+}
+
+/** GET /api/tonight: darkness, moon and clouds at the telescope site tonight. Times unix ms. */
+export interface TonightData {
+	site: { name: string; latitude: number; longitude: number };
+	sunset: number | null;
+	sunrise: number | null;
+	/** Sun below −18°; null in the bright summer nights. */
+	astronomical: TimeWindow | null;
+	/** Sun below −12°. */
+	nautical: TimeWindow | null;
+	/** Lowest sun altitude of the night, degrees. */
+	sunLowest: number;
+	moon: {
+		/** Illuminated fraction 0…1 at midnight. */
+		illumination: number;
+		/** 0 new, 0.25 first quarter, 0.5 full, 0.75 last quarter. */
+		phase: number;
+		/** Moonrises and moonsets from noon to noon. */
+		events: { at: number; kind: 'rise' | 'set' }[];
+		/** Above the horizon when darkness (without darkness: sunset) begins. */
+		upAtDark: boolean;
+	};
+	/** Hourly forecast through the night (Open-Meteo), % and °C; null when it failed. */
+	hours: { time: number; cloud: number | null; low: number | null; mid: number | null; high: number | null; temperature: number | null; dewPoint: number | null }[] | null;
+	weatherError: string | null;
+	updatedAt: number;
+}
 
 /** One device of apps/climate: the last good reading is kept while it does not answer. */
 export interface ClimateEntry<T> {

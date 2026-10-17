@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telescope
+  labels:
+    app.kubernetes.io/name: telescope
+spec:
+  # Recent previews live in memory (rebuilt from the ASIAIR at start): one replica.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: telescope
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: telescope
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: telescope
+          # Built locally and imported into k3s (deploy.sh); never pulled.
+          image: localhost/telescope
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: telescope-config
+            # NOTIFY_TOKEN for apps/notify (optional: without it nothing is sent).
+            - secretRef:
+                name: telescope-notify
+                optional: true
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 20m
+              memory: 160Mi
+            # A frame is 18 MB raw and ~150 MB while being rendered; 40 previews are ~25 MB.
+            limits:
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telescope
+  labels:
+    app.kubernetes.io/name: telescope
+spec:
+  selector:
+    app.kubernetes.io/name: telescope
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: telescope
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: telescope
+  endpoints:
+    - port: http
+      interval: 60s

@@ -14,7 +14,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261017-155806"
+    newTag: "20261017-191912"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -49,6 +49,10 @@ configMapGenerator:
       - CABIN_CAMERA_URL=http://snapshots.cabin-camera.svc:8080
       # The cabin's heat pumps (apps/climate, cluster-internal): the Cabin tab.
       - CLIMATE_URL=http://climate.climate.svc:8080
+      # The cabin telescope's imaging session and frame previews (apps/telescope, cluster-internal): the Telescope tab.
+      - TELESCOPE_URL=http://telescope.telescope.svc:8080
+      # Telescope site for the tab's "Tonight" card (name:latitude:longitude, as the ASIAIR reports it).
+      - TELESCOPE_SITE=Ristiina:61.496:27.576
       # UniFi Protect motion events for the Cameras tab (login in secret dashboard-protect).
       - PROTECT_URL=https://192.168.1.1
       # Protect camera name:label, in display order.

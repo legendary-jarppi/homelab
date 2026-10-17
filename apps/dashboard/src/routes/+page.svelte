@@ -1,5 +1,7 @@
 <script lang="ts">
 	import { onMount, untrack } from 'svelte';
+	import { afterNavigate, replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import ArchitectureView from '$lib/components/ArchitectureView.svelte';
 	import CabinCard from '$lib/components/CabinCard.svelte';
 	import CabinTile from '$lib/components/CabinTile.svelte';
@@ -8,15 +10,21 @@
 	import CameraViewer from '$lib/components/CameraViewer.svelte';
 	import Card from '$lib/components/Card.svelte';
 	import ClimateCard from '$lib/components/ClimateCard.svelte';
+	import FilmstripCard from '$lib/components/FilmstripCard.svelte';
+	import LatestFrameCard from '$lib/components/LatestFrameCard.svelte';
 	import ListCard from '$lib/components/ListCard.svelte';
 	import HomelabCard from '$lib/components/HomelabCard.svelte';
 	import NetworkCard from '$lib/components/NetworkCard.svelte';
 	import NightScreen from '$lib/components/NightScreen.svelte';
 	import PackagesCard from '$lib/components/PackagesCard.svelte';
+	import SkyQualityCard from '$lib/components/SkyQualityCard.svelte';
 	import PresenceCard from '$lib/components/PresenceCard.svelte';
 	import ProtectCard from '$lib/components/ProtectCard.svelte';
 	import SpeedtestCard from '$lib/components/SpeedtestCard.svelte';
-	import TopBar from '$lib/components/TopBar.svelte';
+	import TelescopeSessionCard from '$lib/components/TelescopeSessionCard.svelte';
+	import TelescopeViewer from '$lib/components/TelescopeViewer.svelte';
+	import TonightCard from '$lib/components/TonightCard.svelte';
+	import TopBar, { TABS } from '$lib/components/TopBar.svelte';
 	import TopDevicesCard from '$lib/components/TopDevicesCard.svelte';
 	import WanCard from '$lib/components/WanCard.svelte';
 	import ViewSwitch from '$lib/components/ViewSwitch.svelte';
@@ -25,7 +33,22 @@
 	import { cabinEvents } from '$lib/cabin';
 	import { dayOf } from '$lib/dates';
 	import { night } from '$lib/night.svelte';
-	import type { CabinData, CalendarData, ClimateData, DashboardTab, ListsData, LiveData, PackagesData, PresenceData, ProtectData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
+	import type {
+		CabinData,
+		CalendarData,
+		ClimateData,
+		DashboardTab,
+		ListsData,
+		LiveData,
+		PackagesData,
+		PresenceData,
+		ProtectData,
+		SlowData,
+		TelescopeData,
+		TonightData,
+		WeatherData,
+		WorkoutSummary
+	} from '$lib/types';
 
 	let { data } = $props();
 
@@ -42,8 +65,16 @@
 	let lists = $state<ListsData | null>(untrack(() => data.lists));
 	/** Fetched after the page loads (the heat pumps answer over the VPN). */
 	let climate = $state<ClimateData | null>(null);
+	/** Fetched after the page loads, then only while the Telescope tab is open. */
+	let telescope = $state<TelescopeData | null>(null);
+	let tonight = $state<TonightData | null>(null);
+	/** Unix ms of the first failed telescope refresh in a row; null while it answers. */
+	let telescopeFailedSince = $state<number | null>(null);
 	let viewer = $state<number | null>(null);
-	let tab = $state<DashboardTab>('home');
+	/** Index into the telescope's frames shown full screen. */
+	let frameViewer = $state<number | null>(null);
+	/** `?tab=telescope` (notifications link there) opens that page; the parameter is dropped once the page runs. */
+	let tab = $state<DashboardTab>(untrack(() => TABS.find((t) => t.id === page.url.searchParams.get('tab'))?.id ?? 'home'));
 	/** The Cameras tab's view; opening the tab always starts on the live pictures. */
 	let cameraView = $state<'live' | 'detections'>('live');
 	/** The Homelab tab's view; opening the tab (or the backup pill) starts on Status. */
@@ -98,12 +129,28 @@
 		const response = await fetch('/api/calendar', { cache: 'no-store' });
 		if (response.ok) calendar = await response.json();
 	}
+	// Drop `?tab=` once it has opened its page, so a reload starts at Home again. The router counts as
+	// started only after the first afterNavigate callbacks return, hence the microtask.
+	afterNavigate(() => {
+		if (!page.url.searchParams.has('tab')) return;
+		const url = new URL(page.url);
+		url.searchParams.delete('tab');
+		queueMicrotask(() => replaceState(url, page.state));
+	});
 	onMount(() => {
 		const stopNight = night.start();
 		const RETRY_MS = 30_000;
 		const start = Date.now();
-		// `due`: next fetch time. Data missing from the server render is fetched right away.
-		const pollers: { url: string; everyMs: number; apply: (body: unknown) => void; due: number }[] = [
+		// `due`: next fetch time. Data missing from the server render is fetched right away. `onlyWhile`:
+		// after the first fetch, refreshed only while it returns true. `fail`: called when a fetch fails.
+		const pollers: {
+			url: string;
+			everyMs: number;
+			apply: (body: unknown) => void;
+			due: number;
+			onlyWhile?: () => boolean;
+			fail?: () => void;
+		}[] = [
 			{ url: '/api/live', everyMs: 10_000, apply: (b) => (live = b as LiveData), due: live ? start + 10_000 : 0 },
 			{ url: '/api/slow', everyMs: 60_000, apply: (b) => (slow = b as SlowData), due: slow ? start + 60_000 : 0 },
 			// The server checks each carrier only as often as it allows; this just picks up the results.
@@ -133,13 +180,29 @@
 		if (data.climateConfigured) {
 			pollers.push({ url: '/api/climate', everyMs: 60_000, apply: (b) => (climate = b as ClimateData), due: 0 });
 		}
+		if (data.telescopeConfigured) {
+			pollers.push({
+				url: '/api/telescope',
+				everyMs: 30_000,
+				apply: (b) => {
+					telescope = b as TelescopeData;
+					telescopeFailedSince = null;
+				},
+				due: 0,
+				onlyWhile: () => tab === 'telescope',
+				fail: () => (telescopeFailedSince ??= Date.now())
+			});
+		}
+		if (data.telescopeSiteConfigured) {
+			pollers.push({ url: '/api/tonight', everyMs: 10 * 60_000, apply: (b) => (tonight = b as TonightData), due: 0, onlyWhile: () => tab === 'telescope' });
+		}
 
 		const tick = async (force = false) => {
 			if (document.visibilityState !== 'visible') return;
 			const now = Date.now();
 			await Promise.all(
 				pollers
-					.filter((p) => force || now >= p.due)
+					.filter((p) => (force || now >= p.due) && (p.due === 0 || !p.onlyWhile || p.onlyWhile()))
 					.map(async (p) => {
 						// Pending until this fetch settles; a failure retries sooner than the regular interval.
 						p.due = now + p.everyMs;
@@ -150,6 +213,7 @@
 						} catch {
 							// Keep showing the last data; staleness is surfaced in the top bar.
 							p.due = now + Math.min(RETRY_MS, p.everyMs);
+							p.fail?.();
 						}
 					})
 			);
@@ -240,6 +304,24 @@
 		<main class="grid cabin-page">
 			<ClimateCard {climate} configured={data.climateConfigured} onchange={(next) => (climate = next)} />
 		</main>
+	{:else if tab === 'telescope'}
+		<main class="grid telescope-page">
+			<div class="area frame">
+				<LatestFrameCard {telescope} configured={data.telescopeConfigured} onopen={(i) => (frameViewer = i)} />
+			</div>
+			<div class="area session">
+				<TelescopeSessionCard {telescope} configured={data.telescopeConfigured} failedSince={telescopeFailedSince} />
+			</div>
+			<div class="area sky">
+				<SkyQualityCard {telescope} />
+			</div>
+			<div class="area tonight">
+				<TonightCard {tonight} configured={data.telescopeSiteConfigured} />
+			</div>
+			<div class="area film">
+				<FilmstripCard frames={telescope?.frames ?? null} onopen={(i) => (frameViewer = i)} />
+			</div>
+		</main>
 	{:else}
 		<ViewSwitch
 			label="Homelab view"
@@ -278,6 +360,10 @@
 
 {#if viewer !== null}
 	<CameraViewer cameras={data.cameras} bind:index={viewer} onclose={() => (viewer = null)} />
+{/if}
+
+{#if frameViewer !== null && telescope && telescope.frames.length > 0}
+	<TelescopeViewer frames={telescope.frames} plan={telescope.plan} bind:index={frameViewer} onclose={() => (frameViewer = null)} />
 {/if}
 
 <style>
@@ -349,6 +435,21 @@
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-areas: none;
 	}
+	.frame {
+		grid-area: img;
+	}
+	.session {
+		grid-area: ses;
+	}
+	.sky {
+		grid-area: sky;
+	}
+	.tonight {
+		grid-area: ton;
+	}
+	.film {
+		grid-area: fil;
+	}
 	.packages {
 		grid-area: pkg;
 	}
@@ -413,9 +514,21 @@
 			grid-template-rows: minmax(0, 1fr);
 			grid-template-areas: 'cab cab cab cab evt evt evt evt evt evt evt evt';
 		}
+		/* Telescope: the latest frame on the left, the session above the sky quality in the middle,
+		   tonight's sky on the right, the recent frames along the bottom. */
+		.grid.telescope-page {
+			grid-template-rows: minmax(0, 1fr) auto auto;
+			grid-template-areas:
+				'img img img img ses ses ses ses ton ton ton ton'
+				'img img img img sky sky sky sky ton ton ton ton'
+				'fil fil fil fil fil fil fil fil fil fil fil fil';
+		}
 		/* Size containers: the cards drop details that do not fit their grid slot. */
 		.workout {
 			container: workout / size;
+		}
+		.frame {
+			container: telescope-frame / size;
 		}
 		/* The calendar keeps three fifths of the column when list cards are below it. */
 		.middle .calendar {
@@ -458,6 +571,13 @@
 				'cab cab'
 				'evt evt';
 		}
+		.grid.telescope-page {
+			grid-template-areas:
+				'img img'
+				'fil fil'
+				'ses ton'
+				'sky ton';
+		}
 		.wan {
 			min-height: 280px;
 		}
@@ -483,6 +603,9 @@
 		}
 		.grid.cameras-page {
 			grid-template-areas: 'cab' 'evt';
+		}
+		.grid.telescope-page {
+			grid-template-areas: 'img' 'fil' 'ses' 'sky' 'ton';
 		}
 	}
 </style>

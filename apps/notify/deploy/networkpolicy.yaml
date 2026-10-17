@@ -69,6 +69,12 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: dashboard
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: telescope
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: telescope
       ports:
         - port: http
 ---

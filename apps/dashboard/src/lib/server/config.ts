@@ -56,6 +56,17 @@ export const config = {
 	protectPass: env.PROTECT_PASS ?? '',
 	/** apps/climate, cluster-internal (the cabin's heat pumps); the Cabin tab says "not set up" without it. */
 	climateUrl: env.CLIMATE_URL ?? '',
+	/** apps/telescope, cluster-internal (the cabin's ASIAIR imaging sessions); the Telescope tab says "not set up" without it. */
+	telescopeUrl: env.TELESCOPE_URL ?? '',
+	/**
+	 * TELESCOPE_SITE="Ristiina:61.496:27.576" (name:latitude:longitude, as the ASIAIR reports it): the Telescope
+	 * tab's Tonight card (darkness, moon, clouds); the card says "not set up" without it.
+	 */
+	telescopeSite: ((): WeatherLocation | null => {
+		const [name, lat, lon] = (env.TELESCOPE_SITE ?? '').split(':').map((part) => part.trim());
+		const site = { name, latitude: Number(lat), longitude: Number(lon) };
+		return name && lat && lon && Number.isFinite(site.latitude) && Number.isFinite(site.longitude) ? site : null;
+	})(),
 	/** PROTECT_CAMERAS="Ulko-ovi:Front door,…": Protect camera name -> label, in display order. */
 	protectCameras: (env.PROTECT_CAMERAS ?? '')
 		.split(',')

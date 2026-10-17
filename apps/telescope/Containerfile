@@ -1,0 +1,11 @@
+# Build: apps/telescope/deploy.sh. Python (numpy for the FITS frames, smbprotocol for the ASIAIR's
+# SMB shares); wheels only, no compiler in the image.
+FROM docker.io/library/python:3.13-alpine
+WORKDIR /app
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --only-binary=:all: --root-user-action=ignore -r requirements.txt
+COPY src ./src
+USER 1000:1000
+EXPOSE 8080
+CMD ["python", "src/main.py"]

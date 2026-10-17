@@ -38,7 +38,7 @@ Inside the cluster: `POST http://web.notify.svc:3000/api/send`, `Authorization: 
 
 Answer `200 {"id", "recipients", "devices", "delivered", "failed"}`; `401` for an unknown token. The body must be JSON (`content-type: application/json`): SvelteKit refuses form-encoded POSTs without a matching `Origin`. Delivery is attempted once (push services queue for offline devices for 24 h, `TTL`); a failure is recorded on the device (shown in the app) and not retried.
 
-Current senders: `dashboard` (topic `packages`: package ready for pickup, [apps/dashboard](../dashboard/README.md)).
+Current senders: `dashboard` (topic `packages`: package ready for pickup, [apps/dashboard](../dashboard/README.md)), `telescope` (topic `telescope`, off by default: the cabin telescope's imaging started, finished, or stopped producing frames, [apps/telescope](../telescope/README.md)).
 
 ### Adding a sender
 

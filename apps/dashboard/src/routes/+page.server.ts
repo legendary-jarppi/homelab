@@ -11,6 +11,8 @@ export const load: PageServerLoad = () => ({
 	presenceConfigured: config.presenceUrl !== '',
 	cabinConfigured: config.cabinCameraUrl !== '',
 	climateConfigured: config.climateUrl !== '',
+	telescopeConfigured: config.telescopeUrl !== '',
+	telescopeSiteConfigured: config.telescopeSite !== null,
 	protectConfigured: config.protectUser !== '' && config.protectPass !== '',
 	listsConfigured: config.listsToken !== '',
 	listsAppUrl: config.listsAppUrl

@@ -4,5 +4,11 @@
 		"name": "Packages",
 		"description": "A package tracked on the home dashboard is ready for pickup.",
 		"default": true
+	},
+	{
+		"id": "telescope",
+		"name": "Telescope",
+		"description": "The cabin telescope (ASIAIR): imaging started, plan finished, or frames stopped coming.",
+		"default": false
 	}
 ]

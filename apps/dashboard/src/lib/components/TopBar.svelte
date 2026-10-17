@@ -1,3 +1,16 @@
+<script lang="ts" module>
+	import type { DashboardTab } from '$lib/types';
+
+	/** The pages in the top bar, in order; `?tab=<id>` opens one (notifications link to them). */
+	export const TABS: { id: DashboardTab; label: string }[] = [
+		{ id: 'home', label: 'Home' },
+		{ id: 'cameras', label: 'Cameras' },
+		{ id: 'cabin', label: 'Cabin' },
+		{ id: 'telescope', label: 'Telescope' },
+		{ id: 'homelab', label: 'Homelab' }
+	];
+</script>
+
 <script lang="ts">
 	import { fade } from 'svelte/transition';
 	import WeatherForecast from './WeatherForecast.svelte';
@@ -6,7 +19,7 @@
 	import { describeWeather } from '$lib/weather';
 	import { backupProblem } from '$lib/backup';
 	import { longDate } from '$lib/dates';
-	import type { DashboardTab, LiveData, SlowData, WeatherData } from '$lib/types';
+	import type { LiveData, SlowData, WeatherData } from '$lib/types';
 
 	let {
 		weather,
@@ -27,12 +40,6 @@
 
 	const backupIssue = $derived(backup ? backupProblem(backup, night.now.getTime()) : null);
 
-	const TABS: { id: DashboardTab; label: string }[] = [
-		{ id: 'home', label: 'Home' },
-		{ id: 'cameras', label: 'Cameras' },
-		{ id: 'cabin', label: 'Cabin' },
-		{ id: 'homelab', label: 'Homelab' }
-	];
 	const time = $derived(night.now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
 	const date = $derived(longDate(night.now));
 	const NIGHT_OPTIONS: { mode: NightMode; label: string }[] = [
@@ -406,6 +413,19 @@
 		}
 		.pill .label {
 			display: none;
+		}
+	}
+	/* Phones: the five tabs need the whole width, so the status dots and the menu move up beside the clock. */
+	@media (max-width: 520px) {
+		.controls {
+			display: contents;
+		}
+		.tabs {
+			order: 2;
+			flex-basis: 100%;
+		}
+		.pill:not(.backup) {
+			margin-left: auto;
 		}
 	}
 	/* Phones: drop the condition line, keep name + temperature. */

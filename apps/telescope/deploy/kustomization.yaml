@@ -1,0 +1,29 @@
+# Telescope: the cabin's ZWO ASIAIR imaging session (previews, plan progress, notifications) for the
+# dashboard's Telescope tab. Cluster-internal at http://telescope.telescope.svc:8080.
+# Optional secret telescope-notify (NOTIFY_TOKEN; apps/notify/README.md#adding-a-sender), not in git.
+# Build + apply: apps/telescope/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: telescope
+resources:
+  - namespace.yaml
+  - app.yaml
+  - networkpolicy.yaml
+images:
+  - name: localhost/telescope
+    newTag: "20261017-190600"
+configMapGenerator:
+  # Hashed name: changes roll the pod.
+  - name: telescope-config
+    literals:
+      # ASIAIR Plus on the cabin Wi-Fi (fixed address in the UCG Max); also in networkpolicy.yaml.
+      - ASIAIR_HOST=192.168.20.121
+      # SMB share:folder holding Autorun/Plan/Live/log: the internal eMMC and a USB disk.
+      - ROOTS=EMMC Images:,Udisk Images:ASIAIR
+      # The ASIAIR's clock (file names, Autorun log); it takes the phone's time.
+      - ASIAIR_TZ=Europe/Helsinki
+      - POLL_S=30
+      # No frame for one exposure plus this while a plan runs: "No new frames" notification.
+      - STALL_MIN=15
+      - NOTIFY_URL=http://web.notify.svc:3000
+      - NOTIFY_LINK=https://dashboard.shillyshally.org/?tab=telescope

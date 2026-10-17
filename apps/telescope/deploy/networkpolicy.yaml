@@ -1,0 +1,56 @@
+# Enforced by k3s's embedded network policy controller.
+#   telescope <- dashboard (API, previews), Prometheus (scrape)
+#   telescope -> the cabin's ASIAIR (SMB 445) over the Site Magic VPN, apps/notify, DNS
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telescope
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: telescope
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: dashboard
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: dashboard
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: http
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 192.168.20.121/32
+      ports:
+        - port: 445
+          protocol: TCP
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: notify
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+      ports:
+        - port: 3000
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP

@@ -65,7 +65,8 @@ export const COMPONENTS: Diagram = {
 			'out local-path-storage workout homeassistant mosquitto',
 			'out monitoring monitoring unpoller backup',
 			'out monitoring monitoring headlamp lists',
-			'out cloudflare notify climate lists'
+			'out cloudflare notify climate lists',
+			'out cloudflare notify telescope lists'
 		],
 		narrow: [
 			'out out',
@@ -78,7 +79,7 @@ export const COMPONENTS: Diagram = {
 			'unpoller headlamp',
 			'backup lists',
 			'cloudflare notify',
-			'climate climate'
+			'climate telescope'
 		]
 	},
 	groups: [
@@ -95,7 +96,8 @@ export const COMPONENTS: Diagram = {
 				{ id: 'internet', label: 'Internet services', sub: 'weather, calendar, parcels, news, AI, Drive', info: 'Open-Meteo (weather), Google Calendar (iCal), Posti, Matkahuolto and UPS (parcels) for the dashboard; news outlets and the AI proxy for the news worker; Google Drive for the nightly backup.' },
 				{ id: 'cfedge', label: 'Cloudflare', sub: 'notify, dashboard, news .shillyshally.org · Access', info: 'Public HTTPS for the shillyshally.org apps (Notify, the dashboard, News): Cloudflare\'s certificate, then Cloudflare Access (email one-time code, listed emails only), then the tunnel to cloudflared. Nothing is port-forwarded for it.' },
 				{ id: 'pushsvc', label: 'Push services', sub: 'Apple, Google, Mozilla', info: 'Web Push: notify sends each message, encrypted for the device, to the push service of the browser that subscribed (web.push.apple.com for iPhones), which delivers it to the device.' },
-				{ id: 'ucg', label: 'Cabin UCG Max', sub: '192.168.20.1 · Site Magic VPN', info: 'The cabin\'s UniFi console, behind a Teltonika RUTX50 on mobile, joined to home by a Site Magic mesh VPN (home 192.168.1.0/24 ↔ cabin 192.168.20.0/24). UnPoller reads its statistics and clients; the cabin resolves *.lab.internal through the UDM Pro.' }
+				{ id: 'ucg', label: 'Cabin UCG Max', sub: '192.168.20.1 · Site Magic VPN', info: 'The cabin\'s UniFi console, behind a Teltonika RUTX50 on mobile, joined to home by a Site Magic mesh VPN (home 192.168.1.0/24 ↔ cabin 192.168.20.0/24). UnPoller reads its statistics and clients; the cabin resolves *.lab.internal through the UDM Pro.' },
+				{ id: 'asiair', label: 'ASIAIR Plus', sub: 'cabin telescope · ZWO ASI533MC Pro', info: 'The cabin\'s astrophotography controller on the cabin LAN, reached over the Site Magic VPN: it runs the imaging plans (Autorun) and stores each frame as FITS on its SMB share, with the Autorun logs beside them.' }
 			]
 		},
 		{
@@ -124,7 +126,7 @@ export const COMPONENTS: Diagram = {
 			label: 'dashboard',
 			kind: 'namespace',
 			nodes: [
-				{ id: 'dashboard', label: 'Dashboard', sub: 'dashboard.lab.internal', workloads: ['dashboard/dashboard'], href: '/', info: 'This page (SvelteKit). Gathers everything server-side: Prometheus for network and server status, go2rtc for camera pictures and live video, presence, workouts, the cabin camera\'s uploads, Protect\'s events and clips, and weather, calendar and parcels from the internet.' }
+				{ id: 'dashboard', label: 'Dashboard', sub: 'dashboard.lab.internal', workloads: ['dashboard/dashboard'], href: '/', info: 'This page (SvelteKit). Gathers everything server-side: Prometheus for network and server status, go2rtc for camera pictures and live video, presence, workouts, the cabin camera\'s uploads, Protect\'s events and clips, the cabin telescope\'s session and frames, and weather, calendar and parcels from the internet.' }
 			]
 		},
 		{
@@ -250,6 +252,14 @@ export const COMPONENTS: Diagram = {
 			]
 		},
 		{
+			id: 'telescope',
+			label: 'telescope',
+			kind: 'namespace',
+			nodes: [
+				{ id: 'telescope', label: 'Telescope', sub: 'cabin ASIAIR · Python', workloads: ['telescope/telescope'], info: 'Follows the cabin\'s ASIAIR over the VPN: pulls new frames from its SMB share and renders previews with sky background, star count and focus (HFR), reads the Autorun log for the plan\'s progress, and notifies when imaging starts, ends or goes wrong. Serves the dashboard\'s Telescope tab.' }
+			]
+		},
+		{
 			id: 'backup',
 			label: 'backup',
 			kind: 'namespace',
@@ -298,6 +308,10 @@ export const COMPONENTS: Diagram = {
 		{ from: 'dashboard', to: 'notifyweb', label: 'package ready for pickup', kind: 'web' },
 		{ from: 'dashboard', to: 'climate', label: 'Cabin tab, changes', kind: 'web' },
 		{ from: 'climate', to: 'ucg', label: 'heat pumps: Modbus TCP, Gree UDP', kind: 'control' },
+		{ from: 'dashboard', to: 'telescope', label: 'Telescope tab, frame previews', kind: 'web' },
+		{ from: 'telescope', to: 'asiair', label: 'frames and logs, SMB 445 (read only) over the VPN', kind: 'data' },
+		{ from: 'telescope', to: 'notifyweb', label: 'imaging notifications', kind: 'web' },
+		{ from: 'prometheus', to: 'telescope', label: 'scrape', kind: 'metrics' },
 		{ from: 'notifyweb', to: 'notifypg', label: 'SQL', kind: 'data' },
 		{ from: 'notifyweb', to: 'pushsvc', label: 'Web Push', kind: 'internet' },
 		{ from: 'pushsvc', to: 'users', label: 'notifications', kind: 'internet' },
@@ -408,7 +422,7 @@ export const NETWORK: Diagram = {
 			row: true,
 			nodes: [
 				{ id: 'n-deny', label: 'Default deny', sub: 'news, workout, lists, notify', info: 'All traffic blocked except the listed paths: Traefik to web, web (and worker) to Postgres, DNS, the dashboard to workout, lists and notify, cloudflared to notify and news, the news worker to the internet on 80/443 and notify to the internet on 443 (not the LAN).' },
-				{ id: 'n-limited', label: 'Limited', sub: 'go2rtc, presence, cabin-camera, mosquitto, backup, cloudflared, climate', info: 'go2rtc accepts only the dashboard; presence only the dashboard and Prometheus; Mosquitto only the LAN, presence and the server itself; cabin-camera\'s snapshot service only the dashboard; the backup may reach DNS, the API and the internet on 443 only; cloudflared accepts nothing and may reach only Cloudflare (7844, 443, not the LAN), notify, the dashboard and news; climate accepts the dashboard and Prometheus and may reach only the cabin\'s two heat pumps.' },
+				{ id: 'n-limited', label: 'Limited', sub: 'go2rtc, presence, cabin-camera, mosquitto, backup, cloudflared, climate, telescope', info: 'go2rtc accepts only the dashboard; presence only the dashboard and Prometheus; Mosquitto only the LAN, presence and the server itself; cabin-camera\'s snapshot service only the dashboard; the backup may reach DNS, the API and the internet on 443 only; cloudflared accepts nothing and may reach only Cloudflare (7844, 443, not the LAN), notify, the dashboard and news; climate accepts the dashboard and Prometheus and may reach only the cabin\'s two heat pumps; telescope accepts the dashboard and Prometheus.' },
 				{ id: 'n-open', label: 'No policy', sub: 'dashboard, monitoring, kube-system, …', info: 'dashboard, monitoring, headlamp, unpoller and kube-system have no NetworkPolicy; Home Assistant and node-exporter are on the host network, where policies do not apply.' }
 			]
 		}
