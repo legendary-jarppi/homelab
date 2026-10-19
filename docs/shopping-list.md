@@ -44,6 +44,16 @@ The plan in [future-plans.md](future-plans.md#cabin-lorawan-sensors). Order the 
 - Septic tank: confirm the tank type (holding tank or septic tank with outflow) and the lid on site before buying; the DDS75-LB suits a holding tank with a plastic lid, a metal lid may need the antenna placed differently ([future-plans.md](future-plans.md#septic-tank-fill-level)).
 - Homelab side: the steps under *Homelab changes when the hardware arrives* in future-plans.md (MQTT user and NetworkPolicy, ChirpStack decoders and forwarding, Home Assistant sensors and alerts).
 
+## 4. RuuviTag batteries
+
+| Item | Qty | Where | Price |
+|---|---|---|---|
+| **CR2477** 3 V lithium coin cell (the RuuviTag's size; CR2450/CR2032 do not fit) | 4 | Ruuvi's shop, electronics or hardware shops | – |
+
+- For the cabin tags reported 2026-10-17 by [apps/ruuvi](../apps/ruuvi/): Terassi (flat, not heard), Kylppari (2.48 V) and Olohuone (2.52 V); a new cell is about 3.0 V. The fourth is a spare (Vesitalo is at 2.82 V).
+- Terassi is outdoors: pick a cell rated for low temperatures, since a lithium cell's voltage sags in frost.
+- Homelab side: nothing; Terassi is already named and reappears on the Ruuvi dashboard when the gateway hears it. Battery levels: Grafana *Ruuvi* → Battery.
+
 ## Suggested order
 
 1. **Swegon adapter**: one evening's setup, and it adds the third device to the Cabin tab.
