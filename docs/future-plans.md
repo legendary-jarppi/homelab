@@ -78,9 +78,9 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 
 **Status:** planned (2026-10-18); the panels are not on the network yet. Research and decisions below.
 
-**Hardware** (as reported): DSC PowerSeries Neo **HS2032** panel with a **TL2803G** communicator (Ethernet + 3G). No security company monitors them, and the installer code is at hand, so all four integration slots are free.
+**Hardware** (reported 2026-10-18): both sites have the same setup, a DSC PowerSeries Neo **HS2032** panel with a **TL2803G** communicator (Ethernet + 3G). No security company monitors them, and the installer code is at hand, so all four integration slots are free on both.
 
-**How:** the Neo's integration protocol ITv2 through the TL280-family communicator: the panel *dials out* to a receiver on the LAN and pushes zone, partition, alarm and trouble changes (AES-encrypted). The older Neo-incompatible routes (Envisalink, dscKeybusInterface ESP32 boards) do not apply. Receiver: the Home Assistant integration [HA_DSC_Neo_ITv2](https://github.com/LawPaul/HA_DSC_Neo_ITv2) (`dsc_neo_itv2`, GPL-3, v1.0.0 from 2026-07, developed against an HS2032 + TL280; supports the TL2803G). Alternative: [NeoHub](https://github.com/BrianHumlicek/NeoHub) (own web UI; its HA integration is unfinished). Fallback without the communicator: PGM outputs (armed, alarm, fire) into an ESP32 over optocouplers, status only.
+**How:** the Neo's integration protocol ITv2 through the TL280-family communicator: the panel *dials out* to a receiver on the LAN and pushes zone, partition, alarm and trouble changes (AES-encrypted). The tools for older DSC PowerSeries panels (Envisalink, dscKeybusInterface ESP32 boards) do not work with Neo. Receiver: the Home Assistant integration [HA_DSC_Neo_ITv2](https://github.com/LawPaul/HA_DSC_Neo_ITv2) (`dsc_neo_itv2`, GPL-3, v1.0.0 from 2026-07, developed against an HS2032 + TL280; supports the TL2803G). Alternative: [NeoHub](https://github.com/BrianHumlicek/NeoHub) (own web UI; its HA integration is unfinished). Fallback without the communicator: PGM outputs (armed, alarm, fire) into an ESP32 over optocouplers, status only.
 
 **Panel programming** (per panel, `[*][8]` + installer code; sections for communicator firmware v5.0+, older boards differ):
 
