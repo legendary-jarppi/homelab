@@ -73,8 +73,8 @@ function stateOf(s: DsvShipment, latest: DsvEvent | undefined): PackageState {
 	if (/return|damage|not delivered|fail|refus|lost/i.test(text)) return 'exception';
 	const step = s.progressBar?.activeStep ?? '';
 	if (step === 'DELIVERED') return 'delivered';
-	// Not "picked up" / "collected": that is DSV collecting it from the sender.
-	if (/pick-?up point|ready for (pick-?up|collection)|available for (pick-?up|collection)|parcel ?(shop|locker|point)|noudettavissa/i.test(text)) return 'pickup';
+	// Not "picked up" / "collected": that is DSV collecting it from the sender. DSV writes "Ready for pick up" (code DIF).
+	if (/pick[- ]?up point|ready for (pick[- ]?up|collection)|available for (pick[- ]?up|collection)|parcel ?(shop|locker|point)|noudettavissa/i.test(text)) return 'pickup';
 	if (step === 'TRANSPORTATION' || step === 'DISPATCHING_CENTER') return 'transit';
 	if (step === 'BOOKED') return 'info';
 	return s.events?.length ? 'transit' : 'unknown';
