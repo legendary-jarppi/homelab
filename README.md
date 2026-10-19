@@ -2,6 +2,8 @@
 
 Single-node k3s cluster on `shilly-shally-lab-01` (Rocky Linux 10, 192.168.1.10), reachable on the home LAN and from the cabin over the Site Magic VPN ([docs/other-site-network.md](docs/other-site-network.md)).
 
+The current state of it all (sites, cluster health, every app and its addresses), the component and network diagrams, the devices and how they connect, the plans, the shopping list and these READMEs are at http://homelab.lab.internal ([apps/homelab](apps/homelab/README.md); home network and VPN only).
+
 | Directory | Contents |
 |---|---|
 | [`platform/`](platform/) | Host preparation, k3s, and cluster-wide add-ons |

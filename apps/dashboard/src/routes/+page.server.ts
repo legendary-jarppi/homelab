@@ -15,5 +15,6 @@ export const load: PageServerLoad = () => ({
 	telescopeSiteConfigured: config.telescopeSite !== null,
 	protectConfigured: config.protectUser !== '' && config.protectPass !== '',
 	listsConfigured: config.listsToken !== '',
-	listsAppUrl: config.listsAppUrl
+	listsAppUrl: config.listsAppUrl,
+	homelabAppUrl: config.homelabAppUrl
 });

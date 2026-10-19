@@ -1,5 +1,5 @@
 <script lang="ts" generics="T extends string">
-	/** A tab's sub-views (Cameras: Live | Detections; Homelab: Status | Components | Network), styled like the top bar's tabs. */
+	/** A tab's sub-views (Cameras: Live | Detections), styled like the top bar's tabs. */
 	let {
 		options,
 		value = $bindable(),

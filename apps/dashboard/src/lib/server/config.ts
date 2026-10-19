@@ -46,6 +46,8 @@ export const config = {
 	listsToken: env.LISTS_TOKEN ?? '',
 	/** Where tapping a list card goes (the app's address in the browser). */
 	listsAppUrl: env.LISTS_APP_URL ?? 'http://lists.lab.internal',
+	/** apps/homelab, linked from the Homelab tab (components, network and devices). */
+	homelabAppUrl: env.HOMELAB_APP_URL ?? 'http://homelab.lab.internal',
 	/** apps/presence, cluster-internal (who is home); the card says "not set up" without it. */
 	presenceUrl: env.PRESENCE_URL ?? '',
 	/** apps/cabin-camera's snapshot service, cluster-internal; the cabin card is shown only when set. */

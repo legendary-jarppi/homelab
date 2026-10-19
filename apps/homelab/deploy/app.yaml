@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homelab
+  labels:
+    app.kubernetes.io/name: homelab
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: homelab
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: homelab
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: homelab
+          # Built locally and imported into k3s (deploy.sh); never pulled.
+          image: localhost/homelab
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: homelab-config
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 48Mi
+            limits:
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: homelab
+  labels:
+    app.kubernetes.io/name: homelab
+spec:
+  selector:
+    app.kubernetes.io/name: homelab
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: homelab
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: homelab.lab.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: homelab
+                port:
+                  name: http

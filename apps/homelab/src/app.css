@@ -1,0 +1,70 @@
+:root {
+	--bg: #070a12;
+	--surface: rgba(255, 255, 255, 0.045);
+	--surface-strong: rgba(255, 255, 255, 0.08);
+	--border: rgba(255, 255, 255, 0.08);
+	--text: #eef1f7;
+	--muted: #8a93a8;
+	--faint: #59627a;
+	--down: #38bdf8;
+	--up: #c084fc;
+	--ok: #34d399;
+	--warn: #fbbf24;
+	--bad: #f87171;
+	--radius: 22px;
+	--gap: 14px;
+	--font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
+	color-scheme: dark;
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	min-height: 100%;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font);
+	-webkit-font-smoothing: antialiased;
+	-webkit-text-size-adjust: 100%;
+	-webkit-tap-highlight-color: transparent;
+	overscroll-behavior: none;
+}
+
+body {
+	/* Soft color washes behind the glass cards. */
+	background:
+		radial-gradient(1200px 700px at 10% -10%, rgba(56, 189, 248, 0.13), transparent 60%),
+		radial-gradient(900px 600px at 95% 0%, rgba(192, 132, 252, 0.12), transparent 60%),
+		radial-gradient(1000px 800px at 50% 120%, rgba(52, 211, 153, 0.07), transparent 60%),
+		var(--bg);
+	background-attachment: fixed;
+}
+
+button {
+	font: inherit;
+	color: inherit;
+}
+
+.num {
+	font-variant-numeric: tabular-nums;
+	letter-spacing: -0.02em;
+}
+
+.muted {
+	color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation: none !important;
+		transition: none !important;
+	}
+}

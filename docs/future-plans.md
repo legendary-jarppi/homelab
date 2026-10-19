@@ -47,7 +47,7 @@ flowchart LR
 2. **Gateway**: register the sensors in its ChirpStack with Dragino's payload decoders (so the MQTT messages carry readable JSON: temperature, battery), and point its MQTT forwarding at `192.168.1.10:1883` with the `lora` login.
 3. **Home Assistant**: MQTT sensors for each reading and battery level (YAML in `apps/homeassistant/deploy/configuration.yaml`, or a small translator to MQTT discovery); alerts for leaks, frost and the septic tank threshold to phones through the Companion app.
 4. **Dashboard** (optional): a cabin card with lake temperature and tank level.
-5. **Architecture diagram**: the gateway and sensors in `apps/dashboard/src/lib/architecture.ts`.
+5. **Architecture diagram and devices**: the gateway and sensors in `apps/homelab/src/lib/architecture.ts` are marked `planned`; drop that, and add their addresses, MACs and status checks.
 
 ### Known limit
 

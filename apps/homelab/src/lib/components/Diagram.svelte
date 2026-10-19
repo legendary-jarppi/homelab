@@ -1,15 +1,16 @@
 <script lang="ts">
 	import { tick } from 'svelte';
-	import { EDGE_KINDS, nodeWorkloads, unmodelled, type ArchitectureData, type Diagram, type DiagramEdge, type DiagramNode, type EdgeKind } from '$lib/architecture';
+	import { EDGE_KINDS, nodeWorkloads, unmodelled, workloadsStatus, type ArchitectureData, type Diagram, type DiagramEdge, type DiagramNode, type Status } from '$lib/architecture';
 	import { formatAgo, formatBytes } from '$lib/format';
-	import { night } from '$lib/night.svelte';
 
 	/**
 	 * A diagram from $lib/architecture: groups laid out by CSS grid areas, components as buttons, and
 	 * connections drawn over them from the components' measured positions. Tap a component to
-	 * highlight its connections and see what it does; `data` adds live pod status (Components view).
+	 * highlight its connections and see what it does; `data` adds live pod status (Components),
+	 * `links` the docs page and, for planned devices, the plan of each component (by node id).
+	 * Planned devices and their connections are dashed.
 	 */
-	let { diagram, data = null }: { diagram: Diagram; data?: ArchitectureData | null } = $props();
+	let { diagram, data = null, links = {} }: { diagram: Diagram; data?: ArchitectureData | null; links?: Record<string, { docs?: string; plan?: string }> } = $props();
 
 	let selected = $state<string | null>(null);
 	let hovered = $state<string | null>(null);
@@ -31,26 +32,8 @@
 	const cols = (rows: string[]) => rows[0].trim().split(/\s+/).length;
 	const areas = (rows: string[]) => rows.map((r) => `"${r}"`).join(' ');
 
-	type Status = { tone: 'ok' | 'warn' | 'bad'; text: string };
-	function status(node: DiagramNode): Status | null {
-		if (!node.workloads || !data) return null;
-		const workloads = nodeWorkloads(node, data);
-		const cron = workloads.find(([, w]) => w.kind === 'CronJob')?.[1];
-		if (cron) {
-			const ok = cron.lastSuccess != null && Date.now() - cron.lastSuccess < 26 * 3_600_000;
-			return { tone: ok ? 'ok' : 'warn', text: cron.lastSuccess ? `last run ${formatAgo(cron.lastSuccess / 1000, night.now.getTime())}` : 'never succeeded' };
-		}
-		const pods = workloads.flatMap(([, w]) => w.pods);
-		if (pods.length === 0) return { tone: 'bad', text: 'not running' };
-		const ready = pods.filter((p) => p.ready).length;
-		const restarts = pods.reduce((sum, p) => sum + p.restarts24h, 0);
-		const memory = pods.reduce((sum, p) => sum + (p.memory ?? 0), 0);
-		const tone = ready === 0 ? 'bad' : ready < pods.length || restarts > 0 ? 'warn' : 'ok';
-		const parts = [`${ready}/${pods.length} ready`];
-		if (restarts > 0) parts.push(`${restarts} restart${restarts > 1 ? 's' : ''}`);
-		if (memory > 0) parts.push(formatBytes(memory));
-		return { tone, text: parts.join(' · ') };
-	}
+	const status = (node: DiagramNode): Status | null => (node.workloads && data ? workloadsStatus(nodeWorkloads(node, data), Date.now()) : null);
+	const planned = (id: string) => byId.get(id)?.node.device?.planned !== undefined;
 
 	// Connection lines, measured from the rendered components.
 	let container: HTMLDivElement;
@@ -148,6 +131,7 @@
 								class="node"
 								class:selected={selected === n.id}
 								class:dim={linked !== null && !linked.has(n.id)}
+								class:planned={planned(n.id)}
 								bind:this={els[n.id]}
 								onclick={() => (selected = selected === n.id ? null : n.id)}
 								onpointerenter={(e) => e.pointerType === 'mouse' && (hovered = n.id)}
@@ -174,7 +158,7 @@
 				</defs>
 				{#each lines as l (l.key)}
 					{@const on = focus !== null && (l.from === focus || l.to === focus)}
-					<path d={l.d} class="edge {l.kind}" class:on class:off={focus !== null && !on} marker-end="url(#arrow-{l.kind})" />
+					<path d={l.d} class="edge {l.kind}" class:on class:off={focus !== null && !on} class:planned={planned(l.from) || planned(l.to)} marker-end="url(#arrow-{l.kind})" />
 				{/each}
 				{#each lines as l (l.key)}
 					{#if focus !== null && (l.from === focus || l.to === focus)}
@@ -202,6 +186,12 @@
 			{#if current.node.href && current.node.href !== '/'}
 				<a href={current.node.href} target="_blank" rel="noopener">Open {current.node.href.replace(/^https?:\/\//, '')} ↗</a>
 			{/if}
+			{#if links[current.node.id]?.plan}
+				<a href={links[current.node.id].plan}>Planned: read the plan →</a>
+			{/if}
+			{#if links[current.node.id]?.docs}
+				<a href={links[current.node.id].docs}>Docs →</a>
+			{/if}
 			{#if outgoing.length > 0}
 				<h4>Talks to</h4>
 				<ul class="links">
@@ -220,7 +210,7 @@
 			{/if}
 			{#if cronjob}
 				<h4>Runs</h4>
-				<p class="num">{cronjob.lastSuccess ? `Last success ${formatAgo(cronjob.lastSuccess / 1000, night.now.getTime())}` : 'No successful run yet'}{pods.length > 0 ? ' · running now' : ''}</p>
+				<p class="num">{cronjob.lastSuccess ? `Last success ${formatAgo(cronjob.lastSuccess / 1000)}` : 'No successful run yet'}{pods.length > 0 ? ' · running now' : ''}</p>
 			{/if}
 			{#if pods.length > 0}
 				<h4>Pods</h4>
@@ -252,6 +242,7 @@
 					<li><i class="dot ok"></i>All pods ready</li>
 					<li><i class="dot warn"></i>Restarted in 24 h, or not all ready</li>
 					<li><i class="dot bad"></i>Not running</li>
+					{#if diagram.groups.some((g) => g.nodes.some((n) => n.device?.planned))}<li><i class="planned-mark"></i>Planned, not there yet</li>{/if}
 				</ul>
 			{/if}
 		{/if}
@@ -349,6 +340,11 @@
 	.node.dim {
 		opacity: 0.3;
 	}
+	.node.planned {
+		border-style: dashed;
+		background: transparent;
+		color: var(--muted);
+	}
 	.title {
 		display: flex;
 		align-items: center;
@@ -425,6 +421,16 @@
 	}
 	.edge.control {
 		stroke-dasharray: 4 3;
+	}
+	.edge.planned {
+		stroke-dasharray: 2 4;
+	}
+	.planned-mark {
+		flex: none;
+		width: 16px;
+		height: 10px;
+		border: 1px dashed var(--muted);
+		border-radius: 3px;
 	}
 	.label {
 		font-size: 11px;

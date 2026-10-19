@@ -52,7 +52,7 @@ Current senders: `dashboard` (topic `packages`: package ready for pickup, [apps/
    unset T
    ```
 3. Allow it in `deploy/networkpolicy.yaml` (`web-from-senders`), and in the sender's own policy if its egress is restricted.
-4. Update the architecture diagram (`apps/dashboard/src/lib/architecture.ts`).
+4. Update the architecture diagram (`apps/homelab/src/lib/architecture.ts`, shown at http://homelab.lab.internal/components).
 
 ## Secrets (not in git)
 

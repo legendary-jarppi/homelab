@@ -1,0 +1,18 @@
+# Build: apps/homelab/deploy.sh. The build context is a staged copy of the repository's layout: this
+# app under apps/homelab plus the repository's markdown, which the build bundles ($repo = ../..).
+FROM docker.io/library/node:22-alpine AS build
+WORKDIR /repo/apps/homelab
+COPY apps/homelab/package.json apps/homelab/package-lock.json ./
+RUN npm ci --no-fund --no-audit
+COPY . /repo
+RUN npm run build
+
+# adapter-node bundles all dependencies (all are devDependencies) into build/; no node_modules at runtime.
+FROM docker.io/library/node:22-alpine
+WORKDIR /app
+ENV NODE_ENV=production PORT=3000
+COPY --from=build /repo/apps/homelab/build ./build
+COPY apps/homelab/package.json ./
+USER node
+EXPOSE 3000
+CMD ["node", "build/index.js"]

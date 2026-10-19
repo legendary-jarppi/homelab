@@ -2,7 +2,6 @@
 	import { onMount, untrack } from 'svelte';
 	import { afterNavigate, replaceState } from '$app/navigation';
 	import { page } from '$app/state';
-	import ArchitectureView from '$lib/components/ArchitectureView.svelte';
 	import CabinCard from '$lib/components/CabinCard.svelte';
 	import CabinTile from '$lib/components/CabinTile.svelte';
 	import CalendarCard from '$lib/components/CalendarCard.svelte';
@@ -78,11 +77,8 @@
 	let tab = $state<DashboardTab>(untrack(() => TABS.find((t) => t.id === page.url.searchParams.get('tab'))?.id ?? 'home'));
 	/** The Cameras tab's view; opening the tab always starts on the live pictures. */
 	let cameraView = $state<'live' | 'detections'>('live');
-	/** The Homelab tab's view; opening the tab (or the backup pill) starts on Status. */
-	let homelabView = $state<'status' | 'components' | 'network'>('status');
 	$effect(() => {
 		if (tab !== 'cameras') cameraView = 'live';
-		if (tab !== 'homelab') homelabView = 'status';
 	});
 	const todayKey = $derived(dayOf(night.now.toISOString()));
 	/** Motion events today from the home cameras and the cabin, shown on the Detections switch. */
@@ -327,38 +323,27 @@
 			</div>
 		</main>
 	{:else}
-		<ViewSwitch
-			label="Homelab view"
-			bind:value={homelabView}
-			options={[
-				{ id: 'status', label: 'Status' },
-				{ id: 'components', label: 'Components' },
-				{ id: 'network', label: 'Network' }
-			]}
-		/>
-		{#if homelabView !== 'status'}
-			<main class="arch-page">
-				<ArchitectureView view={homelabView} />
-			</main>
-		{:else}
-			<main class="grid homelab-page">
-				<div class="area wan">
-					{#if live}<WanCard wan={live.wan} />{:else}<Card title="Internet"><p class="muted">Metrics unavailable.</p></Card>{/if}
-				</div>
-				<div class="area speed">
-					<SpeedtestCard speedtest={slow?.speedtest ?? null} />
-				</div>
-				<div class="area homelab">
-					{#if slow}<HomelabCard homelab={slow.homelab} />{:else}<Card title="Homelab"><p class="muted">Metrics unavailable.</p></Card>{/if}
-				</div>
-				<div class="area network">
-					{#if live}<NetworkCard {live} />{:else}<Card title="Network"><p class="muted">Metrics unavailable.</p></Card>{/if}
-				</div>
-				<div class="area top">
-					<TopDevicesCard top={live?.top ?? []} limit={10} />
-				</div>
-			</main>
-		{/if}
+		<a class="homelab-link" href={data.homelabAppUrl} target="_blank" rel="noopener">
+			Components, network and devices
+			<span class="muted">{data.homelabAppUrl.replace(/^https?:\/\//, '')} ↗</span>
+		</a>
+		<main class="grid homelab-page">
+			<div class="area wan">
+				{#if live}<WanCard wan={live.wan} />{:else}<Card title="Internet"><p class="muted">Metrics unavailable.</p></Card>{/if}
+			</div>
+			<div class="area speed">
+				<SpeedtestCard speedtest={slow?.speedtest ?? null} />
+			</div>
+			<div class="area homelab">
+				{#if slow}<HomelabCard homelab={slow.homelab} />{:else}<Card title="Homelab"><p class="muted">Metrics unavailable.</p></Card>{/if}
+			</div>
+			<div class="area network">
+				{#if live}<NetworkCard {live} />{:else}<Card title="Network"><p class="muted">Metrics unavailable.</p></Card>{/if}
+			</div>
+			<div class="area top">
+				<TopDevicesCard top={live?.top ?? []} limit={10} />
+			</div>
+		</main>
 	{/if}
 </div>
 
@@ -387,9 +372,26 @@
 		display: grid;
 		gap: 12px;
 	}
-	/* Homelab → Components / Network: the diagram scrolls inside the page on one-screen layouts. */
-	.arch-page {
-		min-width: 0;
+	/* Homelab: the diagrams and device list live in apps/homelab; a pill like the view switches links there. */
+	.homelab-link {
+		align-self: flex-start;
+		display: inline-flex;
+		align-items: baseline;
+		flex-wrap: wrap;
+		gap: 4px 10px;
+		padding: 9px 16px;
+		font-size: 14px;
+		font-weight: 600;
+		border-radius: 999px;
+		background: var(--surface);
+		border: 1px solid var(--border);
+		color: var(--text);
+		text-decoration: none;
+	}
+	.homelab-link .muted {
+		font-size: 13px;
+		font-weight: 500;
+		color: var(--down);
 	}
 	.wan {
 		grid-area: wan;
@@ -477,11 +479,6 @@
 	@media (min-width: 1000px) and (min-aspect-ratio: 5/4) {
 		.page {
 			height: 100dvh;
-		}
-		.arch-page {
-			flex: 1;
-			min-height: 0;
-			overflow-y: auto;
 		}
 		.grid {
 			flex: 1;

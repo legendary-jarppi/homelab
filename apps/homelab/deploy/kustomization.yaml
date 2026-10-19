@@ -1,0 +1,20 @@
+# Homelab at http://homelab.lab.internal: state, network, devices, plans and the repo's docs (no
+# login; home network and VPN only). No secrets. Build + apply: apps/homelab/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: homelab
+resources:
+  - namespace.yaml
+  - app.yaml
+  - networkpolicy.yaml
+images:
+  - name: localhost/homelab
+    newTag: "20261019-131432"
+configMapGenerator:
+  # Hashed name: changes roll the pod.
+  - name: homelab-config
+    literals:
+      # Origin per request from Traefik's headers (see apps/dashboard for why not a fixed ORIGIN).
+      - PROTOCOL_HEADER=x-forwarded-proto
+      - HOST_HEADER=x-forwarded-host
+      - PROMETHEUS_URL=http://kube-prometheus-stack-prometheus.monitoring.svc:9090

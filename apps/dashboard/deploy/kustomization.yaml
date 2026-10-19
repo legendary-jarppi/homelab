@@ -14,7 +14,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261017-233709"
+    newTag: "20261019-131505"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -39,6 +39,8 @@ configMapGenerator:
       # Lists marked "Show on dashboard" (apps/lists, cluster-internal), and where tapping opens them.
       - LISTS_URL=http://web.lists.svc:3000
       - LISTS_APP_URL=http://lists.lab.internal
+      # The Homelab tab's link to apps/homelab (components, network and devices).
+      - HOMELAB_APP_URL=http://homelab.lab.internal
       # Who is home (apps/presence, cluster-internal).
       - PRESENCE_URL=http://presence.presence.svc:8080
       # Notifications through apps/notify (cluster-internal; token in secret dashboard-notify).
