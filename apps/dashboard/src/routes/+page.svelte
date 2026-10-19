@@ -65,6 +65,8 @@
 	let lists = $state<ListsData | null>(untrack(() => data.lists));
 	/** Fetched after the page loads (the heat pumps answer over the VPN). */
 	let climate = $state<ClimateData | null>(null);
+	/** The cabin's Protect events, fetched after the page loads (over the VPN). */
+	let cabinProtect = $state<ProtectData | null>(null);
 	/** Fetched after the page loads, then only while the Telescope tab is open. */
 	let telescope = $state<TelescopeData | null>(null);
 	let tonight = $state<TonightData | null>(null);
@@ -81,12 +83,19 @@
 		if (tab !== 'cameras') cameraView = 'live';
 	});
 	const todayKey = $derived(dayOf(night.now.toISOString()));
-	/** Motion events today from the home cameras and the cabin, shown on the Detections switch. */
+	/** Motion events today from the home cameras and the cabin's, shown on the Detections switch. */
 	const motionToday = $derived(
-		(protect?.events.filter((e) => dayOf(new Date(e.start).toISOString()) === todayKey).length ?? 0) +
+		[protect, cabinProtect].reduce((n, p) => n + (p?.events.filter((e) => dayOf(new Date(e.start).toISOString()) === todayKey).length ?? 0), 0) +
 			(cabin ? cabinEvents(cabin.snapshots).filter((e) => dayOf(new Date(e.time).toISOString()) === todayKey).length : 0)
 	);
 	const liveTiles = $derived(data.cameras.length + (data.cabinConfigured ? 1 : 0));
+	/** Detections in landscape: one column per configured card (cabin 4G camera, cabin Protect, home Protect). */
+	const detectionCols = $derived(
+		[data.cabinConfigured && 3, data.cabinProtectConfigured && 5, data.protectConfigured && 4]
+			.filter(Boolean)
+			.map((fr) => `minmax(0, ${fr}fr)`)
+			.join(' ')
+	);
 
 	/** A wall display goes back to the main page by itself after this long untouched. */
 	const RETURN_HOME_MS = 2 * 60_000;
@@ -172,7 +181,10 @@
 			pollers.push({ url: '/api/cabin', everyMs: 60_000, apply: (b) => (cabin = b as CabinData), due: cabin ? start + 60_000 : 0 });
 		}
 		if (data.protectConfigured) {
-			pollers.push({ url: '/api/protect', everyMs: 30_000, apply: (b) => (protect = b as ProtectData), due: protect ? start + 30_000 : 0 });
+			pollers.push({ url: '/api/protect/home', everyMs: 30_000, apply: (b) => (protect = b as ProtectData), due: protect ? start + 30_000 : 0 });
+		}
+		if (data.cabinProtectConfigured) {
+			pollers.push({ url: '/api/protect/cabin', everyMs: 30_000, apply: (b) => (cabinProtect = b as ProtectData), due: 0 });
 		}
 		if (data.climateConfigured) {
 			pollers.push({ url: '/api/climate', everyMs: 60_000, apply: (b) => (climate = b as ClimateData), due: 0 });
@@ -270,7 +282,7 @@
 			]}
 		/>
 		{#if cameraView === 'live'}
-			<main class="grid live-page" style:--cols={liveTiles <= 1 ? 1 : liveTiles <= 4 ? 2 : 3}>
+			<main class="grid live-page" style:--cols={liveTiles <= 1 ? 1 : liveTiles <= 4 ? 2 : liveTiles <= 9 ? 3 : 4}>
 				{#each data.cameras as camera, i (camera.id)}
 					<CameraTile id={camera.id} label={camera.label} refreshMs={5000} paused={night.active || viewer !== null} onopen={() => (viewer = i)} />
 				{/each}
@@ -282,17 +294,23 @@
 				{/if}
 			</main>
 		{:else}
-			<main class="grid cameras-page" class:single={!data.cabinConfigured || !data.protectConfigured}>
+			<main class="grid cameras-page" style:--detection-cols={detectionCols}>
 				{#if data.cabinConfigured}
-					<div class="area cabin">
+					<div class="area">
 						<CabinCard {cabin} />
 					</div>
 				{/if}
-				{#if data.protectConfigured}
-					<div class="area protect">
-						<ProtectCard {protect} />
+				{#if data.cabinProtectConfigured}
+					<div class="area">
+						<ProtectCard title="Cabin cameras" protect={cabinProtect} />
 					</div>
-				{:else if !data.cabinConfigured}
+				{/if}
+				{#if data.protectConfigured}
+					<div class="area">
+						<ProtectCard title="Home cameras" {protect} />
+					</div>
+				{/if}
+				{#if !detectionCols}
 					<Card title="Detections"><p class="muted">No camera events set up.</p></Card>
 				{/if}
 			</main>
@@ -427,18 +445,8 @@
 		grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 		gap: 12px;
 	}
-	.cabin {
-		grid-area: cab;
-	}
-	.protect {
-		grid-area: evt;
-	}
-	/* Only one of the two camera cards configured: it takes the whole width. */
-	.grid.cameras-page.single {
-		grid-template-areas: none;
-	}
-	.cameras-page.single > :global(*) {
-		grid-area: auto;
+	/* Detections: the cards one below the other, each across the whole width. */
+	.cameras-page > :global(*) {
 		grid-column: 1 / -1;
 	}
 	/* Cabin: the climate card across the whole width (its two devices side by side when they fit). */
@@ -518,10 +526,14 @@
 				'spd spd spd spd top top top top top top top top'
 				'lab lab lab lab top top top top top top top top';
 		}
-		/* Cameras: the cabin on the left, the home cameras' events on the right; both scroll inside. */
+		/* Cameras: the cabin's 4G camera, the cabin's Protect cameras and the home cameras side by side
+		   (only those configured); each scrolls inside. */
 		.grid.cameras-page {
 			grid-template-rows: minmax(0, 1fr);
-			grid-template-areas: 'cab cab cab cab evt evt evt evt evt evt evt evt';
+			grid-template-columns: var(--detection-cols, minmax(0, 1fr));
+		}
+		.cameras-page > :global(*) {
+			grid-column: auto;
 		}
 		/* Telescope: the latest frame on the left, the session above the guiding in the middle, tonight's sky
 		   on the right, the recent frames and the sky quality along the bottom. */
@@ -575,11 +587,6 @@
 				'spd lab'
 				'top top';
 		}
-		.grid.cameras-page {
-			grid-template-areas:
-				'cab cab'
-				'evt evt';
-		}
 		.grid.telescope-page {
 			grid-template-areas:
 				'img img'
@@ -610,9 +617,6 @@
 		}
 		.grid.homelab-page {
 			grid-template-areas: 'wan' 'net' 'spd' 'lab' 'top';
-		}
-		.grid.cameras-page {
-			grid-template-areas: 'cab' 'evt';
 		}
 		.grid.telescope-page {
 			grid-template-areas: 'img' 'fil' 'ses' 'gui' 'sky' 'ton';

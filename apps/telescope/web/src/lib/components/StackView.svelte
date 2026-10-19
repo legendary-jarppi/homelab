@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
+	import { portal } from '$lib/portal';
 
 	/**
 	 * The stack large, with the latest frame over it: Stack / Latest buttons and a slider between the two
@@ -45,7 +46,7 @@
 </div>
 
 {#if full}
-	<div class="full" role="dialog" aria-modal="true" aria-label={alt}>
+	<div class="full" use:portal role="dialog" aria-modal="true" aria-label={alt}>
 		{@render picture(true)}
 		<div class="bar">
 			{@render controls()}

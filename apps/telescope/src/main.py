@@ -5,11 +5,15 @@ Polls the ASIAIR's SMB shares (over the Site Magic VPN) and hands every light fr
 frame and log to the worker in sessions.py (archive at home, previews, frame numbers, automatic
 rejection, registration, live stack). Follows the ASIAIR's own control ports read only (live.py) for
 what it is doing right now and records it (journal.py). Sends push notifications (imaging started,
-finished, stopped). Never changes anything on the ASIAIR. Cluster-internal:
+finished, stopped here; clouds, dew, guiding, meridian flip, storage, cooling, power in alerts.py).
+Keeps the integration goals per target (targets.py). Never changes anything on the ASIAIR.
+Cluster-internal:
     GET  /api/status                               JSON (session, plan, live, stack, recent frames)
     GET  /api/sessions, /api/sessions/<id>         observing log: sessions, one session's report
     POST /api/sessions/<id>/frames/<frame id>      {"accepted": true|false|null}: manual decision
     POST /api/sessions/<id>/reprocess              analyse, align and stack again from the archive
+    GET  /api/targets                              integration goals and wishlist per target
+    PUT  /api/targets/<key>                        {"goalHours"?, "wishlist"?, "note"?}
     GET  /frames/<id>.jpg, /frames/<id>-small.jpg  frame previews (~1504 px, ~300 px)
     GET  /stacks/<id>.jpg, -small.jpg, .fits       the session's stack
     GET  /metrics                                  Prometheus
@@ -25,17 +29,20 @@ import re
 import signal
 import threading
 import time
+import urllib.parse
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
 
 import autorun
+from alerts import WEATHER_URL, Alerts, Weather
 from archive import Archive
 from asiair import Asiair, FrameFile
 from journal import Journal, Recorder
 from live import Live
 from notify import Notifier
 from sessions import Store
+from targets import KEY as TARGET_KEY, Targets
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
 log = logging.getLogger("telescope")
@@ -88,6 +95,7 @@ STACK = re.compile(r"^/stacks/([a-z0-9-]{1,128}?)(-small)?\.(jpg|fits)$")
 SESSION = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})$")
 OVERRIDE = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})/frames/([0-9a-f]{16})$")
 REPROCESS = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})/reprocess$")
+TARGET = re.compile(r"^/api/targets/([^/?]{1,256})$")
 
 
 class Telescope:
@@ -161,6 +169,11 @@ class Telescope:
     def is_online(self) -> bool:
         with self.lock:
             return self.online
+
+    def has_polled(self) -> bool:
+        """A poll has finished (answered or not): the current session can be judged."""
+        with self.lock:
+            return self.last_contact is not None or self.error is not None
 
     # --- derived state -------------------------------------------------------------------------
 
@@ -303,6 +316,15 @@ class Telescope:
         self.stalled_key = key
         self.notifier.send(title, body)
 
+    def storage_in_use(self) -> tuple[list[dict], str | None, int | None]:
+        """The shares' free space, the share the newest frames go to, and that frame's size."""
+        with self.lock:
+            newest = max(self.files, key=lambda f: f.saved_at, default=None)
+            storage = list(self.storage)
+        if newest is None:
+            return storage, None, None
+        return storage, newest.root.split("\\", 1)[0], newest.size
+
     # --- output --------------------------------------------------------------------------------
 
     def status(self) -> dict:
@@ -434,7 +456,7 @@ def read_file(path: str) -> bytes | None:
         return None
 
 
-def serve(telescope: Telescope, store: Store) -> ThreadingHTTPServer:
+def serve(telescope: Telescope, store: Store, targets: Targets) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def send(self, status: int, kind: str, body: bytes, cache: str = "no-store") -> None:
             self.send_response(status)
@@ -456,6 +478,8 @@ def serve(telescope: Telescope, store: Store) -> ThreadingHTTPServer:
                 return self.json(200, telescope.status())
             if path == "/api/sessions":
                 return self.json(200, telescope.sessions())
+            if path == "/api/targets":
+                return self.json(200, targets.all())
             if m := SESSION.match(path):
                 detail = telescope.session_detail(m[1])
                 return self.json(200, detail) if detail else self.not_found()
@@ -481,13 +505,17 @@ def serve(telescope: Telescope, store: Store) -> ThreadingHTTPServer:
                 return self.send(200, "text/plain", b"ok\n")
             self.not_found()
 
-        def do_POST(self) -> None:  # noqa: N802
-            path = self.path.split("?", 1)[0]
+        def body(self):
+            """The request's JSON (None when it is not JSON or over 4 KB)."""
             try:
                 length = int(self.headers.get("content-length") or 0)
-                body = json.loads(self.rfile.read(length) or b"{}") if length <= 4096 else None
+                return json.loads(self.rfile.read(length) or b"{}") if length <= 4096 else None
             except ValueError:
-                body = None
+                return None
+
+        def do_POST(self) -> None:  # noqa: N802
+            path = self.path.split("?", 1)[0]
+            body = self.body()
             if m := OVERRIDE.match(path):
                 if not isinstance(body, dict) or "accepted" not in body or body["accepted"] not in (True, False, None):
                     return self.send(400, "text/plain", b'expected {"accepted": true|false|null}\n')
@@ -503,6 +531,20 @@ def serve(telescope: Telescope, store: Store) -> ThreadingHTTPServer:
                 log.info("session %s: reprocessing", m[1])
                 return self.json(202, {"reprocessing": True})
             self.not_found()
+
+        def do_PUT(self) -> None:  # noqa: N802
+            m = TARGET.match(self.path)
+            if not m:
+                return self.not_found()
+            key = urllib.parse.unquote(m[1])
+            if not TARGET_KEY.match(key):
+                return self.send(400, "text/plain", b"target key: up to 64 of A-Z a-z 0-9 space + . _ ( ) -\n")
+            fields = targets.parse(self.body())
+            if isinstance(fields, str):
+                return self.send(400, "text/plain", fields.encode() + b"\n")
+            entry = targets.put(key, fields)
+            log.info("target %s: %s", key, json.dumps(fields))
+            return self.json(200, entry)
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002 - quiet access log
             pass
@@ -532,7 +574,8 @@ def main() -> None:
     store.online = telescope.is_online
     if live:
         Recorder(journal, live.snapshot)
-    serve(telescope, store)
+    serve(telescope, store, Targets(DATA_DIR))
+    Alerts(telescope, notifier, Weather(os.environ.get("WEATHER_URL", WEATHER_URL))).start()
     files, size = archive.totals()
     log.info("telescope: ASIAIR %s, roots %s, live %s, notifications %s, archive %d files (%.1f GB), listening on :%d",
              HOST, ", ".join(f"{s}\\{r}".rstrip("\\") for s, r in ROOTS), "on" if LIVE else "off",

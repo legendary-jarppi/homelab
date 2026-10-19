@@ -63,6 +63,8 @@ GUIDE_POINTS = 2000
 TELEMETRY_POINTS = 500
 TIMELINE_ACTIVITIES = {"Auto focus": "autofocus", "Meridian flip": "meridian_flip", "GoTo": "goto",
                        "Plate solving": "centering"}
+# The camera angle in a frame's name: Light_M 31_180.0s_Bin1_20260903-021110_93deg_0001.fit.
+NAME_ANGLE = re.compile(r"_(-?\d+(?:\.\d+)?)deg_")
 
 
 def slug(text: str) -> str:
@@ -453,6 +455,7 @@ class Store:
             "setTempC": fits.number(header, "SET-TEMP"),
             "camera": header.get("INSTRUME"),
             "focalLengthMm": fits.number(header, "FOCALLEN"),
+            "rotatorDeg": fits.number(header, "ROTATOR"),
             "backgroundAdu": round(rendered.background_adu),
             "stars": rendered.stars,
             "hfr": rendered.hfr,
@@ -740,12 +743,28 @@ class Store:
                     return self.stack_json(s)
         return None
 
+    def alert_view(self, sid: str) -> dict | None:
+        """What the notifications look at (alerts.py): the analysed frames in time order, the set
+        point and the site."""
+        with self.lock:
+            s = self.sessions.get(sid)
+            if s is None:
+                return None
+            done = sorted((f for f in s["frames"] if f["state"] == "done"), key=lambda f: f["info"]["at"])
+            frames = [{"at": f["info"]["at"], "stars": f["info"]["stars"], "hfr": f["info"]["hfr"],
+                       "size": f["size"]} for f in done]
+            set_temps = [f["info"]["setTempC"] for f in done if f["info"].get("setTempC") is not None]
+            site = (s.get("header") or {}).get("site")
+        return {"frames": frames, "setTempC": set_temps[-1] if set_temps else None, "site": site}
+
     def summary(self, s: dict, active: str | None) -> dict:
         frames = s["frames"]
         judged = [f for f in frames if f["state"] in ("done", "failed")]
         accepted = [f for f in judged if self.accepted(f)]
         first = frames[0]
         start = first["info"]["at"] if first.get("info") else first["savedAt"] - first["exposureS"]
+        header = s.get("header") or {}
+        exposures = Counter(f["info"]["exposureS"] for f in frames if f.get("info"))
         return {
             "id": s["id"],
             "night": s["night"],
@@ -759,6 +778,10 @@ class Store:
             "integrationS": round(sum(f["info"]["exposureS"] for f in accepted)),
             "active": s["id"] == active,
             "hasStack": bool(s.get("stack")),
+            "ra": header.get("ra"),
+            "dec": header.get("dec"),
+            "exposureS": exposures.most_common(1)[0][0] if exposures else frames[-1]["exposureS"],
+            "gain": header.get("gain"),
         }
 
     def list(self, active: str | None) -> list[dict]:
@@ -779,6 +802,9 @@ class Store:
             reason = f"not aligned: {f.get('alignError')}"
         else:
             reason = auto[1]
+        rotator = info.get("rotatorDeg")
+        if rotator is None and (m := NAME_ANGLE.search(os.path.basename(f["rel"]))):
+            rotator = float(m[1])
         return {
             "id": f.get("id"),
             "number": f["number"],
@@ -795,6 +821,9 @@ class Store:
             "manual": f.get("manual") is not None,
             "aligned": bool(f.get("transform")),
             "sensorTempC": info.get("sensorTempC"),
+            # Relative to the archive volume's root, "/"-separated; null until it is archived.
+            "archivePath": f["rel"].replace(os.sep, "/") if self.archive.has(f["rel"], f["size"]) else None,
+            "rotatorDeg": rotator,
         }
 
     def detail(self, sid: str, active: str | None, live_plan: dict | None) -> dict | None:
@@ -818,7 +847,6 @@ class Store:
         end = time.time() if summary["active"] else last + TRAIL_S
         records = self.journal.read(start - 6 * 3600, end)
         window = [r for r in records if r["t"] >= start]
-        exposure = Counter(i["exposureS"] for i in infos).most_common(1)[0][0] if infos else s["frames"][-1]["exposureS"]
 
         steps = [r for r in window if r["k"] == "guide"]
         total, ra, dec, samples = guiding_rms(steps)
@@ -844,12 +872,8 @@ class Store:
         logs = self.logs_between(first - LEAD_S, last + TRAIL_S)
         return {
             **summary,
-            "exposureS": exposure,
-            "gain": header.get("gain"),
             "camera": header.get("camera"),
             "focalLengthMm": header.get("focalLengthMm"),
-            "ra": header.get("ra"),
-            "dec": header.get("dec"),
             "site": header.get("site"),
             "plan": self._plan(s, summary, live_plan, logs, window),
             "frames": frames,

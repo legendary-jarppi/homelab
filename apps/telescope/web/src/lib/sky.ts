@@ -78,19 +78,20 @@ export function sky(lat: number, lon: number, noon: number): Sky {
 		sunrise: valid(morning.sunrise),
 		astronomical,
 		nautical,
-		sunLowest: getPosition(new Date(midnight), lat, lon).altitude / RAD,
+		sunLowest: getPosition(new Date(midnight), lat, lon).altitude,
 		moon: {
 			illumination: illumination.fraction,
 			phase: illumination.phase,
 			events,
 			// Rises and sets use the centre at about +0.13° (parallax, refraction and the disc).
-			upAtDark: getMoonPosition(new Date(darkStart), lat, lon).altitude > 0.13 * RAD
+			upAtDark: getMoonPosition(new Date(darkStart), lat, lon).altitude > 0.13
 		}
 	};
 }
 
-export const sunAltitude = (lat: number, lon: number, ms: number) => getPosition(new Date(ms), lat, lon).altitude / RAD;
-export const moonAltitude = (lat: number, lon: number, ms: number) => getMoonPosition(new Date(ms), lat, lon).altitude / RAD;
+// SunCalc 2 gives degrees (altitude apparent, azimuth clockwise from north).
+export const sunAltitude = (lat: number, lon: number, ms: number) => getPosition(new Date(ms), lat, lon).altitude;
+export const moonAltitude = (lat: number, lon: number, ms: number) => getMoonPosition(new Date(ms), lat, lon).altitude;
 
 /** Local sidereal time, degrees. */
 function lst(ms: number, lon: number): number {
@@ -123,4 +124,22 @@ export function setsBelow(raDeg: number, decDeg: number, lat: number, lon: numbe
 		prev = a;
 	}
 	return null;
+}
+
+/** Altitude and azimuth (degrees; azimuth clockwise from north, like SunCalc 2) of RA/Dec at the site. */
+export function horizontal(raDeg: number, decDeg: number, lat: number, lon: number, ms: number): { altitude: number; azimuth: number } {
+	const ha = (lst(ms, lon) - raDeg) * RAD;
+	const phi = lat * RAD;
+	const dec = decDeg * RAD;
+	const s = Math.sin(phi) * Math.sin(dec) + Math.cos(phi) * Math.cos(dec) * Math.cos(ha);
+	return {
+		altitude: Math.asin(Math.max(-1, Math.min(1, s))) / RAD,
+		azimuth: (Math.atan2(Math.sin(ha), Math.cos(ha) * Math.sin(phi) - Math.tan(dec) * Math.cos(phi)) / RAD + 540) % 360
+	};
+}
+
+/** The moon's altitude and azimuth (degrees). */
+export function moonHorizontal(lat: number, lon: number, ms: number): { altitude: number; azimuth: number } {
+	const p = getMoonPosition(new Date(ms), lat, lon);
+	return { altitude: p.altitude, azimuth: p.azimuth };
 }

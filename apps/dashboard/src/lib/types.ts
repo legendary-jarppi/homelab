@@ -405,12 +405,16 @@ export interface CabinData {
 	retentionDays: number;
 }
 
-/** GET /api/protect: UniFi Protect's ended motion events of the last `windowHours`, newest first. */
+/** The Protect consoles: the home UDM Pro and the cabin's UCG Max. */
+export type ProtectSite = 'home' | 'cabin';
+
+/** GET /api/protect/<site>: a Protect console's ended motion events of the last `windowHours`, newest first. */
 export interface ProtectData {
-	/** Display order and labels (PROTECT_CAMERAS). */
+	site: ProtectSite;
+	/** Display order and labels (PROTECT_CAMERAS, CABIN_PROTECT_CAMERAS). */
 	cameras: { id: string; label: string }[];
 	/** `start`/`end` unix ms; `types`: smart detections (person, vehicle, animal, …), empty for plain motion.
-	 *  Thumbnail at /cameras/events/<id>/thumbnail, clip at /cameras/events/<id>/clip. */
+	 *  Thumbnail at /cameras/events/<site>/<id>/thumbnail, clip at /cameras/events/<site>/<id>/clip. */
 	events: { id: string; camera: string; start: number; end: number; types: string[] }[];
 	windowHours: number;
 }

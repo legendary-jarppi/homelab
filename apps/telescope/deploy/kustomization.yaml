@@ -13,7 +13,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/telescope
-    newTag: "20261019-155920"
+    newTag: "20261019-185239"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: telescope-config

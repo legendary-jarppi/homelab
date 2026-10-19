@@ -20,7 +20,7 @@
 	const caption = (time: number) => eventTime(new Date(time).toISOString(), night.now);
 </script>
 
-<Card title="Cabin">
+<Card title="Cabin 4G camera">
 	{#snippet accessory()}
 		{#if today > 0}<span>{today}{more ? '+' : ''} today</span>{/if}
 	{/snippet}

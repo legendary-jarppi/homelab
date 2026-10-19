@@ -1,7 +1,9 @@
 # Enforced by k3s's embedded network policy controller.
 #   telescope <- dashboard (API, previews), the telescope web app (API, images, manual frame
-#                decisions: the only caller of the POSTs), Prometheus (scrape)
-#   telescope -> the cabin's ASIAIR (SMB 445, JSON-RPC 4700/4400) over the Site Magic VPN, apps/notify, DNS
+#                decisions and target goals: the only caller of the POSTs and PUTs), the telescope
+#                processor (session reports with the frames' archive paths; GETs only), Prometheus (scrape)
+#   telescope -> the cabin's ASIAIR (SMB 445, JSON-RPC 4700/4400) over the Site Magic VPN, apps/notify,
+#                the internet on 443 (Open-Meteo: air temperature and dew point for the dew notification), DNS
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -29,6 +31,10 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: telescope-web
+        # Same namespace (processor/deploy).
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: telescope-processor
       ports:
         - port: http
   egress:
@@ -52,6 +58,14 @@ spec:
               app.kubernetes.io/name: web
       ports:
         - port: 3000
+    # Open-Meteo (api.open-meteo.com) over HTTPS; not the private ranges (as apps/notify's web-to-internet).
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4]
+      ports:
+        - port: 443
+          protocol: TCP
     - to:
         - namespaceSelector:
             matchLabels:

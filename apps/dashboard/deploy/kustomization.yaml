@@ -14,7 +14,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261019-155740"
+    newTag: "20261019-184539"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -27,8 +27,9 @@ configMapGenerator:
       - HOST_HEADER=x-forwarded-host
       - PROMETHEUS_URL=http://kube-prometheus-stack-prometheus.monitoring.svc:9090
       - GO2RTC_URL=http://go2rtc.go2rtc.svc:1984
-      # id:label pairs; ids are go2rtc stream names.
-      - CAMERAS=front-door:Front door,backyard:Backyard,carport:Carport
+      # id:label pairs; ids are go2rtc stream names. The cabin-* tiles show Protect snapshots
+      # (CABIN_PROTECT_CAMERAS below); go2rtc only plays them live.
+      - CAMERAS=front-door:Front door,backyard:Backyard,carport:Carport,cabin-driveway:Driveway,cabin-door:Cabin door,cabin-yard:Yard from cabin,cabin-sauna-yard:Yard from sauna,cabin-lake:Lake,cabin-drain-field:Drain field
       - UNIFI_SOURCE=https://192.168.1.1
       # Weather (Open-Meteo), name:latitude:longitude; the first gets the hourly forecast.
       - WEATHER_LOCATIONS=Espoo:60.2052:24.6522,Ristiina:61.5058:27.2464
@@ -59,3 +60,7 @@ configMapGenerator:
       - PROTECT_URL=https://192.168.1.1
       # Protect camera name:label, in display order.
       - PROTECT_CAMERAS=Ulko-ovi:Front door,Takapiha:Backyard,Autokatos:Carport
+      # The cabin's Protect (UCG Max, over the Site Magic VPN; same login): its cameras' events, and
+      # snapshots for their live tiles. name:label:CAMERAS id, in display order.
+      - CABIN_PROTECT_URL=https://192.168.20.1
+      - CABIN_PROTECT_CAMERAS=Sisääntulotie:Driveway:cabin-driveway,Etuovi:Cabin door:cabin-door,Piha talolta:Yard from cabin:cabin-yard,Piha saunalta:Yard from sauna:cabin-sauna-yard,Järvi saunalta:Lake:cabin-lake,Imeytyskenttä:Drain field:cabin-drain-field

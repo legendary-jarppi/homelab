@@ -14,6 +14,8 @@ export const load: PageServerLoad = () => ({
 	telescopeConfigured: config.telescopeUrl !== '',
 	telescopeSiteConfigured: config.telescopeSite !== null,
 	protectConfigured: config.protectUser !== '' && config.protectPass !== '',
+	/** The cabin's Protect (UCG Max, over the VPN): fetched after the page loads. */
+	cabinProtectConfigured: config.protectUser !== '' && config.protectPass !== '' && config.cabinProtectUrl !== '',
 	listsConfigured: config.listsToken !== '',
 	listsAppUrl: config.listsAppUrl,
 	homelabAppUrl: config.homelabAppUrl

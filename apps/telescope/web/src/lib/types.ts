@@ -123,6 +123,11 @@ export interface SessionSummary {
 	integrationS: number;
 	active: boolean;
 	hasStack: boolean;
+	/** Target from the FITS header, degrees (newer services). */
+	ra?: number | null;
+	dec?: number | null;
+	exposureS?: number | null;
+	gain?: number | null;
 }
 
 export interface Frame {
@@ -143,6 +148,10 @@ export interface Frame {
 	manual: boolean;
 	/** Registered onto the stack's reference (newer services). */
 	aligned?: boolean;
+	/** Relative to the archive volume's root; null until archived (newer services). */
+	archivePath?: string | null;
+	/** Camera angle (FITS ROTATOR), degrees. */
+	rotatorDeg?: number | null;
 }
 
 export type GuideEventKind = 'dither' | 'settle' | 'lost' | 'start' | 'stop';
@@ -188,6 +197,101 @@ export interface SessionDetail extends Omit<SessionSummary, 'frames'> {
 	pending?: number;
 	/** This session's stack (newer services), the shape of status.stack. */
 	stack?: Stack | null;
+}
+
+/** A target's goal and wishlist mark (GET /api/targets; key: a catalog id like "NGC 7000", or a session's target name). */
+export interface TargetGoal {
+	goalHours: number | null;
+	wishlist: boolean;
+	note: string | null;
+	updatedAt: number;
+}
+
+export interface Targets {
+	targets: Record<string, TargetGoal>;
+}
+
+export type CalibrationType = 'bias' | 'dark' | 'flat';
+
+/** A night's set of calibration frames of one kind and setting (the processor's GET /api/library). */
+export interface CalibrationSet {
+	id: string;
+	type: CalibrationType;
+	night: string;
+	count: number;
+	exposureS: number | null;
+	gain: number | null;
+	offset: number | null;
+	/** Median sensor temperature. */
+	sensorTempC: number | null;
+	setTempC: number | null;
+	binning: number | null;
+	rotatorDeg: number | null;
+	camera: string | null;
+	firstAt: number;
+	lastAt: number;
+}
+
+export interface Master {
+	id: string;
+	type: CalibrationType;
+	builtAt: number;
+	sets: string[];
+	frames: number;
+	exposureS: number | null;
+	gain: number | null;
+	offset: number | null;
+	tempC: number | null;
+	rotatorDeg: number | null;
+	night: string;
+	median: number | null;
+	noise: number | null;
+	fitsUrl: string;
+}
+
+export interface Library {
+	sets: CalibrationSet[];
+	masters: Master[];
+	updatedAt: number | null;
+}
+
+/** Masters (ids) chosen for a target's lights, with what does not quite fit. */
+export interface CalibrationChoice {
+	bias: string | null;
+	dark: string | null;
+	flat: string | null;
+	darkFlat: string | null;
+	warnings: string[];
+}
+
+/** GET /api/library/match?target=. */
+export interface LibraryMatch extends CalibrationChoice {
+	nights?: ({ night: string } & CalibrationChoice)[];
+}
+
+export type FinalStatus = 'queued' | 'running' | 'done' | 'failed';
+
+/** A final stack (Siril) of a target over one or more nights (GET /api/finals, newest first). */
+export interface Final {
+	id: string;
+	target: string;
+	nights: string[];
+	sessions: string[];
+	frames: number;
+	integrationS: number;
+	status: FinalStatus;
+	/** "registering 34/80" while running. */
+	progress: string | null;
+	createdAt: number;
+	startedAt: number | null;
+	finishedAt: number | null;
+	error: string | null;
+	/** Started by the processor after a session, not by hand. */
+	automatic: boolean;
+	calibration: CalibrationChoice;
+	outputs: { linearFits: string | null; processedTiff: string | null; previewJpg: string | null; previewSmallJpg: string | null };
+	/** GET /api/finals/<id> only: the log's tail. */
+	log?: string[];
 }
 
 /** Wind at the site, hourly (unix s, m/s at 10 m). */

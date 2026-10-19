@@ -10,6 +10,8 @@ export interface Site {
 export const config = {
 	/** apps/telescope, cluster-internal: http://telescope:8080 in the same namespace. Pages say "not set up" without it. */
 	telescopeUrl: (env.TELESCOPE_URL ?? '').replace(/\/$/, ''),
+	/** apps/telescope's processor (calibration library, final stacks, downloads): http://telescope-processor:8080. Those pages say "not set up" without it. */
+	processorUrl: (env.PROCESSOR_URL ?? '').replace(/\/$/, ''),
 	/**
 	 * TELESCOPE_SITE="Ristiina:61.496:27.576" (name:latitude:longitude, as the ASIAIR reports it): conditions, wind,
 	 * the automatic red mode, and the altitude curve when a session has no site of its own.

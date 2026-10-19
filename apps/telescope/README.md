@@ -6,14 +6,16 @@ The cabin telescope's imaging sessions for the dashboard's *Telescope* tab and t
 flowchart LR
   air[ASIAIR Plus<br/>cabin 192.168.20.121] -- "SMB 445 (guest, read only)<br/>JSON-RPC 4700/4400 (getters only)<br/>over Site Magic VPN" --> t[telescope]
   t --> a[(telescope-archive<br/>FITS, logs)]
-  t --> s[(telescope-data<br/>sessions, stacks, previews,<br/>live history)]
+  t --> s[(telescope-data<br/>sessions, stacks, previews,<br/>live history, target goals)]
   t -- "/api/status, /frames/…jpg" --> d[dashboard: Telescope tab]
-  w[telescope-web<br/>telescope.lab.internal] -- "/api/…, /stacks/…, /frames/…,<br/>POST manual decisions" --> t
+  w[telescope-web<br/>telescope.lab.internal] -- "/api/…, /stacks/…, /frames/…,<br/>POST manual decisions, PUT target goals" --> t
+  pr[telescope-processor] -- "/api/sessions/…" --> t
   t -- "POST /api/send" --> n[notify]
+  t -- "HTTPS 443: air temperature, dew point" --> om[Open-Meteo]
   p[Prometheus] -- /metrics --> t
 ```
 
-Cluster-internal only (`http://telescope.telescope.svc:8080`, no Ingress); a NetworkPolicy admits the dashboard, the web app (`app.kubernetes.io/name: telescope-web`, the only caller of the POSTs) and Prometheus. Python 3.13 on `python:3.13-slim`: `numpy` and `scipy` (frames, registration, stacking), `pillow` (JPEG), `smbprotocol` (the shares). It only reads from the ASIAIR: files, and its state through getter methods; it never calls anything that changes the ASIAIR and never deletes anything there.
+Cluster-internal only (`http://telescope.telescope.svc:8080`, no Ingress); a NetworkPolicy admits the dashboard, the web app (`app.kubernetes.io/name: telescope-web`, the only caller of the POSTs and PUTs), the telescope processor (`app.kubernetes.io/name: telescope-processor`: session reports with the frames' `archivePath`, GETs only) and Prometheus; out: the ASIAIR, apps/notify, DNS and the internet on 443 (Open-Meteo, for the dew notification only). Python 3.13 on `python:3.13-slim`: `numpy` and `scipy` (frames, registration, stacking), `pillow` (JPEG), `smbprotocol` (the shares). It only reads from the ASIAIR: files, and its state through getter methods; it never calls anything that changes the ASIAIR and never deletes anything there.
 
 ## What it reads
 
@@ -43,7 +45,7 @@ From these: `live.activity` (Exposing, Meridian flip, Auto focus, GoTo, Plate so
 | Where | What | Size |
 |---|---|---|
 | PVC `telescope-archive` (`/archive`, local-path, request 500 Gi, **not backed up**: `EXCLUDE` in [backup](../../platform/components/backup/README.md)) | Every file byte for byte as on the ASIAIR, by night (local date of the evening; before noon counts as the previous evening) and target: `<YYYY>/<night>/<target>/Light_….fit`, `<YYYY>/<night>/Bias|Dark|Flat/….fit`, `<YYYY>/<night>/Autorun_Log_….txt` (and PHD2 guide logs). Written to a temporary name and renamed with the ASIAIR's modification time; a file the ASIAIR rewrites (new size or newer time) is copied again | ~1.8 GB per 100 frames |
-| PVC `telescope-data` (`/data`, local-path, 20 Gi, backed up nightly) | `sessions/<id>/session.json` (frames: file, numbers, transform, automatic and manual decision; the reference frame's stars and plate solve; the stack's numbers), `sessions/<id>/stack.fits` (32-bit float, superpixel size 1504×1504×3, NaN where no frame covers), `stack.jpg` (1504 px), `stack-small.jpg` (300 px); `previews/<ab>/<frame id>[-small].jpg` for every frame; `live/<night>.jsonl` | ~0.5 MB per frame, ~28 MB per stack, ~2 MB per night |
+| PVC `telescope-data` (`/data`, local-path, 20 Gi, backed up nightly) | `sessions/<id>/session.json` (frames: file, numbers, transform, automatic and manual decision; the reference frame's stars and plate solve; the stack's numbers), `sessions/<id>/stack.fits` (32-bit float, superpixel size 1504×1504×3, NaN where no frame covers), `stack.jpg` (1504 px), `stack-small.jpg` (300 px); `previews/<ab>/<frame id>[-small].jpg` for every frame; `live/<night>.jsonl`; `targets.json` (integration goals, wishlist and notes per target, from the web app) | ~0.5 MB per frame, ~28 MB per stack, ~2 MB per night |
 | emptyDir `cache` (`/cache`, sizeLimit 20 Gi) | Aligned frames for restacking (`<session>/<frame id>.npy`, float16, sky-subtracted, 13.6 MB each), the least recently used sessions pruned above `CACHE_MAX_GB` (15); rebuilt from the archive when missing | up to 15 GB |
 
 At start the service scans the archive and loads every `session.json`: sessions, decisions and stacks survive restarts; light frames in the archive that no session knows (a deleted `session.json`, an older backup) are grouped into sessions again and analysed from the archive. Sessions are grouped when a frame is first seen and never regrouped; the id is the local time of the first frame and the target (`20261017-2034-c-9`).
@@ -101,16 +103,25 @@ Restacked after every new frame of the newest session (at most once a minute whi
 
 ## Notifications
 
-Topic `telescope` (off by default: turn it on in the notify app). Each links to the dashboard's Telescope tab (`NOTIFY_LINK`).
+Topic `telescope` (off by default: turn it on in the notify app). Each links to the dashboard's Telescope tab (`NOTIFY_LINK`). The first four are decided in `main.py` at every poll, the rest in `alerts.py` every 10 s (`CHECK_S`) from the live state, the current session and its analysed frames; thresholds are named constants at the top of `alerts.py`. Unless noted, only while a session is active (a frame due, the ASIAIR busy, the run not ended).
 
-| When | |
-|---|---|
-| Imaging started: *target* | A new run's first frames appear (a frame less than 30 min old in a new folder or after a 2 h gap) |
-| Imaging finished (or stopped): *target* | Live says the plan ended, or the run's Autorun log appears (*Finish*, or stopped by hand) |
-| Imaging stopped: *target* | Live: the ASIAIR has been idle for `STALL_MIN` (15 min) during a run that has not ended. Meridian flips and refocusing (22 min on 2026-10-17) count as busy |
-| No new frames: *target* | Without live (control ports not answering): an Autorun/Plan run that has not ended and no frame for one exposure + 2 × `STALL_MIN`: clouds, the mount, power, or the ASIAIR off the network (said in the text). Not for Live stacking, which is ended by hand without a log |
+| Notification (title — text) | When | Said again |
+|---|---|---|
+| Imaging started: *target* — "40 × 300 s, target 1 of 2" | A new run's first frames appear (a frame less than 30 min old in a new folder or after a 2 h gap) | Per run |
+| Imaging finished (or stopped): *target* — "34 frames, 2 h 50 min in total" | Live says the plan ended, or the run's Autorun log appears (*Finish*, or stopped by hand) | Per run |
+| Imaging stopped: *target* — "The ASIAIR is idle; last frame at 01:12" | Live: the ASIAIR has been idle for `STALL_MIN` (15 min) during a run that has not ended. Meridian flips and refocusing (22 min on 2026-10-17) count as busy | Per idle spell |
+| No new frames: *target* — "Last frame at 01:12; the ASIAIR is not answering" | Without live (control ports not answering): an Autorun/Plan run that has not ended and no frame for one exposure + 2 × `STALL_MIN`: clouds, the mount, power, or the ASIAIR off the network (said in the text). Not for Live stacking, which is ended by hand without a log | Per last frame |
+| Clouds over *target* — "Stars down to 30 % of the session median (2 frames in a row)." | The newest `CLOUDS_FRAMES` (2) analysed frames in a row have collapsed: fewer than `rejection.MIN_STARS` (15) stars, or under `CLOUDS_STARS_RATIO` (0.5, the rejection's "clouds" limit) of the session median (once 5 frames give a median). The newest frame must have ended within `FRESH_S` (15 min), so a backlog analysed later says nothing | Once per cloudy spell |
+| Clear again over *target* — "Stars back to 95 % of the session median." | After a *Clouds* notification: the newest `CLEAR_FRAMES` (2) frames are back at `CLEAR_STARS_RATIO` (0.7) of the median or better (a margin, so a veil hovering at the limit does not flap) | Once per cloudy spell |
+| Dew suspected: *target* — "Stars are swelling: HFR up 32 % over the last 6 frames, and the air at the site is 1.4 °C from its dew point (3.0 °C, dew point 1.6 °C). Check the dew heater." | HFR rising steadily over the newest `DEW_FRAMES` (6) frames (at least `DEW_RISING_SHARE` 80 % of the steps up, the fitted line up `DEW_HFR_RISE` 15 % or more) **and** the air within `DEW_SPREAD_C` (2 °C) of its dew point at the site in the FITS header (`SITELAT`/`SITELONG`; Open-Meteo `current` temperature and dew point, asked only while the HFR climbs, cached 15 min; no internet: no dew notification) | Once per session |
+| Guiding lost: *target* — "The guider has not been guiding for 60 s (star lost) while the camera is exposing: frames will trail until it recovers." | The guider's state (port 4400, `get_app_state`) not `Guiding` (`LostLock` after a lost star, `Stopped`, `Looping`, …) for `GUIDING_LOST_S` (60 s) while live says *Exposing*, in a session that has been guided (unguided imaging is no alarm). Flips, auto focus, GoTo and centering are not *Exposing* | Once per loss; again after guiding resumed |
+| Meridian flip done: *target* — "Imaging again after the flip (3 min)." | After live showed *Meridian flip*: an exposure started after the flip has run `FLIP_CONFIRM_S` (20 s), or a frame is saved more than a minute after the flip began | Per flip |
+| Meridian flip: *target* not imaging again — "20 min since the meridian flip began and no new frame; the ASIAIR shows: Meridian flip. Check it in the ASIAIR app." | Neither within `FLIP_RESUME_S` (20 min) of the flip's start (cancelled when the run ends). If it does resume later: *Meridian flip done* — "Imaging again, 34 min after the flip began." | Per flip |
+| ASIAIR storage low: *share* — "12.0 GB free of 58 GB (21 %), room for about 660 more frames. Copy and delete old frames on the ASIAIR." | The share the newest frames are saved to has less than `STORAGE_MIN_BYTES` (15 GB) or `STORAGE_MIN_FRACTION` (10 %) free (free space is listed every 10th poll, ~5 min). Any time the ASIAIR answers: it only fills while it saves frames | Once per crossing; again after it was above |
+| Sensor not cooling: *target* — "The sensor has been at -16.5 °C for 15 min, set point -20 °C with the cooler at 100 %. Darks taken at the set point will not match these frames." | Live sensor temperature above the set point (`SET-TEMP` of the session's frames) + `WARM_MARGIN_C` (2 °C) for `WARM_S` (15 min) | Once per warm spell |
+| ASIAIR under-voltage — "The ASIAIR reports a low supply voltage: frames may be lost or it may restart. Check the power supply and its cable." | `PiStatus` `is_undervolt` on the imager port, any time the ASIAIR's control ports answer (not only in a session) | Once per occurrence; a new one after `UNDERVOLT_QUIET_S` (10 min) without |
 
-A restart does not repeat notifications for what was already there.
+A restart does not repeat notifications for what was already there: the run, the clouds and HFR trend of the session's frames as loaded, the live state at the first answer from the control ports and the storage at its first listing are taken as known (a guiding loss or a warm sensor already going on then is not announced).
 
 ## API
 
@@ -119,17 +130,19 @@ JSON, times in unix seconds, nulls where unknown. Shapes in `src/main.py` (`stat
 | Path | |
 |---|---|
 | `GET /api/status` | `{ online, lastContact, error, session, plan, live, frames, stack, storage, updatedAt }`. `session.id` is the same session in `/api/sessions`; `frames` the newest 40 analysed frames; `stack` the live stack of the current (or most recent) session `{ sessionId, target, accepted, rejected, integrationS, updatedAt, width, height, imageId }`; `storage` `[{ name, freeBytes, totalBytes }]` per share; `live` (null while the control ports do not answer) includes `coolerPowerPct`, `underVoltage`, `overTemp` |
-| `GET /api/sessions` | `[{ id, night, target, mode, firstFrameAt, lastFrameAt, frames, accepted, rejected, integrationS, active, hasStack }]`, newest first. `frames` counts every frame seen, `accepted`/`rejected` the analysed ones, `integrationS` the accepted exposure; `mode` is null for sessions known only from the archive |
-| `GET /api/sessions/<id>` | The list fields and `exposureS, gain, camera, focalLengthMm, ra, dec` (degrees, from the FITS header), `site {lat, lon}`, `plan {planned, current, targetIndex, targets}` (live while active, else from the Autorun log or the recorded plan progress), `frames [{ id, number, at, exposureS, backgroundAdu, stars, hfr, fwhmPx, elongation, guidingRmsArcsec, accepted, rejectReason, manual, aligned, sensorTempC }]` (analysed or failed frames), `pending` (frames not analysed yet), `stack`, `guiding { rmsArcsec, rmsRaArcsec, rmsDecArcsec, samples, history [[t, ra″, dec″, settling]] (≤ 2000), events [{at, kind}] }`, `timeline [{at, kind, text}]` (from the Autorun log when there is one, else from the live history; plus guiding lost and every frame), `telemetry { sensorTempC, setTempC, coolerPowerPct, boardTempC, wifiDbm, underVoltage }` (series ≤ 500 points), `archive { frames, bytes }`. Sessions from before this release have no guiding, telemetry or live events |
+| `GET /api/sessions` | `[{ id, night, target, mode, firstFrameAt, lastFrameAt, frames, accepted, rejected, integrationS, active, hasStack, ra, dec, exposureS, gain }]`, newest first. `frames` counts every frame seen, `accepted`/`rejected` the analysed ones, `integrationS` the accepted exposure; `mode` is null for sessions known only from the archive; `ra`, `dec` (degrees) and `gain` from the FITS header of the first analysed frame (null until one is analysed), `exposureS` the most common exposure |
+| `GET /api/sessions/<id>` | The list fields and `camera, focalLengthMm`, `site {lat, lon}`, `plan {planned, current, targetIndex, targets}` (live while active, else from the Autorun log or the recorded plan progress), `frames [{ id, number, at, exposureS, backgroundAdu, stars, hfr, fwhmPx, elongation, guidingRmsArcsec, accepted, rejectReason, manual, aligned, sensorTempC, archivePath, rotatorDeg }]` (analysed or failed frames; `archivePath` relative to the archive volume's root, e.g. `2026/2026-10-17/C 9/Light_C 9_300.0s_Bin1_20261017-221416_93deg_0001.fit`, null until archived; `rotatorDeg` the camera angle from `ROTATOR`, else from the file name), `pending` (frames not analysed yet), `stack`, `guiding { rmsArcsec, rmsRaArcsec, rmsDecArcsec, samples, history [[t, ra″, dec″, settling]] (≤ 2000), events [{at, kind}] }`, `timeline [{at, kind, text}]` (from the Autorun log when there is one, else from the live history; plus guiding lost and every frame), `telemetry { sensorTempC, setTempC, coolerPowerPct, boardTempC, wifiDbm, underVoltage }` (series ≤ 500 points), `archive { frames, bytes }`. Sessions from before this release have no guiding, telemetry or live events |
 | `POST /api/sessions/<id>/frames/<frame id>` | `{"accepted": true\|false\|null}` → `{ frame, restacking: true }`; the restack runs in the background (watch `stack.imageId`) |
 | `POST /api/sessions/<id>/reprocess` | Analyse, align and stack the session again from the archive (manual decisions stay) → 202 |
+| `GET /api/targets` | `{ "targets": { "<key>": { goalHours, wishlist, note, updatedAt } } }`: integration goals (hours), wishlist and notes per target, keyed by the web app's catalog id (`NGC 7000`, `M 31`, `Sh2-155`) |
+| `PUT /api/targets/<key>` | URL-encoded key, up to 64 of `A-Z a-z 0-9 space + . _ ( ) -`; JSON `{ "goalHours"?, "wishlist"?, "note"? }` (goal 0 < h ≤ 1000, note ≤ 500 characters): only the named fields change, null clears one, an entry with everything cleared is removed → 200 the entry (`{ goalHours: null, wishlist: false, note: null, updatedAt }` once removed); 400 with the reason in text |
 | `GET /frames/<id>.jpg`, `/frames/<id>-small.jpg` | Previews of every frame; ids change with the file, so they are cacheable forever |
 | `GET /stacks/<session id>.jpg`, `-small.jpg`, `.fits` | The stack; with `?v=<imageId>` cacheable forever, without it revalidated |
 | `GET /metrics` | `telescope_asiair_up`, `telescope_live_up`, `telescope_guiding_rms_arcsec{axis}` (`total`, `ra`, `dec`) while guiding; for the newest frame `telescope_last_frame_timestamp_seconds{target}`, `telescope_frame_background_adu`, `telescope_frame_stars`, `telescope_frame_hfr_pixels`, `telescope_sensor_temperature_celsius`; `telescope_stack_frames{target,decision}` and `telescope_stack_integration_seconds{target}` for the current stack; `telescope_archive_files`, `telescope_archive_bytes`, `telescope_backfill_remaining` (files on the ASIAIR not yet archived or analysed), `telescope_asiair_storage_free_bytes{share}` |
 
-NetworkPolicy is per port, not per path: the dashboard and Prometheus could reach the POSTs too, but only the web app calls them.
+NetworkPolicy is per port, not per path: the dashboard, the processor and Prometheus could reach the POSTs and PUTs too, but only the web app calls them.
 
-Logs: `kubectl -n telescope logs deploy/telescope` (one line per frame with its numbers, alignment and decision, one per stack with its time; archived logs and calibration frames; the ASIAIR and its control ports going away and coming back; each new kind of live event once; manual decisions; notifications sent).
+Logs: `kubectl -n telescope logs deploy/telescope` (one line per frame with its numbers, alignment and decision, one per stack with its time; archived logs and calibration frames; the ASIAIR and its control ports going away and coming back; each new kind of live event once; manual decisions; target goal changes; notifications sent; a failed Open-Meteo request).
 
 ## Operations
 
@@ -137,7 +150,7 @@ Logs: `kubectl -n telescope logs deploy/telescope` (one line per frame with its 
 
 **Restore.** `telescope-data` comes back from the nightly backup like any volume; on start the service reloads the sessions, re-finds any newer archived frames and rebuilds the cache. The archive is not backed up: if it is lost, frames still on the ASIAIR are backfilled again, the rest are gone (their previews, numbers and stacks remain in `telescope-data`). Copy the archive elsewhere by hand if a night matters (`/var/lib/rancher/k3s/storage/pvc-…_telescope_telescope-archive/`).
 
-**Tests** (registration, rejection decisions, the stack's outlier rejection; numpy and scipy needed): from `apps/telescope`, `python -m unittest discover -s tests` (or `python -m pytest tests`), e.g. in the image: `podman run --rm -v $PWD:/app:Z -w /app localhost/telescope:<tag> python -m unittest discover -s tests`.
+**Tests** (registration, rejection decisions, the stack's outlier rejection, the notification detectors in `alerts.py`; numpy and scipy needed): from `apps/telescope`, `python -m unittest discover -s tests` (or `python -m pytest tests`), e.g. in the image: `podman run --rm -v $PWD:/app:Z -w /app localhost/telescope:<tag> python -m unittest discover -s tests`.
 
 ## ASIAIR side
 

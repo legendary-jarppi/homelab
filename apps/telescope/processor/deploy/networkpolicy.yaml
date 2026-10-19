@@ -1,0 +1,69 @@
+# Enforced by k3s's embedded network policy controller.
+#   telescope-processor <- the telescope web app (library, finals, downloads; the only caller of the
+#                          POST), Prometheus (scrape)
+#   telescope-processor -> the telescope service (sessions, frames, decisions), DNS, and the internet
+#                          on 80 and 443 for the photometric colour calibration's star catalogue (Siril
+#                          1.4.4 asks VizieR's TAP service for Gaia DR3 over plain http,
+#                          tapvizier.u-strasbg.fr), not the LAN.
+# The telescope service's own policy (apps/telescope/deploy/networkpolicy.yaml) admits this pod.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telescope-processor
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: telescope-processor
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: telescope-web
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - port: http
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: telescope
+      ports:
+        - port: 8080
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - port: 53
+          protocol: UDP
+        - port: 53
+          protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telescope-processor-to-internet
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: telescope-processor
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: [0.0.0.0/8, 10.0.0.0/8, 100.64.0.0/10, 127.0.0.0/8, 169.254.0.0/16, 172.16.0.0/12, 192.168.0.0/16, 224.0.0.0/4]
+      ports:
+        - port: 80
+          protocol: TCP
+        - port: 443
+          protocol: TCP

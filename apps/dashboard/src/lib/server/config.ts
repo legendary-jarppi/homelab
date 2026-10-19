@@ -11,6 +11,22 @@ export interface WeatherLocation {
 	longitude: number;
 }
 
+/** A Protect camera as configured: its Protect name, the dashboard's label, optionally a go2rtc stream. */
+export interface ProtectCameraConfig {
+	name: string;
+	label: string;
+	/** CAMERAS id whose tile pictures come from this camera's Protect snapshots instead of go2rtc. */
+	stream: string;
+}
+
+/** "Ulko-ovi:Front door,Etuovi:Cabin door:cabin-door" -> [{ name, label, stream }], in display order. */
+const protectCameras = (value: string | undefined): ProtectCameraConfig[] =>
+	(value ?? '')
+		.split(',')
+		.map((entry) => entry.split(':').map((part) => part.trim().normalize('NFC')))
+		.filter(([name]) => name)
+		.map(([name, label, stream]) => ({ name, label: label || name, stream: stream ?? '' }));
+
 export const config = {
 	prometheusUrl: env.PROMETHEUS_URL ?? 'http://prometheus.lab.internal',
 	go2rtcUrl: env.GO2RTC_URL ?? 'http://localhost:1984',
@@ -52,10 +68,12 @@ export const config = {
 	presenceUrl: env.PRESENCE_URL ?? '',
 	/** apps/cabin-camera's snapshot service, cluster-internal; the cabin card is shown only when set. */
 	cabinCameraUrl: env.CABIN_CAMERA_URL ?? '',
-	/** UniFi Protect (the UDM Pro) for the Cameras tab's motion events; shown only with PROTECT_USER and PROTECT_PASS (secret dashboard-protect). */
+	/** UniFi Protect on the UDM Pro (home) for the Cameras tab's motion events; shown only with PROTECT_USER and PROTECT_PASS (secret dashboard-protect). */
 	protectUrl: env.PROTECT_URL ?? 'https://192.168.1.1',
 	protectUser: env.PROTECT_USER ?? '',
 	protectPass: env.PROTECT_PASS ?? '',
+	/** UniFi Protect on the cabin's UCG Max, over the Site Magic VPN, with the same login; the cabin's Protect cameras only when set. */
+	cabinProtectUrl: env.CABIN_PROTECT_URL ?? '',
 	/** apps/climate, cluster-internal (the cabin's heat pumps); the Cabin tab says "not set up" without it. */
 	climateUrl: env.CLIMATE_URL ?? '',
 	/** apps/telescope, cluster-internal (the cabin's ASIAIR imaging sessions); the Telescope tab says "not set up" without it. */
@@ -69,12 +87,10 @@ export const config = {
 		const site = { name, latitude: Number(lat), longitude: Number(lon) };
 		return name && lat && lon && Number.isFinite(site.latitude) && Number.isFinite(site.longitude) ? site : null;
 	})(),
-	/** PROTECT_CAMERAS="Ulko-ovi:Front door,…": Protect camera name -> label, in display order. */
-	protectCameras: (env.PROTECT_CAMERAS ?? '')
-		.split(',')
-		.map((entry) => entry.split(':').map((part) => part.trim()))
-		.filter(([name]) => name)
-		.map(([name, label]) => ({ name, label: label || name })),
+	/** PROTECT_CAMERAS="Ulko-ovi:Front door,…": home Protect camera name:label[:stream], in display order. */
+	protectCameras: protectCameras(env.PROTECT_CAMERAS),
+	/** CABIN_PROTECT_CAMERAS="Etuovi:Cabin door:cabin-door,…": the same for the cabin's Protect. */
+	cabinProtectCameras: protectCameras(env.CABIN_PROTECT_CAMERAS),
 	/** Google Calendar "secret address in iCal format" (secret dashboard-calendar); never sent to the browser or logged. */
 	calendarIcsUrl: env.CALENDAR_ICS_URL ?? '',
 	/**

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import Card from './Card.svelte';
 	import { arcsec, clock, fixed } from '$lib/format';
+	import { portal } from '$lib/portal';
 	import type { Frame } from '$lib/types';
 
 	/**
@@ -112,7 +113,7 @@
 </Card>
 
 {#if current && viewing !== null}
-	<div class="viewer" role="dialog" aria-modal="true" aria-label="Frame {current.number ?? ''}">
+	<div class="viewer" use:portal role="dialog" aria-modal="true" aria-label="Frame {current.number ?? ''}">
 		<img src="/frames/{current.id}.jpg" alt="Frame {current.number ?? ''}" />
 		<div class="vbar">
 			<div class="vinfo">

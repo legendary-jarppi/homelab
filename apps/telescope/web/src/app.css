@@ -121,3 +121,87 @@ button {
 		transition: none !important;
 	}
 }
+
+/* Shared controls of the planner, goals, library and finals pages: pill buttons and links, chips, inputs,
+   a progress bar and a status tag. */
+.btn {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 6px 13px;
+	border-radius: 999px;
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--muted);
+	font-size: 13px;
+	font-weight: 600;
+	text-decoration: none;
+	white-space: nowrap;
+	cursor: pointer;
+}
+.btn:hover {
+	color: var(--text);
+}
+.btn.on,
+.btn.primary {
+	background: var(--surface-strong);
+	color: var(--text);
+}
+.btn.primary {
+	border-color: var(--accent);
+}
+.btn:disabled {
+	cursor: default;
+	opacity: 0.55;
+}
+.field {
+	padding: 6px 10px;
+	border-radius: 10px;
+	border: 1px solid var(--border);
+	background: var(--surface);
+	color: var(--text);
+	font: inherit;
+	font-size: 14px;
+	color-scheme: dark;
+}
+.field:focus {
+	outline: 1px solid var(--accent);
+}
+.progress {
+	position: relative;
+	height: 8px;
+	border-radius: 4px;
+	background: var(--surface-strong);
+	overflow: hidden;
+}
+.progress > span {
+	position: absolute;
+	inset: 0 auto 0 0;
+	border-radius: 4px;
+	background: var(--accent);
+}
+.progress > span.done {
+	background: var(--ok);
+}
+.tag {
+	display: inline-block;
+	padding: 1px 8px;
+	border-radius: 999px;
+	font-size: 11px;
+	font-weight: 700;
+	border: 1px solid currentColor;
+	white-space: nowrap;
+	color: var(--muted);
+}
+.tag.ok {
+	color: var(--ok);
+}
+.tag.warn {
+	color: var(--warn);
+}
+.tag.bad {
+	color: var(--bad);
+}
+.tag.accent {
+	color: var(--accent);
+}

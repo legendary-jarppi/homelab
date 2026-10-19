@@ -222,6 +222,13 @@ class Live:
             "overTemp": over_temp,
         }
 
+    def guider_status(self) -> str | None:
+        """The guider's state ("Guiding", "LostLock", "Stopped", …) while its port answers, else None."""
+        with self.lock:
+            if self.guider_at is None or time.time() - self.guider_at > STALE_S:
+                return None
+            return self.guider_state
+
     @staticmethod
     def _plan(state: dict) -> dict | None:
         capture = state.get("capture") or {}

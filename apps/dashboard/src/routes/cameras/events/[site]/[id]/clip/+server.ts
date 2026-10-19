@@ -2,8 +2,7 @@ import { createReadStream } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { Readable } from 'node:stream';
 import { error } from '@sveltejs/kit';
-import { config } from '$lib/server/config';
-import { clipFile, isEventId } from '$lib/server/protect';
+import { consoleOf, isEventId } from '$lib/server/protect';
 import type { RequestHandler } from './$types';
 
 /**
@@ -11,12 +10,13 @@ import type { RequestHandler } from './$types';
  * support: Safari plays video only through Range requests, which Protect's export ignores.
  */
 export const GET: RequestHandler = async ({ params, request }) => {
-	if (!config.protectUser || !isEventId(params.id)) error(404, 'Unknown event');
+	const protect = consoleOf(params.site);
+	if (!protect || !isEventId(params.id)) error(404, 'Unknown event');
 	let file: string;
 	try {
-		file = await clipFile(params.id);
+		file = await protect.clipFile(params.id);
 	} catch (e) {
-		console.error(`protect clip ${params.id}:`, e instanceof Error ? e.message : e);
+		console.error(`protect ${protect.site} clip ${params.id}:`, e instanceof Error ? e.message : e);
 		error(502, 'Clip unavailable');
 	}
 	const { size } = await stat(file);

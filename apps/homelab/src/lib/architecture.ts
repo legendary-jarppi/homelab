@@ -143,7 +143,7 @@ export const COMPONENTS: Diagram = {
 				{ id: 'cams', label: 'Protect cameras', sub: 'Front door, Backyard, Carport', docs: 'platform/README.md#components', device: { site: 'home', address: 'wired to the UDM Pro' }, info: 'UniFi G4/G5 Dome cameras, recorded continuously by Protect on the UDM Pro; smart detections (person, vehicle, animal) on the carport camera.' },
 				{ id: 'esp', label: 'ESPresense nodes', sub: 'Bluetooth, ESP32 · planned', docs: 'platform/components/mosquitto/README.md', device: { site: 'home', address: 'MQTT client of 192.168.1.10:1883', planned: 'docs/shopping-list.md#1-espresense-nodes-bluetooth-presence-home-and-cabin' }, info: 'ESP32 boards that recognise the family\'s phones over Bluetooth and publish sightings to Mosquitto (MQTT, port 1883 on 192.168.1.10). Not bought yet (shopping list); presence and Mosquitto are ready for them.' },
 				{ id: 'dschome', label: 'DSC Neo alarm, home', sub: 'HS2032 + TL2803G · planned', device: { site: 'home', address: 'fixed LAN address (to choose)', planned: 'docs/future-plans.md#dsc-neo-alarms-home-and-cabin' }, info: 'The home alarm panel. Planned: its TL2803G communicator dials out over ITv2 to Home Assistant on 192.168.1.10, port 3072, and pushes zone, partition, alarm and trouble changes; the dashboard shows status only.' },
-				{ id: 'internet', label: 'Internet services', sub: 'weather, calendar, parcels, news, AI, Drive', info: 'Open-Meteo (weather), Google Calendar (iCal), Posti, Matkahuolto and UPS (parcels) for the dashboard; Open-Meteo, 7Timer (seeing) and NOAA SWPC (Kp, aurora) for the telescope web app; news outlets and the AI proxy for the news worker; Google Drive for the nightly backup.' },
+				{ id: 'internet', label: 'Internet services', sub: 'weather, calendar, parcels, news, AI, Drive', info: 'Open-Meteo (weather), Google Calendar (iCal), Posti, Matkahuolto and UPS (parcels) for the dashboard; Open-Meteo, 7Timer (seeing) and NOAA SWPC (Kp, aurora) for the telescope web app, Open-Meteo for the telescope service\'s dew notification; Gaia DR3 from VizieR for the telescope processor\'s colour calibration (Siril); news outlets and the AI proxy for the news worker; Google Drive for the nightly backup.' },
 				{ id: 'cfedge', label: 'Cloudflare', sub: 'notify, dashboard, news .shillyshally.org · Access', info: 'Public HTTPS for the shillyshally.org apps (Notify, the dashboard, News): Cloudflare\'s certificate, then Cloudflare Access (email one-time code, listed emails only), then the tunnel to cloudflared. Nothing is port-forwarded for it.' },
 				{ id: 'pushsvc', label: 'Push services', sub: 'Apple, Google, Mozilla', info: 'Web Push: notify sends each message, encrypted for the device, to the push service of the browser that subscribed (web.push.apple.com for iPhones), which delivers it to the device.' }
 			]
@@ -155,8 +155,9 @@ export const COMPONENTS: Diagram = {
 			kind: 'outside',
 			row: true,
 			nodes: [
-				{ id: 'ucg', label: 'Cabin UCG Max', sub: '192.168.20.1 · Site Magic VPN', docs: 'docs/other-site-network.md', device: { site: 'cabin', address: '192.168.20.1 (WAN 10.200.0.x behind the RUTX50)', checks: [{ label: 'UnPoller reads it over the VPN', expr: 'up{job="unpoller", instance="https://192.168.20.1"}' }] }, info: 'The cabin\'s UniFi console, behind a Teltonika RUTX50 on mobile, joined to home by a Site Magic mesh VPN (home 192.168.1.0/24 ↔ cabin 192.168.20.0/24). UnPoller reads its statistics and clients; the cabin resolves *.lab.internal through the UDM Pro.' },
+				{ id: 'ucg', label: 'Cabin UCG Max', sub: '192.168.20.1 · Site Magic VPN, Protect', docs: 'docs/other-site-network.md', device: { site: 'cabin', address: '192.168.20.1 (WAN 10.200.0.x behind the RUTX50)', checks: [{ label: 'UnPoller reads it over the VPN', expr: 'up{job="unpoller", instance="https://192.168.20.1"}' }] }, info: 'The cabin\'s UniFi console, behind a Teltonika RUTX50 on mobile, joined to home by a Site Magic mesh VPN (home 192.168.1.0/24 ↔ cabin 192.168.20.0/24). UnPoller reads its statistics and clients; the cabin resolves *.lab.internal through the UDM Pro. Runs UniFi Protect for the cabin cameras: the dashboard reads their events, clips and snapshots, go2rtc their RTSPS streams.' },
 				{ id: 'cabincam', label: 'Cabin camera', sub: 'Reolink Go Plus, 4G', docs: 'apps/cabin-camera/README.md', device: { site: 'cabin', address: '4G, not on the cabin LAN' }, info: 'Battery camera at the cabin on a 4G connection. On motion it uploads a picture and a clip over FTPS to the home\'s public address; the UDM forwards ports 2121 and 50000-50009 to the server.' },
+				{ id: 'cabincams', label: 'Cabin Protect cameras', sub: '6 × G5 Turret Ultra', docs: 'apps/dashboard/README.md', device: { site: 'cabin', address: 'PoE, recorded by the UCG Max' }, info: 'Driveway, cabin door, the yard from the cabin and from the sauna, the lake and the drain field; recorded continuously by Protect on the UCG Max, smart detections (person, vehicle, animal). The dashboard tiles show Protect snapshots; live video (Medium channel) only while someone watches, to spare the mobile link.' },
 				{ id: 'asiair', label: 'ASIAIR Plus', sub: 'cabin telescope · ZWO ASI533MC Pro', docs: 'apps/telescope/README.md', device: { site: 'cabin', address: '192.168.20.121', client: { ip: '192.168.20.121' }, checks: [{ label: 'SMB share answers (telescope)', expr: 'telescope_asiair_up' }, { label: 'live state, JSON-RPC (telescope)', expr: 'telescope_live_up' }] }, info: 'The cabin\'s astrophotography controller on the cabin LAN, reached over the Site Magic VPN: it runs the imaging plans (Autorun) and stores each frame as FITS on its SMB share, with the Autorun logs beside them.' },
 				{ id: 'nibe', label: 'NIBE heat pump', sub: 'VVM S320 · 192.168.20.49', docs: 'apps/climate/README.md', device: { site: 'cabin', address: '192.168.20.49', client: { mac: '64:8c:bb:b1:1d:60' }, checks: [{ label: 'answers Modbus (climate)', expr: 'climate_device_up{device="nibe"}' }] }, info: 'The cabin\'s heating and hot water: NIBE VVM S320 with its outdoor air/water unit, wired to the UCG Max. apps/climate reads it and sets the heating offset and hot water amount over Modbus TCP.' },
 				{ id: 'innova', label: 'Innova air heat pump', sub: 'Gree Wi-Fi module · 192.168.20.28', docs: 'apps/climate/README.md', device: { site: 'cabin', address: '192.168.20.28', client: { mac: 'c0:39:37:8c:84:0a' }, checks: [{ label: 'answers (climate)', expr: 'climate_device_up{device="innova"}' }] }, info: 'Air-to-air heat pump on the cabin Wi-Fi (Gree module U-WB05RT13). apps/climate reads and sets it over the Gree LAN protocol (UDP 7000, AES).' },
@@ -195,7 +196,7 @@ export const COMPONENTS: Diagram = {
 			kind: 'namespace',
 			app: { kind: 'app', purpose: 'The family\'s wall display: home, cameras, cabin, telescope, homelab status', lab: ['dashboard.lab.internal'], public: ['dashboard.shillyshally.org'], internal: ['dashboard.dashboard.svc:3000'], docs: 'apps/dashboard/README.md' },
 			nodes: [
-				{ id: 'dashboard', label: 'Dashboard', sub: 'dashboard.lab.internal', workloads: ['dashboard/dashboard'], href: 'http://dashboard.lab.internal', info: 'The home dashboard (SvelteKit), on the iPad and at dashboard.shillyshally.org. Gathers everything server-side: Prometheus for network and server status, go2rtc for camera pictures and live video, presence, workouts, the cabin camera\'s uploads, Protect\'s events and clips, the cabin telescope\'s session and frames, and weather, calendar and parcels from the internet.' }
+				{ id: 'dashboard', label: 'Dashboard', sub: 'dashboard.lab.internal', workloads: ['dashboard/dashboard'], href: 'http://dashboard.lab.internal', info: 'The home dashboard (SvelteKit), on the iPad and at dashboard.shillyshally.org. Gathers everything server-side: Prometheus for network and server status, go2rtc for camera pictures and live video, presence, workouts, the cabin camera\'s uploads, both Protect consoles\' events and clips (and the cabin cameras\' snapshots), the cabin telescope\'s session and frames, and weather, calendar and parcels from the internet.' }
 			]
 		},
 		{
@@ -232,9 +233,9 @@ export const COMPONENTS: Diagram = {
 			id: 'go2rtc',
 			label: 'go2rtc',
 			kind: 'namespace',
-			app: { kind: 'platform', purpose: 'Home camera streams for the dashboard (Protect RTSPS repackaged)', internal: ['go2rtc.go2rtc.svc:1984'], docs: 'platform/README.md#components' },
+			app: { kind: 'platform', purpose: 'Home and cabin camera streams for the dashboard (Protect RTSPS repackaged)', internal: ['go2rtc.go2rtc.svc:1984'], docs: 'platform/README.md#components' },
 			nodes: [
-				{ id: 'go2rtc', label: 'go2rtc', sub: 'camera streams', workloads: ['go2rtc/go2rtc'], info: 'Repackages Protect\'s RTSPS streams for browsers without transcoding: still frames for the camera tiles, live video over WebSocket. Only the dashboard may connect; it connects to Protect only while someone watches.' }
+				{ id: 'go2rtc', label: 'go2rtc', sub: 'camera streams', workloads: ['go2rtc/go2rtc'], info: 'Repackages Protect\'s RTSPS streams (the UDM Pro\'s, and the cabin UCG Max\'s over the VPN) for browsers without transcoding: still frames for the home camera tiles, live video over WebSocket. Only the dashboard may connect; it connects to Protect only while someone watches.' }
 			]
 		},
 		{
@@ -338,10 +339,11 @@ export const COMPONENTS: Diagram = {
 			id: 'telescope',
 			label: 'telescope',
 			kind: 'namespace',
-			app: { kind: 'app', purpose: 'The cabin ASIAIR\'s imaging sessions: archive, live stack, reports, conditions and notifications', lab: ['telescope.lab.internal'], internal: ['telescope.telescope.svc:8080', 'telescope-web.telescope.svc:3000'], docs: 'apps/telescope/README.md' },
+			app: { kind: 'app', purpose: 'The cabin ASIAIR\'s imaging sessions: archive, live stack, reports, conditions, planning, calibration, final stacks and notifications', lab: ['telescope.lab.internal'], internal: ['telescope.telescope.svc:8080', 'telescope-processor.telescope.svc:8080', 'telescope-web.telescope.svc:3000'], docs: 'apps/telescope/README.md' },
 			nodes: [
 				{ id: 'telescope', label: 'Telescope', sub: 'cabin ASIAIR · Python', workloads: ['telescope/telescope'], info: 'Follows the cabin\'s ASIAIR over the VPN, read only: copies every FITS frame (lights, Bias/Dark/Flat) and the Autorun/PHD2 logs into an archive by night and target (PVC telescope-archive, 500 Gi, not backed up), renders previews with sky background, star count, focus (HFR, FWHM) and star elongation, rejects bad frames automatically (clouds, focus, trailing, guiding) with a manual override, registers and stacks each session live (sigma-clipped mean), records guiding and telemetry from the ASIAIR\'s live state, and keeps per-session reports, stacks and previews (PVC telescope-data, 20 Gi, backed up; aligned frames in a 20 Gi emptyDir cache rebuilt from the archive). Notifies when imaging starts, ends or goes wrong. Serves the dashboard\'s Telescope tab and the telescope web app.' },
-				{ id: 'telescopeweb', label: 'Telescope web', sub: 'telescope.lab.internal', workloads: ['telescope/telescope-web'], href: 'http://telescope.lab.internal', info: 'The telescope web app (SvelteKit), for a phone at the telescope (red night mode) and a laptop: the live stack against the latest frame, the session\'s timeline with the target\'s altitude, guiding over the whole session beside the wind, every frame with its rejection reason and accept/reject buttons, telemetry; tonight\'s conditions (darkness and moon, cloud by height from several models, seeing, aurora); the observing log, a report per night and target. Reads the telescope service; fetches Open-Meteo, 7Timer and NOAA SWPC itself, cached.' }
+				{ id: 'telescopeprocessor', label: 'Telescope processor', sub: 'calibration · final stacks · Siril', workloads: ['telescope/telescope-processor'], info: 'Builds the calibration library from the archived Bias, Dark and Flat frames (sets by gain, offset, exposure, temperature and camera angle; masters with their age), matches them to each target\'s lights with warnings, and stacks finals with Siril (headless: calibration, registration, several nights together) into a linear FITS, a processed TIFF and previews, one job at a time; streams a tar of the raw lights, calibration sets, masters and the latest final for processing by hand. Reads the archive (PVC telescope-archive, read only) and the telescope service\'s sessions; writes masters and finals to PVC telescope-processed (100 Gi, not backed up: rebuilt from the archive).' },
+				{ id: 'telescopeweb', label: 'Telescope web', sub: 'telescope.lab.internal', workloads: ['telescope/telescope-web'], href: 'http://telescope.lab.internal', info: 'The telescope web app (SvelteKit), for a phone at the telescope (red night mode) and a laptop: the live stack against the latest frame, the session\'s timeline with the target\'s altitude, guiding over the whole session beside the wind, every frame with its rejection reason and accept/reject buttons, telemetry; tonight\'s conditions (darkness and moon, cloud by height from several models, seeing, aurora); a target planner over a bundled OpenNGC catalogue (hours above a limit in darkness, transit, moon, framing in the 0.96° field, wishlist); integration goals per target across nights; the observing log, a report per night and target; the calibration library and final stacks with their downloads. Reads the telescope service and the processor; fetches Open-Meteo, 7Timer and NOAA SWPC itself, cached.' }
 			]
 		},
 		{
@@ -350,7 +352,7 @@ export const COMPONENTS: Diagram = {
 			kind: 'namespace',
 			app: { kind: 'platform', purpose: 'Nightly restic backup to Google Drive', docs: 'platform/components/backup/README.md' },
 			nodes: [
-				{ id: 'backup', label: 'Backup', sub: 'nightly 03:30 · restic', workloads: ['backup/backup'], info: 'CronJob: dumps the Postgres databases (exec through the API), copies every volume (except disposable ones: Prometheus, the telescope archive) and the secrets, encrypts with restic and uploads to Google Drive through rclone. Keeps 7 daily, 5 weekly, 12 monthly.' }
+				{ id: 'backup', label: 'Backup', sub: 'nightly 03:30 · restic', workloads: ['backup/backup'], info: 'CronJob: dumps the Postgres databases (exec through the API), copies every volume (except disposable ones: Prometheus, the telescope archive and processed stacks) and the secrets, encrypts with restic and uploads to Google Drive through rclone. Keeps 7 daily, 5 weekly, 12 monthly.' }
 			]
 		},
 		{
@@ -388,14 +390,17 @@ export const COMPONENTS: Diagram = {
 		{ from: 'udm', to: 'svclb', label: 'port forward 2121, 50000-50009', kind: 'internet' },
 		{ from: 'svclb', to: 'cabinftp', label: 'ports 2121, 50000-50009', kind: 'internet' },
 		{ from: 'cams', to: 'udm', label: 'recorded by Protect', kind: 'video' },
+		{ from: 'cabincams', to: 'ucg', label: 'recorded by Protect', kind: 'video' },
 		{ from: 'dashboard', to: 'prometheus', label: 'network, server, backup status', kind: 'metrics' },
 		{ from: 'dashboard', to: 'go2rtc', label: 'pictures, live video', kind: 'video' },
 		{ from: 'dashboard', to: 'presence', label: 'who is home', kind: 'web' },
 		{ from: 'dashboard', to: 'workweb', label: 'week\'s workouts', kind: 'web' },
 		{ from: 'dashboard', to: 'cabinsnap', label: 'cabin pictures, clips', kind: 'video' },
 		{ from: 'dashboard', to: 'udm', label: 'Protect events, clips', kind: 'video' },
+		{ from: 'dashboard', to: 'ucg', label: 'Protect events, clips, snapshots over the VPN', kind: 'video' },
 		{ from: 'dashboard', to: 'internet', label: 'weather, calendar, parcels', kind: 'internet' },
 		{ from: 'go2rtc', to: 'udm', label: 'RTSPS :7441', kind: 'video' },
+		{ from: 'go2rtc', to: 'ucg', label: 'RTSPS :7441 over the VPN', kind: 'video' },
 		{ from: 'cabinftp', to: 'cabinsnap', label: 'shared volume', kind: 'data' },
 		{ from: 'newsweb', to: 'newspg', label: 'SQL', kind: 'data' },
 		{ from: 'newsworker', to: 'newspg', label: 'SQL', kind: 'data' },
@@ -426,10 +431,14 @@ export const COMPONENTS: Diagram = {
 		{ from: 'homelab', to: 'prometheus', label: 'pod, device and network status', kind: 'metrics' },
 		{ from: 'dashboard', to: 'telescope', label: 'Telescope tab, frame previews', kind: 'web' },
 		{ from: 'traefik', to: 'telescopeweb', label: 'telescope.lab.internal', kind: 'web' },
-		{ from: 'telescopeweb', to: 'telescope', label: 'sessions, stacks, previews, frame overrides', kind: 'web' },
+		{ from: 'telescopeweb', to: 'telescope', label: 'sessions, stacks, previews, frame overrides, goals and wishlist', kind: 'web' },
+		{ from: 'telescopeweb', to: 'telescopeprocessor', label: 'calibration library, final stacks (start, status), downloads', kind: 'web' },
+		{ from: 'telescopeprocessor', to: 'telescope', label: 'sessions and frame decisions', kind: 'web' },
+		{ from: 'telescopeprocessor', to: 'internet', label: 'Gaia DR3 via VizieR TAP (Siril colour calibration; HTTP 80, 443)', kind: 'internet' },
 		{ from: 'telescopeweb', to: 'internet', label: 'Open-Meteo, 7Timer, NOAA SWPC', kind: 'internet' },
 		{ from: 'telescope', to: 'asiair', label: 'frames and logs (SMB 445), live state (JSON-RPC 4700/4400, getters only) over the VPN', kind: 'data' },
 		{ from: 'telescope', to: 'notifyweb', label: 'imaging notifications', kind: 'web' },
+		{ from: 'telescope', to: 'internet', label: 'Open-Meteo (dew notification)', kind: 'internet' },
 		{ from: 'prometheus', to: 'telescope', label: 'scrape', kind: 'metrics' },
 		{ from: 'notifyweb', to: 'notifypg', label: 'SQL', kind: 'data' },
 		{ from: 'notifyweb', to: 'pushsvc', label: 'Web Push', kind: 'internet' },
@@ -541,7 +550,7 @@ export const NETWORK: Diagram = {
 			row: true,
 			nodes: [
 				{ id: 'n-deny', label: 'Default deny', sub: 'news, workout, lists, notify', info: 'All traffic blocked except the listed paths: Traefik to web, web (and worker) to Postgres, DNS, the dashboard to workout, lists and notify, cloudflared to notify and news, the news worker to the internet on 80/443 and notify to the internet on 443 (not the LAN).' },
-				{ id: 'n-limited', label: 'Limited', sub: 'go2rtc, presence, cabin-camera, mosquitto, backup, cloudflared, climate, telescope, telescope-web, ruuvi, homelab', info: 'go2rtc accepts only the dashboard; presence only the dashboard and Prometheus; Mosquitto only the home and cabin LANs, presence, ruuvi and the server itself; cabin-camera\'s snapshot service only the dashboard; the backup may reach DNS, the API and the internet on 443 only; cloudflared accepts nothing and may reach only Cloudflare (7844, 443, not the LAN), notify, the dashboard and news; climate accepts the dashboard and Prometheus and may reach only the cabin\'s two heat pumps; telescope accepts the dashboard, telescope-web and Prometheus; telescope-web accepts Traefik and may reach only telescope, DNS and the internet on 443 (not the LAN); ruuvi accepts only Prometheus and may reach only Mosquitto; homelab accepts only Traefik and may reach only Prometheus.' },
+				{ id: 'n-limited', label: 'Limited', sub: 'go2rtc, presence, cabin-camera, mosquitto, backup, cloudflared, climate, telescope, telescope-processor, telescope-web, ruuvi, homelab', info: 'go2rtc accepts only the dashboard; presence only the dashboard and Prometheus; Mosquitto only the home and cabin LANs, presence, ruuvi and the server itself; cabin-camera\'s snapshot service only the dashboard; the backup may reach DNS, the API and the internet on 443 only; cloudflared accepts nothing and may reach only Cloudflare (7844, 443, not the LAN), notify, the dashboard and news; climate accepts the dashboard and Prometheus and may reach only the cabin\'s two heat pumps; telescope accepts the dashboard, telescope-web, telescope-processor and Prometheus; telescope-processor accepts only telescope-web and may reach only telescope, DNS and the internet on 80 and 443 (not the LAN; Siril\'s VizieR TAP queries for Gaia DR3 are plain HTTP); telescope-web accepts Traefik and may reach only telescope, telescope-processor, DNS and the internet on 443 (not the LAN); ruuvi accepts only Prometheus and may reach only Mosquitto; homelab accepts only Traefik and may reach only Prometheus.' },
 				{ id: 'n-open', label: 'No policy', sub: 'dashboard, monitoring, kube-system, …', info: 'dashboard, monitoring, headlamp, unpoller and kube-system have no NetworkPolicy; Home Assistant and node-exporter are on the host network, where policies do not apply.' }
 			]
 		}

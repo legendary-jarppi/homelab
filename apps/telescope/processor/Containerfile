@@ -1,0 +1,27 @@
+# Build: apps/telescope/processor/deploy.sh. The Python driver (stdlib + numpy) and Siril's own
+# official Linux build: the AppImage from free-astro.org, pinned by version and checksum, extracted
+# (no FUSE in a container). It bundles every library down to its own ld-linux, so it runs on the
+# slim image unchanged; only `siril-cli` (console mode, no GTK) is used.
+FROM docker.io/library/python:3.13-slim AS siril
+ARG SIRIL_VERSION=1.4.4
+ARG SIRIL_SHA256=47f3f299f6771888516bebed076580a57f7abe76484981f387a325115547ed78
+WORKDIR /tmp
+RUN python -c "import urllib.request as u; u.urlretrieve('https://free-astro.org/download/Siril-${SIRIL_VERSION}-x86_64.AppImage', 'siril.AppImage')" \
+    && echo "${SIRIL_SHA256}  siril.AppImage" | sha256sum -c - \
+    && chmod +x siril.AppImage \
+    && ./siril.AppImage --appimage-extract >/dev/null \
+    && mv squashfs-root /opt/siril \
+    && rm siril.AppImage
+
+FROM docker.io/library/python:3.13-slim
+WORKDIR /app
+COPY --from=siril /opt/siril /opt/siril
+# APPDIR: what the AppImage runtime would set. HOME: Siril's settings and caches (an emptyDir; the
+# root filesystem is read only).
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080 APPDIR=/opt/siril SIRIL=/opt/siril/AppRun HOME=/tmp
+COPY requirements.txt ./
+RUN pip install --no-cache-dir --only-binary=:all: --root-user-action=ignore -r requirements.txt
+COPY src ./src
+USER 1000:1000
+EXPOSE 8080
+CMD ["python", "src/main.py"]

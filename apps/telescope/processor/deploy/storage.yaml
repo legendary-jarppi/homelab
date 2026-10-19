@@ -1,0 +1,15 @@
+# Calibration masters (36 MB each) and final stacks (~170 MB each with the -maximize canvas: linear
+# FITS, TIFF, previews; the newest FINALS_KEEP per target), plus the work area of the running job
+# (~0.22 GB per frame at 32 bit, WORK_MAX_GB; emptied at start). Reproducible from the archive, so
+# not in the nightly backup (EXCLUDE in platform/components/backup). local-path does not enforce
+# the request.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: telescope-processed
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 100Gi

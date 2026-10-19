@@ -1,6 +1,6 @@
 # cabin-camera
 
-Motion pictures and video clips from the camera at the cabin (Reolink Go Plus, 4G, battery) on the dashboard's *Cabin* card (*Cameras* tab). The camera has no RTSP/ONVIF (Reolink: not supported on 4G models) and is not on any of our networks, so on each motion event it uploads a picture and then the clip over **FTPS**, through the internet to the home's public address.
+Motion pictures and video clips from the camera at the cabin (Reolink Go Plus, 4G, battery) on the dashboard's *Cabin 4G camera* card (*Cameras* tab). The camera has no RTSP/ONVIF (Reolink: not supported on 4G models) and is not on any of our networks, so on each motion event it uploads a picture and then the clip over **FTPS**, through the internet to the home's public address.
 
 ```
 camera (4G) ──FTPS──▶ UDM Pro port forward ──▶ 192.168.1.10 (ServiceLB) ──▶ SFTPGo ──▶ volume ──▶ snapshot service ──▶ dashboard
@@ -38,7 +38,7 @@ NetworkPolicy: FTPS ports from anywhere (the camera's 4G address changes), the s
    - *Älä salli salaamatonta FTP:tä* (don't allow unencrypted FTP): on
    - Upload: pictures and video (clips use far more mobile data and backup space than pictures)
    - Remote directory: empty (the camera's date folders are fine); then *Test* and enable FTP upload on motion
-4. Check: `kubectl -n cabin-camera logs deploy/cabin-camera -c ftp` shows the login and upload; the *Cabin* card shows the picture within a minute.
+4. Check: `kubectl -n cabin-camera logs deploy/cabin-camera -c ftp` shows the login and upload; the *Cabin 4G camera* card shows the picture within a minute.
 
 The camera does not verify the certificate; it only encrypts. If it fails the TLS handshake (the log says so), its TLS may be older than 1.2: add `SFTPGO_FTPD__BINDINGS__0__MIN_TLS_VERSION=10` to the ConfigMap in `deploy/kustomization.yaml`.
 

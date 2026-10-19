@@ -1,8 +1,9 @@
 # Enforced by k3s's embedded network policy controller.
 #   telescope-web <- Traefik (telescope.lab.internal)
-#   telescope-web -> the telescope service (API, previews, frame overrides), DNS, and the internet on 443
-#                    (Open-Meteo, 7Timer, NOAA SWPC), not the LAN.
-# The telescope service's own policy (apps/telescope/deploy/networkpolicy.yaml) admits telescope-web.
+#   telescope-web -> the telescope service (API, previews, frame overrides, goals), the processor (calibration
+#                    library, final stacks, downloads), DNS, and the internet on 443 (Open-Meteo, 7Timer,
+#                    NOAA SWPC), not the LAN.
+# The service's and the processor's own policies (apps/telescope/deploy, apps/telescope/processor/deploy) admit telescope-web.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -27,6 +28,12 @@ spec:
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: telescope
+      ports:
+        - port: 8080
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: telescope-processor
       ports:
         - port: 8080
     - to:

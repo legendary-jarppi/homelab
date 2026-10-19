@@ -1,0 +1,36 @@
+# Telescope processor: calibration library (masters) and final stacks with Siril from the telescope's
+# FITS archive (read only), downloads for processing by hand. In the telescope namespace beside the
+# service (apps/telescope, which owns the namespace and the archive PVC: apply that first).
+# Cluster-internal at http://telescope-processor.telescope.svc:8080, used by the web app. No secrets.
+# Build + apply: apps/telescope/processor/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: telescope
+resources:
+  - storage.yaml
+  - app.yaml
+  - networkpolicy.yaml
+images:
+  - name: localhost/telescope-processor
+    newTag: "20261019-185258"
+configMapGenerator:
+  # Hashed name: changes roll the pod.
+  - name: telescope-processor-config
+    literals:
+      - TELESCOPE_URL=http://telescope:8080
+      # The ASIAIR's clock: final ids and the automatic jobs' hours.
+      - ASIAIR_TZ=Europe/Helsinki
+      # Automatic finals: between these hours, with no session active and the newest frame at
+      # least AUTO_QUIET_H old, for every target with new accepted frames. AUTO=off disables.
+      - AUTO=on
+      - AUTO_HOURS=8-18
+      - AUTO_QUIET_H=1
+      # Siril: memory for its stacking blocks (GB, under the pod's 5Gi limit) and threads.
+      - SIRIL_MEM_GB=3
+      - SIRIL_THREADS=4
+      # Intermediate frames in 16 bit when 32 bit would need more than this in the work area.
+      - WORK_MAX_GB=40
+      # Done finals kept per target.
+      - FINALS_KEEP=3
+      # A calibration set's master is built when no new frame arrived for this long.
+      - SETTLE_MIN=10

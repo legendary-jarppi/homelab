@@ -17,9 +17,17 @@ rtsp:
 log:
   format: text
 
-# UniFi Protect RTSPS streams from the UDM Pro. rtspx:// = RTSPS without certificate
-# verification (self-signed UDM); Protect's "?enableSrtp" suffix must not be used.
+# UniFi Protect RTSPS streams from the UDM Pro and the cabin's UCG Max (over the Site Magic VPN).
+# rtspx:// = RTSPS without certificate verification (self-signed consoles); Protect's "?enableSrtp"
+# suffix must not be used. Cabin streams are the Medium channel (720p, 2 Mb/s) to spare its mobile
+# link; a token missing from the secret leaves that stream unplayable, the rest work.
 streams:
   front-door: rtspx://192.168.1.1:7441/${front-door}
   backyard: rtspx://192.168.1.1:7441/${backyard}
   carport: rtspx://192.168.1.1:7441/${carport}
+  cabin-driveway: rtspx://192.168.20.1:7441/${cabin-driveway}
+  cabin-door: rtspx://192.168.20.1:7441/${cabin-door}
+  cabin-yard: rtspx://192.168.20.1:7441/${cabin-yard}
+  cabin-sauna-yard: rtspx://192.168.20.1:7441/${cabin-sauna-yard}
+  cabin-lake: rtspx://192.168.20.1:7441/${cabin-lake}
+  cabin-drain-field: rtspx://192.168.20.1:7441/${cabin-drain-field}

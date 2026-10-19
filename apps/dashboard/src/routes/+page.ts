@@ -22,7 +22,7 @@ export const load: PageLoad = async ({ data, fetch }) => {
 		get<PackagesData>('/api/packages'),
 		data.presenceConfigured ? get<PresenceData>('/api/presence') : null,
 		data.cabinConfigured ? get<CabinData>('/api/cabin') : null,
-		data.protectConfigured ? get<ProtectData>('/api/protect') : null,
+		data.protectConfigured ? get<ProtectData>('/api/protect/home') : null,
 		data.listsConfigured ? get<ListsData>('/api/lists') : null
 	]);
 	return { ...data, live, slow, weather, workout, calendar, packages, presence, cabin, protect, lists };

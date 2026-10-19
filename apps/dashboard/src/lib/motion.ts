@@ -1,6 +1,6 @@
 import type { ProtectData } from './types';
 
-/** One motion event as the Cameras tab shows it: the cabin camera's uploads or a UniFi Protect event. */
+/** One motion event as the Cameras tab shows it: the cabin camera's uploads or a UniFi Protect event (home or cabin). */
 export interface MotionItem {
 	key: string;
 	/** Start, unix ms. */
@@ -31,7 +31,7 @@ export function protectItems(data: ProtectData): MotionItem[] {
 		place: labels.get(e.camera) ?? 'Camera',
 		tags: e.types,
 		seconds: (e.end - e.start) / 1000,
-		image: `/cameras/events/${e.id}/thumbnail`,
-		video: `/cameras/events/${e.id}/clip`
+		image: `/cameras/events/${data.site}/${e.id}/thumbnail`,
+		video: `/cameras/events/${data.site}/${e.id}/clip`
 	}));
 }

@@ -5,6 +5,7 @@
 	import Guiding from '$lib/components/Guiding.svelte';
 	import Quality from '$lib/components/Quality.svelte';
 	import SessionNumbers from '$lib/components/SessionNumbers.svelte';
+	import SessionTarget from '$lib/components/SessionTarget.svelte';
 	import StackView from '$lib/components/StackView.svelte';
 	import Telemetry from '$lib/components/Telemetry.svelte';
 	import Timeline from '$lib/components/Timeline.svelte';
@@ -12,7 +13,7 @@
 	import { now } from '$lib/now.svelte';
 	import { SessionData, stackUrl } from '$lib/session.svelte';
 
-	/** D5: one session's report: stack, numbers and rejections, frame quality, guiding, telemetry, timeline, every frame. */
+	/** D5: one session's report: stack, numbers and rejections, the target's goal and final stack, frame quality, guiding, telemetry, timeline, every frame. */
 	let { data } = $props();
 
 	const session = new SessionData(untrack(() => data.session));
@@ -51,6 +52,7 @@
 	</div>
 	<div class="right">
 		<SessionNumbers session={d} />
+		<SessionTarget session={d} site={data.site} nowMs={now.ms} />
 		<Timeline session={d} site={data.site} nowS={now.ms / 1000} />
 		<Guiding guiding={d.guiding} frames={d.frames} wind={session.wind} windError={session.windError} />
 		<Quality frames={d.frames} />

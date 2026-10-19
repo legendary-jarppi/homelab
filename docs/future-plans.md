@@ -107,7 +107,7 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 
 ## Telescope web app
 
-**Status:** first release (items marked **R1**) deployed 2026-10-19 at http://telescope.lab.internal ([apps/telescope](../apps/telescope/README.md), web app in `apps/telescope/web`); stacking, rejection and the archive were tested on synthetic frames only and wait for the first real night with the ASIAIR online. The rest is the idea list to choose from later. Builds on the telescope service (frames from the ASIAIR's SMB shares, its live JSON-RPC state, read only) and the dashboard's Telescope tab, which stays.
+**Status:** deployed 2026-10-19 at http://telescope.lab.internal ([apps/telescope](../apps/telescope/README.md); web app `apps/telescope/web`, Siril processor `apps/telescope/processor`): first release **R1**, second **R2** (notifications, planner, goals) and **R3** (calibration library, final stacks with Siril, downloads for own processing). Stacking, rejection, the archive, the notifications and the Siril pipeline were tested on synthetic frames only and wait for the first real night with the ASIAIR online. The rest is the idea list to choose from later. Builds on the telescope service (frames from the ASIAIR's SMB shares, its live JSON-RPC state, read only) and the dashboard's Telescope tab, which stays.
 
 **What it can build on:** every frame as FITS (3008², 18 MB) with target, exposure, gain, temperatures, focuser position, site and the ASIAIR's plate solve in the header; the Autorun and PHD2 logs at the end of each run; live: exposure and plan progress, auto-focus V-curves, meridian flip/GoTo state, guiding every ~3 s, sensor/cooler/board telemetry; around it: Ruuvi temperature and humidity at the cabin, the NIBE's outdoor temperature, Open-Meteo, the cabin camera, apps/notify, Prometheus. The k3s node (i5-7600K, 4 cores, 30 GB RAM, ~800 GB free) stacks a frame in seconds; the cabin's mobile link has no data cap. Nothing is ever written to the ASIAIR.
 
@@ -123,7 +123,7 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 | A6 | Tilt and backfocus inspection: HFR and star shape in a 3×3 grid, 1:1 corner crops | M |
 | A7 | Satellite and plane trails marked in frames | M |
 | A8 **R1** | Telemetry: cooler power and sensor temperature against the set point, ASIAIR board temperature, under-voltage, Wi-Fi, free space on the ASIAIR's storage | S |
-| A9 | More notifications: clouds, dew suspected, guiding lost, meridian flip result, storage filling, sensor not cooling, under-voltage (images in notifications need a notify extension) | S each |
+| A9 **R2** | More notifications: clouds (and clear again), dew suspected, guiding lost, meridian flip result, storage filling, sensor not cooling, under-voltage (images in notifications need a notify extension) | S each |
 | A10 **R1** | Red night mode for use at the telescope | S |
 
 **B. The image**
@@ -139,19 +139,19 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 
 | # | Feature | Effort |
 |---|---|---|
-| C1 | Target planner: altitude curves, time above a limit, transit, moon distance, best window | M |
+| C1 **R2** | Target planner: altitude curves, time above a limit, transit, moon distance, best window, framing in the field (OpenNGC catalogue) | M |
 | C2 **R1** | Conditions forecast: cloud by height from several models side by side, seeing and transparency (7Timer), wind, dew point, a verdict | S–M |
 | C3 **R1** | Aurora: Kp now and forecast, aurora probability at the cabin (NOAA), both as a subject and as a deep-sky spoiler | S |
 | C4 | Forecast vs reality: which model has been right at the cabin, against clouds seen in the frames | M |
-| C5 | Integration goals per target across nights | S–M |
+| C5 **R2** | Integration goals per target across nights | S–M |
 
 **D. Archive and processing**
 
 | # | Feature | Effort |
 |---|---|---|
 | D1 **R1** | Every FITS (lights, calibration frames) and log copied home over the VPN, by night and target (~1.8 GB per 100 frames); not in the Google Drive backup | S–M |
-| D2 | Calibration library (darks, flats, bias by gain, temperature, exposure; age warnings) | M |
-| D3 | Final stack after the session with Siril (headless): calibration, registration, multi-night stacking; FITS/TIFF download | M–L |
+| D2 **R3** | Calibration library (darks, flats, bias by gain, temperature, exposure; age warnings) | M |
+| D3 **R3** | Final stack after the session with Siril (headless): calibration, registration, multi-night stacking; the app's own processed version; FITS/TIFF and a tar of everything for own processing | M–L |
 | D4 | Gallery per target, optionally public behind Cloudflare Access | M |
 | D5 **R1** | Observing log: a report per night and target (frames, integration, rejections and why, guiding, HFR, telemetry, events) | S–M |
 | D6 | Statistics: hours per month and season, clear nights, guiding over time | S |

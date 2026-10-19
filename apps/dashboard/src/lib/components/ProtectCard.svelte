@@ -7,8 +7,8 @@
 	import { night } from '$lib/night.svelte';
 	import type { ProtectData } from '$lib/types';
 
-	/** UniFi Protect's motion events (src/lib/server/protect.ts); null when unavailable. */
-	let { protect }: { protect: ProtectData | null } = $props();
+	/** A Protect console's motion events (src/lib/server/protect.ts) under `title`; null when unavailable. */
+	let { title, protect }: { title: string; protect: ProtectData | null } = $props();
 
 	/** Filters: a camera label and a smart detection; null = all. */
 	let place = $state<string | null>(null);
@@ -39,7 +39,7 @@
 	});
 </script>
 
-<Card title="Home cameras">
+<Card {title}>
 	{#snippet accessory()}
 		{#if protect}<span>{today} today</span>{/if}
 	{/snippet}
@@ -80,7 +80,7 @@
 </Card>
 
 {#if open !== null && shown.length > 0}
-	<MotionViewer items={shown} bind:index={open} label="Home camera motion clips" onclose={() => (open = null)} />
+	<MotionViewer items={shown} bind:index={open} label="{title}: motion clips" onclose={() => (open = null)} />
 {/if}
 
 <style>

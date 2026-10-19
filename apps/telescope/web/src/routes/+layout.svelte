@@ -8,7 +8,11 @@
 	const TABS = [
 		{ href: '/', label: 'Live' },
 		{ href: '/conditions', label: 'Conditions' },
-		{ href: '/sessions', label: 'Sessions' }
+		{ href: '/planner', label: 'Planner' },
+		{ href: '/goals', label: 'Goals' },
+		{ href: '/sessions', label: 'Sessions' },
+		{ href: '/library', label: 'Library' },
+		{ href: '/finals', label: 'Finals' }
 	];
 	const active = (href: string) => (href === '/' ? page.url.pathname === '/' : page.url.pathname === href || page.url.pathname.startsWith(`${href}/`));
 	const MODES: { mode: RedMode; label: string; title: string }[] = [
@@ -129,13 +133,17 @@
 			padding-left: max(12px, env(safe-area-inset-left));
 			padding-right: max(12px, env(safe-area-inset-right));
 		}
+		/* Seven pages: two rows of four on a phone. */
 		.tabs {
 			order: 3;
 			flex-basis: 100%;
+			display: grid;
+			grid-template-columns: repeat(4, 1fr);
+			gap: 2px;
 			border-radius: 16px;
 		}
 		.tabs a {
-			flex: 1;
+			padding: 8px 4px;
 			text-align: center;
 		}
 	}

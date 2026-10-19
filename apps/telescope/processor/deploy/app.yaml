@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telescope-processor
+  labels:
+    app.kubernetes.io/name: telescope-processor
+spec:
+  # One worker owns the processed volume (RWO): one replica, never two at once.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: telescope-processor
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: telescope-processor
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: telescope-processor
+          # Built locally and imported into k3s (deploy.sh); never pulled.
+          image: localhost/telescope-processor
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: telescope-processor-config
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            # Siril runs at nice 19 / ionice idle: it only gets the CPU the live service and the rest
+            # of the node leave over.
+            requests:
+              cpu: 50m
+              memory: 256Mi
+            # Siril is capped at SIRIL_MEM_GB (3) for its stacking blocks; measured peaks in the README
+            # (Siril ~1.5 GB resident with 2 GB, Python ~0.4 GB while cutting the processed version).
+            # Page cache of the frames written and read counts here too but is reclaimed first.
+            limits:
+              memory: 5Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: archive
+              mountPath: /archive
+              readOnly: true
+            - name: processed
+              mountPath: /processed
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        # The telescope service's archive, read only (local-path RWO: the same node, so both pods
+        # can mount it).
+        - name: archive
+          persistentVolumeClaim:
+            claimName: telescope-archive
+            readOnly: true
+        - name: processed
+          persistentVolumeClaim:
+            claimName: telescope-processed
+        # HOME: Siril's settings and the Python environment it prepares at start (unused).
+        - name: tmp
+          emptyDir:
+            sizeLimit: 1Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telescope-processor
+  labels:
+    app.kubernetes.io/name: telescope-processor
+spec:
+  selector:
+    app.kubernetes.io/name: telescope-processor
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: telescope-processor
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: telescope-processor
+  endpoints:
+    - port: http
+      interval: 60s

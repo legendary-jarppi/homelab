@@ -25,7 +25,7 @@
 		<div class="placeholder"></div>
 	{/if}
 	<div class="shade"></div>
-	<span class="label">Cabin</span>
+	<span class="label">Cabin 4G</span>
 	<span class="badge">
 		{#if !cabin}Unavailable{:else if latest}Motion · {eventTime(new Date(latest.time).toISOString(), night.now)}{:else}No motion yet{/if}
 	</span>
