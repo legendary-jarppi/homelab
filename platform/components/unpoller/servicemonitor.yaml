@@ -13,9 +13,11 @@ spec:
       path: /scrape
       params:
         target: [https://192.168.1.1]
-      # The UDM Pro's counters change every 10 s (measured); feeds the dashboard's live chart.
-      interval: 10s
-      scrapeTimeout: 9s
+      # Every 30 s, like the cabin. At 10 s the UDM Pro's Network app needed 20–30 s per poll while
+      # it ran short of memory (every few days, for about 2 days; 2026-10-19: 270 % CPU), so
+      # abandoned polls piled up on top of each other and only 16 % of scrapes succeeded.
+      interval: 30s
+      scrapeTimeout: 25s
       relabelings:
         - targetLabel: instance
           replacement: https://192.168.1.1

@@ -5,16 +5,16 @@ import type { LiveData, Point } from '$lib/types';
 import type { RequestHandler } from './$types';
 
 const WINDOW_S = 15 * 60;
-const STEP_S = 10;
+const STEP_S = 30;
 
 export const GET: RequestHandler = async () => {
 	const S = `source="${config.unifiSource}"`;
 	// UnPoller restarts briefly leave a stale duplicate of every series (differing only in `pod`);
 	// `max by` collapses duplicates before summing WAN ports.
-	// rate over 40 s (four 10 s scrapes): irate showed 0 whenever two scrapes returned the
-	// same cached UnPoller values (7 of 180 samples measured); this window had none.
+	// rate over 90 s (three 30 s scrapes): a shorter window showed 0 whenever two scrapes returned
+	// the same cached UnPoller values.
 	const wanRate = (dir: 'receive' | 'transmit') =>
-		`sum(max by (name, port) (rate(unpoller_device_wan_${dir}_bytes_total{${S}}[40s]))) * 8`;
+		`sum(max by (name, port) (rate(unpoller_device_wan_${dir}_bytes_total{${S}}[90s]))) * 8`;
 	const wan24h = (dir: 'receive' | 'transmit') =>
 		`sum(max by (name, port) (increase(unpoller_device_wan_${dir}_bytes_total{${S}}[24h])))`;
 
@@ -37,9 +37,10 @@ export const GET: RequestHandler = async () => {
 			query(`max by (name) (unpoller_device_uptime_seconds{${S}})`),
 			query(`count by (ap_name) (max by (mac, ap_name) (unpoller_client_uptime_seconds{${S}, wired="false"}))`),
 			// Client counters are from the network's side: transmit = to the client (download).
-			// The UDM occasionally reports every client rate as 0 for one poll; max over 35 s bridges it.
-			query(`max by (mac, name, oui, wired) (max_over_time(unpoller_client_transmit_rate_bytes{${S}}[35s]))`),
-			query(`max by (mac, name, oui, wired) (max_over_time(unpoller_client_receive_rate_bytes{${S}}[35s]))`)
+			// The UDM occasionally reports every client rate as 0 for one poll; max over 65 s (two
+			// scrapes) bridges it.
+			query(`max by (mac, name, oui, wired) (max_over_time(unpoller_client_transmit_rate_bytes{${S}}[65s]))`),
+			query(`max by (mac, name, oui, wired) (max_over_time(unpoller_client_receive_rate_bytes{${S}}[65s]))`)
 		]);
 
 	const downPoints: Point[] = down[0]?.values ?? [];

@@ -55,10 +55,9 @@ spec:
               value: "true"
             - name: UP_PROMETHEUS_HTTP_LISTEN
               value: 0.0.0.0:9130
-            # Refresh the controller data as often as Prometheus scrapes. The UDM Pro's
-            # counters change every 10 s (measured); feeds the dashboard's live WAN chart.
+            # Matches the scrape interval (servicemonitor.yaml).
             - name: UP_PROMETHEUS_INTERVAL
-              value: 10s
+              value: 30s
           ports:
             - name: metrics
               containerPort: 9130
