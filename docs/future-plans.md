@@ -104,3 +104,62 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 **Cabin heating by alarm state** (idea to keep): *armed away* → economy (NIBE heating offset down, Innova lower or off; keep frost protection and hot water); *disarmed* → comfort. Disarming happens on arrival, which is too late to warm a cold cabin, so pre-warming needs its own trigger (a "heading to the cabin" action, or presence). Who acts (an HA automation calling apps/climate, or apps/climate reading the alarm state) is to be decided; apps/climate already controls both heat pumps.
 
 **Risks:** a life-safety system and a young, reverse-engineered integration. The panel keeps protecting regardless; a Home Assistant restart or a broken link only makes HA's view stale. Never disarm from automations or untrusted input.
+
+## Telescope web app
+
+**Status:** first release in progress (2026-10-19, items marked **R1**); the rest is the idea list to choose from later. Builds on [apps/telescope](../apps/telescope/README.md) (frames from the ASIAIR's SMB shares, its live JSON-RPC state, read only) and the dashboard's Telescope tab, which stays.
+
+**What it can build on:** every frame as FITS (3008², 18 MB) with target, exposure, gain, temperatures, focuser position, site and the ASIAIR's plate solve in the header; the Autorun and PHD2 logs at the end of each run; live: exposure and plan progress, auto-focus V-curves, meridian flip/GoTo state, guiding every ~3 s, sensor/cooler/board telemetry; around it: Ruuvi temperature and humidity at the cabin, the NIBE's outdoor temperature, Open-Meteo, the cabin camera, apps/notify, Prometheus. The k3s node (i5-7600K, 4 cores, 30 GB RAM, ~800 GB free) stacks a frame in seconds; the cabin's mobile link has no data cap. Nothing is ever written to the ASIAIR.
+
+**A. Live session**
+
+| # | Feature | Effort |
+|---|---|---|
+| A1 **R1** | Live stack of the current target, updated per frame: debayer, align (the ASIAIR's plate solve as a start, refined by star matching), outlier-rejecting combine, auto-stretch with background neutralisation; integration time and SNR growth; single frame vs stack slider | M |
+| A2 **R1** | Automatic frame rejection from the stack (clouds, fog, trailing, focus drift: stars, HFR, background, elongation) with the reason; a frame can be put back by hand | S |
+| A3 **R1** | Session timeline: plan targets, frames, estimated finish; meridian flip, auto focus and centering as events; time until the target sets or meets the horizon | S–M |
+| A4 **R1** | Guiding over the whole session: RA/Dec graph, scatter, RMS curve, dithers and settling, star SNR, alongside wind and frame elongation | S–M |
+| A5 | Focus and temperature: V-curves, HFR and focuser position against temperature (ASIAIR + Ruuvi) | S–M |
+| A6 | Tilt and backfocus inspection: HFR and star shape in a 3×3 grid, 1:1 corner crops | M |
+| A7 | Satellite and plane trails marked in frames | M |
+| A8 **R1** | Telemetry: cooler power and sensor temperature against the set point, ASIAIR board temperature, under-voltage, Wi-Fi, free space on the ASIAIR's storage | S |
+| A9 | More notifications: clouds, dew suspected, guiding lost, meridian flip result, storage filling, sensor not cooling, under-voltage (images in notifications need a notify extension) | S each |
+| A10 **R1** | Red night mode for use at the telescope | S |
+
+**B. The image**
+
+| # | Feature | Effort |
+|---|---|---|
+| B1 | Full-resolution viewer: zoom to 1:1 (tiles), histogram, star profile and FWHM on click | M |
+| B2 | Annotation of objects and bright stars from the plate solve | M |
+| B3 | Framing on a survey image (DSS): field of view 0.96° × 0.96° (670 mm, ASI533), mosaic planning | M |
+| B4 | Session timelapse (frames or the growing stack) | S |
+
+**C. Planning and conditions**
+
+| # | Feature | Effort |
+|---|---|---|
+| C1 | Target planner: altitude curves, time above a limit, transit, moon distance, best window | M |
+| C2 **R1** | Conditions forecast: cloud by height from several models side by side, seeing and transparency (7Timer), wind, dew point, a verdict | S–M |
+| C3 **R1** | Aurora: Kp now and forecast, aurora probability at the cabin (NOAA), both as a subject and as a deep-sky spoiler | S |
+| C4 | Forecast vs reality: which model has been right at the cabin, against clouds seen in the frames | M |
+| C5 | Integration goals per target across nights | S–M |
+
+**D. Archive and processing**
+
+| # | Feature | Effort |
+|---|---|---|
+| D1 **R1** | Every FITS (lights, calibration frames) and log copied home over the VPN, by night and target (~1.8 GB per 100 frames); not in the Google Drive backup | S–M |
+| D2 | Calibration library (darks, flats, bias by gain, temperature, exposure; age warnings) | M |
+| D3 | Final stack after the session with Siril (headless): calibration, registration, multi-night stacking; FITS/TIFF download | M–L |
+| D4 | Gallery per target, optionally public behind Cloudflare Access | M |
+| D5 **R1** | Observing log: a report per night and target (frames, integration, rejections and why, guiding, HFR, telemetry, events) | S–M |
+| D6 | Statistics: hours per month and season, clear nights, guiding over time | S |
+| D7 | Mount analysis from the PHD2 logs (periodic error, backlash) | M |
+| D8 | Own plate solving (ASTAP) for frames without an ASIAIR solve | S |
+
+**E. Science:** photometry (variable stars, exoplanet transits, comets; L), change detection against survey images (supernovae, asteroids; L).
+
+**F. Homelab and hardware:** observatory status (cabin outdoor temperature, humidity, dew point, camera, link; S), session state into Home Assistant (e.g. outdoor lights off while imaging; needs controllable lights), an all-sky camera at the cabin (cloud detection, timelapses, meteors; hardware), dew heater power control by dew point (smart plug or power box; hardware).
+
+**Left out on purpose:** writing to the ASIAIR (plans, GoTo, settings) over the same JSON-RPC: possible, but it breaks the read-only rule and could disturb a running session.

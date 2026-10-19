@@ -9,7 +9,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/homelab
-    newTag: "20261019-142203"
+    newTag: "20261019-142559"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: homelab-config
