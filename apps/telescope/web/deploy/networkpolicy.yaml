@@ -1,5 +1,6 @@
 # Enforced by k3s's embedded network policy controller.
-#   telescope-web <- Traefik (telescope.lab.internal)
+#   telescope-web <- Traefik (telescope.lab.internal), cloudflared (telescope.shillyshally.org: the public
+#                    gallery, once the tunnel routes it; the app answers that host with published items only)
 #   telescope-web -> the telescope service (API, previews, frame overrides, goals), the processor (calibration
 #                    library, final stacks, downloads), DNS, and the internet on 443 (Open-Meteo, 7Timer,
 #                    NOAA SWPC), not the LAN.
@@ -66,3 +67,23 @@ spec:
       ports:
         - port: 443
           protocol: TCP
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: telescope-web-from-cloudflared
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: telescope-web
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudflare
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudflared
+      ports:
+        - port: http

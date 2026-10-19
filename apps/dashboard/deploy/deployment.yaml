@@ -86,10 +86,11 @@ spec:
             - name: data
               mountPath: /data
       volumes:
-        # Protect clips exported for playback (src/lib/server/protect.ts keeps them under 800 MB).
+        # Protect clips and recording pieces exported for playback (src/lib/server/protect.ts keeps them
+        # under 2.5 GB, least recently used out first).
         - name: tmp
           emptyDir:
-            sizeLimit: 1Gi
+            sizeLimit: 3Gi
         # Tracked packages (packages.json).
         - name: data
           persistentVolumeClaim:

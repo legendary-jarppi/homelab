@@ -56,7 +56,9 @@ spec:
               memory: 512Mi
             # A frame is 18 MB raw and ~300 MB while analysed and warped; restacking reads the
             # aligned frames in row bands (~150 MB working set) through memory maps, whose pages
-            # are reclaimable cache. Measured peak: see README (Stacking).
+            # are reclaimable cache. Measured peak: see README (Stacking). An uploaded image is
+            # decoded one at a time: ~800 MB peak for the service with a 261 MB 16-bit TIFF
+            # (README, Own uploads); the 300 MB upload limit keeps it under the limit.
             limits:
               memory: 2Gi
           securityContext:

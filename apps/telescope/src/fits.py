@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import math
+import os
 import re
 from dataclasses import dataclass
 
@@ -100,21 +101,31 @@ def _channels(pixels: np.ndarray, bayer: str) -> list[np.ndarray]:
     return [pixels]
 
 
-def _stretch(plane: np.ndarray, target: float = 0.2) -> np.ndarray:
+def stretch_params(sample: np.ndarray, target: float = 0.2) -> tuple[float, float, float | None]:
     """Screen stretch like PixInsight's STF: black point just below the background, then a midtones
     curve that puts the background at `target`. Per channel, which also neutralises the colour cast
-    of light pollution."""
-    sample = plane[::4, ::4]
+    of light pollution. (black, top, midtones balance or None for a plain linear map), from a sample
+    of the plane's pixels."""
     median = float(np.median(sample))
     mad = float(np.median(np.abs(sample - median))) * 1.4826
     black = max(0.0, median - 2.8 * mad)
     top = max(float(np.percentile(sample, 99.995)), median + 1.0)
-    x = np.clip((plane - black) / (top - black), 0.0, 1.0)
     m0 = (median - black) / (top - black)
     if m0 <= 0 or m0 >= 1:
+        return black, top, None
+    return black, top, m0 * (target - 1) / ((2 * target - 1) * m0 - target)
+
+
+def apply_stretch(plane: np.ndarray, params: tuple[float, float, float | None]) -> np.ndarray:
+    black, top, m = params
+    x = np.clip((plane - black) / (top - black), 0.0, 1.0)
+    if m is None:
         return x
-    m = m0 * (target - 1) / ((2 * target - 1) * m0 - target)
     return ((m - 1) * x) / ((2 * m - 1) * x - m)
+
+
+def _stretch(plane: np.ndarray, target: float = 0.2) -> np.ndarray:
+    return apply_stretch(plane, stretch_params(plane[::4, ::4], target))
 
 
 def _stars(plane: np.ndarray) -> tuple[int, float | None]:
@@ -156,14 +167,14 @@ def _jpeg(image: Image.Image, quality: int) -> bytes:
     return out.getvalue()
 
 
-def previews(planes: list[np.ndarray]) -> tuple[bytes, bytes, int, int]:
+def previews(planes: list[np.ndarray], quality: int = 85) -> tuple[bytes, bytes, int, int]:
     """Stretched preview JPEGs (full plane size and ~300 px) and the large one's size."""
     stretched = [_stretch(p) for p in planes]
     array = np.stack(stretched, axis=-1) if len(stretched) == 3 else stretched[0]
     image = Image.fromarray((np.clip(array, 0, 1) * 255 + 0.5).astype(np.uint8))
     small = image.copy()
     small.thumbnail((300, 300), Image.Resampling.LANCZOS)
-    return _jpeg(image, 85), _jpeg(small, 80), image.width, image.height
+    return _jpeg(image, quality), _jpeg(small, 80), image.width, image.height
 
 
 def channels(pixels: np.ndarray, header: dict[str, str]) -> list[np.ndarray]:
@@ -241,6 +252,33 @@ class Wcs:
         det = a * d - b * c
         return self.crpix[0] + (d * xi - b * eta) / det, self.crpix[1] + (-c * xi + a * eta) / det
 
+    def plane(self, scale: float) -> Wcs:
+        """The solution on the half-size plane: plane pixel p (0-based) spans camera pixels
+        scale·p … scale·p + scale − 1, so camera FITS x = scale·(P − 1) + (scale + 1)/2 for plane
+        FITS P = p + 1 (as register.wcs_guess)."""
+        offset = (scale + 1) / 2
+        crpix = tuple((c - offset) / scale + 1 for c in self.crpix)
+        return Wcs(crpix, self.crval, tuple(tuple(v * scale for v in row) for row in self.cd))
+
+    def through(self, matrix: np.ndarray) -> Wcs:
+        """The solution of the grid that `matrix` (3×3 affine, 0-based pixels: this grid → that
+        grid) maps this one onto. Exact for an affine map: sky(Q) = TAN(CD·A·(Q − CRPIX'))."""
+        inverse = np.linalg.inv(matrix)
+        a = inverse[:2, :2]
+        crpix = matrix[:2, :2] @ (np.array(self.crpix) - 1) + matrix[:2, 2] + 1
+        cd = np.array(self.cd) @ a
+        return Wcs((float(crpix[0]), float(crpix[1])), self.crval, tuple(tuple(float(v) for v in row) for row in cd))
+
+    def pixel_scale_arcsec(self) -> float:
+        (a, b), (c, d) = self.cd
+        return math.sqrt(abs(a * d - b * c)) * 3600
+
+    def cards(self) -> dict:
+        """FITS keywords (Contract 1's `wcs`)."""
+        (a, b), (c, d) = self.cd
+        return {"CTYPE1": "RA---TAN", "CTYPE2": "DEC--TAN", "CRVAL1": self.crval[0], "CRVAL2": self.crval[1],
+                "CRPIX1": self.crpix[0], "CRPIX2": self.crpix[1], "CD1_1": a, "CD1_2": b, "CD2_1": c, "CD2_2": d}
+
     def json(self) -> dict:
         return {"crpix": list(self.crpix), "crval": list(self.crval), "cd": [list(r) for r in self.cd]}
 
@@ -249,6 +287,24 @@ class Wcs:
         if not data:
             return None
         return Wcs(tuple(data["crpix"]), tuple(data["crval"]), tuple(tuple(r) for r in data["cd"]))
+
+
+SIP = re.compile(r"^(?:[AB]_ORDER|[AB]_\d_\d|[AB]P_ORDER|[AB]P_\d_\d)$")
+
+
+def wcs_cards(header: dict[str, str]) -> dict | None:
+    """Contract 1's `wcs` from a header with a TAN solution: the linear part as a CD matrix, plus
+    the SIP distortion keywords when CTYPE says TAN-SIP."""
+    solution = wcs(header)
+    if solution is None:
+        return None
+    cards = solution.cards()
+    if header.get("CTYPE1", "").endswith("-SIP") and header.get("CTYPE2", "").endswith("-SIP"):
+        cards["CTYPE1"], cards["CTYPE2"] = "RA---TAN-SIP", "DEC--TAN-SIP"
+        for key in header:
+            if SIP.match(key) and (value := number(header, key)) is not None:
+                cards[key] = int(value) if key.endswith("ORDER") else value
+    return cards
 
 
 def wcs(header: dict[str, str]) -> Wcs | None:
@@ -302,3 +358,45 @@ def write_float(path: str, data: np.ndarray, cards: dict[str, str | float | int]
         f.write(text.encode("ascii"))
         f.write(body)
         f.write(b"\0" * (-len(body) % BLOCK))
+
+
+def read_header_file(f) -> tuple[dict[str, str], int]:
+    """The header of an open FITS file (read block by block) and the data offset."""
+    raw = b""
+    while True:
+        block = f.read(BLOCK)
+        if len(block) < BLOCK:
+            raise ValueError("not a FITS file (no END card)")
+        raw += block
+        if len(raw) > 100 * BLOCK:
+            raise ValueError("FITS header too long")
+        try:
+            return parse_header(raw)
+        except IncompleteFrame:
+            continue
+
+
+DTYPES = {"8": ">u1", "16": ">i2", "32": ">i4", "-32": ">f4", "-64": ">f8"}
+
+
+def open_image(path: str) -> tuple[dict[str, str], np.ndarray, float, float]:
+    """A FITS file's primary image, memory-mapped: (header, raw array (planes, height, width),
+    BSCALE, BZERO); physical value = raw · BSCALE + BZERO. NAXIS 2 or 3 (colour planes)."""
+    with open(path, "rb") as f:
+        if f.read(30)[:9] != b"SIMPLE  =":
+            raise ValueError("not a FITS file")
+        f.seek(0)
+        header, offset = read_header_file(f)
+    dtype = DTYPES.get(header.get("BITPIX", ""))
+    naxis = header.get("NAXIS")
+    if dtype is None or naxis not in ("2", "3"):
+        raise ValueError(f"unsupported FITS image: BITPIX {header.get('BITPIX')}, NAXIS {naxis}")
+    width, height = int(header["NAXIS1"]), int(header["NAXIS2"])
+    planes = int(header.get("NAXIS3", "1")) if naxis == "3" else 1
+    if planes not in (1, 3) or width < 1 or height < 1:
+        raise ValueError(f"unsupported FITS image: {width}×{height}×{planes}")
+    need = offset + width * height * planes * np.dtype(dtype).itemsize
+    if os.path.getsize(path) < need:
+        raise ValueError("FITS file is shorter than its header says")
+    data = np.memmap(path, dtype=dtype, mode="r", offset=offset, shape=(planes, height, width))
+    return header, data, number(header, "BSCALE") or 1.0, number(header, "BZERO") or 0.0

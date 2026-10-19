@@ -9,7 +9,12 @@ What it checks and prints:
   into the stack, against the same measured on a raw frame (uncorrected); the vignetting as the
   radial falloff of the sky against the known synthetic nebula, stack vs raw frame;
 - stars: FWHM and elongation of the bright ones in the stack; the satellite trail rejected;
+- the viewer (R4): the final's full-size JPEG is the crop of the linear stack, rows top-down; its
+  plate solve puts Gaia stars on the stars detected in the JPEG; stars measured through the API
+  land on them with the stack's FWHM; publish, title and note set;
 - the tar: length as announced, every member, a light byte for byte, the README.
+With `restart` (a new processor container on the same volume, FINALS_KEEP=1): publish, title and
+note kept, a third final, every version kept (the older unpublished one without its big files).
 """
 
 from __future__ import annotations
@@ -19,9 +24,11 @@ import io
 import json
 import math
 import os
+import re
 import sys
 import tarfile
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -29,6 +36,7 @@ import numpy as np
 
 sys.path.insert(0, "/app/src")
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.append("/tmp/pil")  # Pillow, installed there by e2e.sh for the JPEG checks only
 import fitsio  # noqa: E402
 import synthetic  # noqa: E402
 
@@ -55,6 +63,18 @@ def post(path: str, body: dict) -> tuple[int, dict]:
         return r.status, json.load(r)
 
 
+def request(method: str, path: str, body: dict | None = None) -> tuple[int, object]:
+    """Any method; (status, JSON or text) also for error statuses."""
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(API + path, data, {"content-type": "application/json"}, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            raw, status, kind = r.read(), r.status, r.headers.get("content-type", "")
+    except urllib.error.HTTPError as e:
+        raw, status, kind = e.read(), e.code, e.headers.get("content-type", "")
+    return status, (json.loads(raw) if kind.startswith("application/json") else raw)
+
+
 def wait_done(ids: list[str], timeout: float = 3600) -> dict[str, dict]:
     started = time.time()
     while time.time() - started < timeout:
@@ -78,12 +98,18 @@ class Wcs:
             pc = np.array([[n("PC1_1") or 1, n("PC1_2") or 0], [n("PC2_1") or 0, n("PC2_2") or 1]])
             self.cd = np.diag([n("CDELT1"), n("CDELT2")]) @ pc
         self.inv = np.linalg.inv(self.cd)
+        self.sip = [{(int(k.split("_")[1]), int(k.split("_")[2])): float(v) for k, v in header.items()
+                     if re.match(rf"^{axis}_\d+_\d+$", k)} for axis in "AB"]
+
+    def distortion(self, u: np.ndarray, v: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        return tuple(sum((c * u**p * v**q for (p, q), c in terms.items()), np.zeros_like(u)) for terms in self.sip)
 
     def to_sky(self, x: np.ndarray, y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """0-based array column/row (any shape) → RA/Dec (degrees)."""
         shape = np.shape(x)
-        d = np.stack([np.ravel(x) + 1 - self.crpix[0], np.ravel(y) + 1 - self.crpix[1]])
-        xi, eta = np.radians(self.cd @ d)
+        u, v = np.ravel(x) + 1 - self.crpix[0], np.ravel(y) + 1 - self.crpix[1]
+        f, g = self.distortion(u, v)
+        xi, eta = np.radians(self.cd @ np.stack([u + f, v + g]))
         a0, d0 = map(math.radians, self.crval)
         rho = np.hypot(xi, eta)
         c = np.arctan(rho)
@@ -96,7 +122,11 @@ class Wcs:
         shape = np.shape(ra)
         xi, eta = synthetic.tangent(np.ravel(ra), np.ravel(dec), *self.crval)
         p = self.inv @ np.stack([xi, eta])
-        return (p[0] + self.crpix[0] - 1).reshape(shape), (p[1] + self.crpix[1] - 1).reshape(shape)
+        u, v = p[0].copy(), p[1].copy()
+        for _ in range(8):  # SIP: u + f(u, v) = p
+            f, g = self.distortion(u, v)
+            u, v = p[0] - f, p[1] - g
+        return (u + self.crpix[0] - 1).reshape(shape), (v + self.crpix[1] - 1).reshape(shape)
 
 
 def green_superpixel(raw_path: str) -> np.ndarray:
@@ -190,8 +220,189 @@ def star_shapes(plane: np.ndarray) -> tuple[float, float, int]:
     return float(np.median(fwhm)), float(np.median(elong)), len(fwhm)
 
 
+def jpeg_luminance(path: str) -> np.ndarray:
+    from PIL import Image
+    with Image.open(path) as im:
+        return np.asarray(im.convert("RGB"), np.float32).mean(axis=2)
+
+
+def detect(lum: np.ndarray) -> np.ndarray:
+    """Stars in an 8-bit image: local maxima (5×5) well above the local sky (the image less its
+    15×15 mean, against that's noise), centroids (x, y) of the 7×7 around them (sky from the
+    window's edge)."""
+    k = 15
+    s = np.pad(lum.astype(np.float64), ((k // 2 + 1, k // 2), (k // 2 + 1, k // 2)), mode="edge").cumsum(0).cumsum(1)
+    local = (s[k:, k:] - s[:-k, k:] - s[k:, :-k] + s[:-k, :-k]) / k**2
+    high = lum - local
+    noise = np.median(np.abs(high[::4, ::4] - np.median(high[::4, ::4]))) * 1.4826 + 0.3
+    peak = lum.copy()
+    for dy in range(-2, 3):
+        for dx in range(-2, 3):
+            if dx or dy:
+                np.maximum(peak, np.roll(lum, (dy, dx), axis=(0, 1)), out=peak)
+    cand = (lum == peak) & (high > 10 * noise)
+    cand[:8], cand[-8:], cand[:, :8], cand[:, -8:] = False, False, False, False
+    out = []
+    yy, xx = np.mgrid[-3:4, -3:4]
+    for y, x in zip(*np.nonzero(cand)):
+        cut = lum[y - 3 : y + 4, x - 3 : x + 4]
+        edge = np.median(np.concatenate([cut[0], cut[-1], cut[:, 0], cut[:, -1]]))
+        w = np.clip(cut - edge, 0, None)
+        if w.sum() > 0:
+            out.append((x + (w * xx).sum() / w.sum(), y + (w * yy).sum() / w.sum()))
+    return np.array(out).reshape(-1, 2)
+
+
+def viewer(final: dict, stack: np.ndarray, sessions: list) -> None:
+    """The final's Contract 1 data against its files and the catalogue."""
+    print("Viewer (the processed image)")
+    fid = final["id"]
+    record = json.load(open(os.path.join(PROCESSED, "finals", fid, "final.json")))
+    crop = record["view"]["crop"]
+    image = get(f"/api/images/final/{fid}")
+    check(image["kind"] == "final" and image["url"] == f"/finals/{fid}/full.jpg" and image["rowsTopDown"]
+          and image["measurable"], f"image record: {image['width']}×{image['height']}, {image['url']}, measurable")
+    check((image["width"], image["height"]) == (crop["width"], crop["height"]),
+          f"the image is the crop: {crop['width']}×{crop['height']} at ({crop['x']}, {crop['y']}) of the stack")
+    scale = synthetic.SCALE_DEG * 3600
+    check(image["pixelScaleArcsec"] and abs(image["pixelScaleArcsec"] / scale - 1) < 0.01,
+          f"pixel scale {image['pixelScaleArcsec']}″ (synthetic {scale:.4f}″)")
+    hist, stats = image["histogram"], image["stats"]
+    check(all(len(hist[c]) == 256 and sum(hist[c]) > 0 for c in "rgb") and all(0 < stats[c]["median"] < 0.2 and
+          0 < stats[c]["noise"] < stats[c]["median"] for c in "rgb"),
+          "histogram and stats: " + ", ".join(f"{c} median {stats[c]['median']:.5f} noise {stats[c]['noise']:.6f}" for c in "rgb"))
+    status, _ = request("GET", f"/finals/{fid}/full.jpg")
+    lum = jpeg_luminance(os.path.join(PROCESSED, "finals", fid, "full.jpg"))
+    check(status == 200 and lum.shape == (image["height"], image["width"]), f"full.jpg {lum.shape[1]}×{lum.shape[0]}, served")
+    # Orientation: the JPEG against the linear crop as is and upside down (block means, ranks).
+    lin = np.nan_to_num(stack[:, crop["y"] : crop["y"] + crop["height"], crop["x"] : crop["x"] + crop["width"]].mean(axis=0))
+    b = 16
+    hb, wb = lin.shape[0] // b, lin.shape[1] // b
+
+    def blocks(a):
+        m = a[: hb * b, : wb * b].reshape(hb, b, wb, b).mean(axis=(1, 3)).ravel()
+        return np.argsort(np.argsort(m))
+
+    same = float(np.corrcoef(blocks(lum), blocks(lin))[0, 1])
+    flipped = float(np.corrcoef(blocks(lum), blocks(lin[::-1]))[0, 1])
+    check(same > 0.8 and same > flipped + 0.3, f"full.jpg shows the stack's row 1 at the top (rank correlation {same:.3f}, "
+          f"upside down {flipped:.3f})")
+    # Gaia stars through the API's plate solve onto the stars detected in the JPEG.
+    wcs = Wcs({k: str(v) for k, v in image["wcs"].items()})
+    ra, dec, g, _ = synthetic.load_stars()
+    px, py = wcs.to_pixel(ra, dec)  # FITS − 1 = display pixels
+    found = detect(lum)
+    inside = (px > 12) & (px < lum.shape[1] - 12) & (py > 12) & (py < lum.shape[0] - 12)
+    faint = inside & (g < 16)
+    offsets, pairs = [], []
+    # Stars with a peak in the JPEG (the stretch clips brighter ones to flat discs), alone.
+    for k in np.flatnonzero(inside & (g >= 11) & (g < 14)):
+        crowd = np.hypot(px[faint] - px[k], py[faint] - py[k])
+        if np.sum(crowd < 8) > 1:  # a neighbour pulls the centroid
+            continue
+        cx, cy = int(round(px[k])), int(round(py[k]))
+        if lum[cy - 2 : cy + 3, cx - 2 : cx + 3].max() >= 250:
+            continue
+        d = np.hypot(found[:, 0] - px[k], found[:, 1] - py[k])
+        j = int(np.argmin(d))
+        if d[j] < 3:
+            offsets.append(float(d[j]))
+            pairs.append((k, found[j]))
+    offsets = np.array(offsets)
+    check(len(offsets) > 50 and np.median(offsets) < 0.3 and offsets.max() < 1,
+          f"WCS on the processed image: {len(offsets)} Gaia stars (G 11–14, unclipped) on the detected stars, median "
+          f"{np.median(offsets):.2f} px, {np.mean(offsets < 1) * 100:.0f} % within 1 px, worst {offsets.max():.2f} px")
+    # Stars measured through the API (clicked 2 px off) against the detection, the catalogue and the stack.
+    fwhm_stack, _, _ = star_shapes(np.nan_to_num(stack[1]))
+    measured, cat_off, det_off, linear_off = [], [], [], []
+    for k, (dx, dy) in pairs[:: max(1, len(pairs) // 30)][:30]:
+        brighter = inside & (g < g[k])
+        if np.any(np.hypot(px[brighter] - px[k] - 2, py[brighter] - py[k] + 2) < 15):
+            continue  # the click would find the brighter one
+        star = get(f"/api/images/final/{fid}/star?x={px[k] + 2:.2f}&y={py[k] - 2:.2f}")
+        if not star["found"] or star["saturated"]:
+            continue
+        measured.append(star)
+        cat_off.append(math.hypot(star["x"] - px[k], star["y"] - py[k]))
+        det_off.append(math.hypot(star["x"] - dx, star["y"] - dy))
+        # The same star in the linear stack's own pixels: a centroid there, mapped back.
+        sx, sy = int(round(star["x"])) + crop["x"], int(round(star["y"])) + crop["y"]
+        cut = np.nan_to_num(stack[:, sy - 5 : sy + 6, sx - 5 : sx + 6].mean(axis=0))
+        w = np.clip(cut - np.median(cut), 0, None)
+        yy, xx = np.mgrid[-5:6, -5:6]
+        linear_off.append(math.hypot(sx + (w * xx).sum() / w.sum() - crop["x"] - star["x"],
+                                     sy + (w * yy).sum() / w.sum() - crop["y"] - star["y"]))
+    fwhm = float(np.median([s["fwhmPx"] for s in measured]))
+    print(f"       {len(measured)} stars measured: median FWHM {fwhm:.2f} px ({np.median([s['fwhmArcsec'] for s in measured]):.2f}″), "
+          f"HFR {np.median([s['hfrPx'] for s in measured]):.2f} px, elongation {np.median([s['elongation'] for s in measured]):.3f}, "
+          f"SNR {np.median([s['snr'] for s in measured]):.0f}; the stack's moments: FWHM {fwhm_stack:.2f} px")
+    check(len(measured) >= 20 and all(s["linear"] for s in measured), f"{len(measured)} stars found on the linear data")
+    check(max(cat_off) < 1 and max(det_off) < 1 and max(linear_off) < 0.5,
+          f"measured centroids: ≤ {max(cat_off):.2f} px from Gaia, ≤ {max(det_off):.2f} px from the JPEG's stars, "
+          f"≤ {max(linear_off):.2f} px from the linear stack's")
+    # The synthetic PSF: a Gaussian core of the frame's FWHM (92 % of the flux) and a wide wing.
+    truth = float(np.median([f["fwhmPx"] for s in sessions for f in s["detail_frames"] if f["accepted"]]))
+    check(abs(fwhm / truth - 1) < 0.15 and all(abs(s["fwhmArcsec"] - s["fwhmPx"] * image["pixelScaleArcsec"]) < 0.01
+                                                for s in measured),
+          f"FWHM {fwhm:.2f} px against the synthetic frames' core FWHM {truth:.2f} px (within 15 %), in ″ by the pixel scale")
+    empty = get(f"/api/images/final/{fid}/star?x=-5&y=10")
+    check(empty == {"found": False, "linear": True}, "a click outside the image: not found")
+
+
+def publish(final: dict, manual: dict) -> None:
+    print("Gallery fields")
+    status, out = request("PUT", f"/api/finals/{final['id']}", {"published": True, "title": "Cave Nebula", "note": "synthetic test"})
+    check(status == 200 and out["published"] and out["title"] == "Cave Nebula" and out["note"] == "synthetic test",
+          f"PUT published, title, note: {status}")
+    status, out = request("PUT", f"/api/finals/{manual['id']}", {"title": "Night 2 only"})
+    check(status == 200 and not out["published"] and out["title"] == "Night 2 only", "PUT title alone")
+    status, _ = request("PUT", f"/api/finals/{manual['id']}", {"published": "yes"})
+    check(status == 400, f"PUT a bad value: {status}")
+    status, _ = request("PUT", "/api/finals/no-such-final", {"title": "x"})
+    check(status == 404, f"PUT an unknown final: {status}")
+    listed = {f["id"]: f for f in get("/api/finals")}
+    check(listed[final["id"]]["published"] and listed[final["id"]]["equipment"]["camera"],
+          f"listed with published and equipment {listed[final['id']]['equipment']}")
+
+
+def restart(sessions: list) -> None:
+    """After a new processor container on the same volume (FINALS_KEEP=1)."""
+    print("After the restart (FINALS_KEEP=1)")
+    finals = [f for f in get("/api/finals") if f["status"] == "done"]
+    auto = next(f for f in finals if f["automatic"])
+    manual = next(f for f in finals if not f["automatic"])
+    check(auto["published"] and auto["title"] == "Cave Nebula" and auto["note"] == "synthetic test"
+          and not manual["published"] and manual["title"] == "Night 2 only", "publish, title and note kept")
+    third = post("/api/finals", {"target": "C 9", "nights": ["2026-10-17"]})[1]
+    done = wait_done([third["id"]])
+    check(done[third["id"]]["status"] == "done", f"a third final (night 1): {done[third['id']]['status']} {done[third['id']]['error'] or ''}")
+    listed = {f["id"]: f for f in get("/api/finals")}
+    versions = [f for f in listed.values() if f["target"] == "C 9" and f["status"] == "done"]
+    check(len(versions) == 3, f"every version kept: {len(versions)} done finals of C 9")
+    newest, older, published = listed[third["id"]], listed[manual["id"]], listed[auto["id"]]
+    check(all(newest["outputs"].values()), "the newest: every file")
+    check(older["outputs"]["linearFits"] is None and older["outputs"]["processedTiff"] is None
+          and older["outputs"]["fullJpg"] and older["outputs"]["previewJpg"]
+          and not os.path.exists(os.path.join(PROCESSED, "finals", older["id"], "linear.fits")),
+          "the older unpublished one: JPEGs and record kept, linear.fits and processed.tif removed")
+    status, _ = request("GET", older["outputs"]["fullJpg"])
+    image = get(f"/api/images/final/{older['id']}")
+    star_status, _ = request("GET", f"/api/images/final/{older['id']}/star?x=100&y=100")
+    check(status == 200 and not image["measurable"] and star_status == 409,
+          f"… its full.jpg served ({status}), not measurable, star {star_status}")
+    shown = get(f"/api/images/final/{published['id']}")
+    w, h = shown["width"], shown["height"]
+    check(all(published["outputs"].values()) and shown["measurable"], "the published older one: every file kept, measurable")
+    star = get(f"/api/images/final/{published['id']}/star?x={w / 2:.1f}&y={h / 2:.1f}")
+    print(f"       star near the published one's centre: {({k: star.get(k) for k in ('found', 'x', 'y', 'fwhmPx')})}")
+    print("FAILED: " + "; ".join(failures) if failures else "All checks passed.")
+    sys.exit(1 if failures else 0)
+
+
 def main() -> None:
     sessions = json.load(open(sys.argv[1]))
+    if sys.argv[2:] == ["restart"]:
+        return restart(sessions)
     print("Finals")
     started = time.time()
     while True:
@@ -272,6 +483,8 @@ def main() -> None:
         offsets.append(math.hypot((cut * xx).sum() / cut.sum() + cx - x, (cut * yy).sum() / cut.sum() + cy - y))
     offset = float(np.median(offsets))
     check(offset < 1.5, f"the stack's plate solve fits: Gaia stars {offset:.2f} px from the stars ({len(offsets)} stars)")
+    viewer(final, stack, sessions)
+    publish(final, manual)
 
     print("Calibration in the stack")
     lights = []
@@ -356,7 +569,7 @@ def main() -> None:
     check(count("masters") == 4, "masters: bias, dark and the two flats matched")
     check(sum(1 for n in names if "/calibration/bias-" in n) == 20 and sum(1 for n in names if "/calibration/dark-" in n) == 12
           and sum(1 for n in names if "/calibration/flat-" in n) == 24, "raw sets: 20 bias, 12 darks, 2 × 12 flats")
-    check(count("final") == 4, "the final's four files")
+    check(count("final") == 5, "the final's five files")
     tar = tarfile.open(fileobj=io.BytesIO(body))
     light = next(m for m in members if "/lights/2026-10-17/" in m.name)
     data = tar.extractfile(light).read()

@@ -46,7 +46,7 @@
 	<div class="left">
 		<div class="stack"><Card title="Stack">
 			{#snippet accessory()}<span class="num">{d.accepted} frames · {formatDuration(d.integrationS)}</span>{/snippet}
-			<StackView stack={d.hasStack || d.stack ? stackUrl(d.id, d.stack?.imageId ?? `${d.lastFrameAt}-${d.accepted}`) : null} frame={d.frames.at(-1) ? `/frames/${d.frames.at(-1)!.id}.jpg` : null} alt="Stack of {d.target}" />
+			<StackView sessionId={d.id} stack={d.hasStack || d.stack ? stackUrl(d.id, d.stack?.imageId ?? `${d.lastFrameAt}-${d.accepted}`) : null} frame={d.frames.at(-1) ? `/frames/${d.frames.at(-1)!.id}.jpg` : null} alt="Stack of {d.target}" />
 		</Card></div>
 		<div class="frames"><FrameList sessionId={d.id} frames={d.frames} pending={d.pending} onchanged={() => session.load(d.id)} /></div>
 	</div>

@@ -10,7 +10,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/telescope-web
-    newTag: "20261019-185315"
+    newTag: "20261019-194844"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: telescope-web-config
@@ -23,3 +23,8 @@ configMapGenerator:
       - PROCESSOR_URL=http://telescope-processor:8080
       # name:latitude:longitude, as the ASIAIR reports it: conditions, wind, automatic red mode.
       - TELESCOPE_SITE=Ristiina:61.496:27.576
+      # Requests for this host (cloudflared, behind Cloudflare Access, policy Family) get the published gallery
+      # only, read-only; everything else answers 404 (src/lib/server/public.ts).
+      - PUBLIC_HOST=telescope.shillyshally.org
+      # Own processed images up to 300 MB (adapter-node's default is 512 kB); streamed through, not buffered.
+      - BODY_SIZE_LIMIT=310M

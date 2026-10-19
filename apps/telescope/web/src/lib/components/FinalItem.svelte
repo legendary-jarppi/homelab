@@ -60,6 +60,7 @@
 			<strong>{f.target}</strong>
 			<span class="tag {STATUS[f.status].tone}">{STATUS[f.status].label}</span>
 			{#if f.automatic}<span class="tag" title="Started by the processor after the session">auto</span>{/if}
+			{#if f.published}<a class="tag ok" href="/gallery/{encodeURIComponent(f.target)}" title="In the public gallery">published</a>{/if}
 		</div>
 		<span class="muted small">
 			{f.nights.length === 1 ? nightLabel(f.nights[0]) : `${f.nights.length} nights, ${nightLabel(f.nights[0], false)} – ${nightLabel(f.nights.at(-1)!, true)}`}
@@ -104,7 +105,7 @@
 </article>
 
 {#if viewing && f.outputs.previewJpg}
-	<ImageViewer src={f.outputs.previewJpg} alt="Final stack of {f.target}" caption="{f.target} · {f.frames} frames · {formatDuration(f.integrationS)}" onclose={() => (viewing = false)} />
+	<ImageViewer image={{ kind: 'final', id: f.id }} src={f.outputs.fullJpg ?? f.outputs.previewJpg} alt="Final stack of {f.target}" caption="{f.target} · {f.frames} frames · {formatDuration(f.integrationS)}" onclose={() => (viewing = false)} />
 {/if}
 
 <style>

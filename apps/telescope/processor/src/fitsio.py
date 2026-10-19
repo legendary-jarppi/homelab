@@ -111,6 +111,22 @@ def read_float(path: str) -> tuple[np.ndarray, int]:
     return out, offset
 
 
+def open_float(path: str) -> np.ndarray:
+    """A float image mapped, not read: (planes, height, width), big-endian float32. Slicing reads
+    only the pages a window touches (star measurement on a 200 MB stack). BSCALE 1, BZERO 0."""
+    parsed = read_header(path)
+    if parsed is None:
+        raise ValueError(f"{path}: no FITS header")
+    header, offset = parsed
+    if header.get("BITPIX") != "-32":
+        raise ValueError(f"{path}: BITPIX {header.get('BITPIX')}, 32-bit float expected")
+    if (number(header, "BSCALE") or 1.0) != 1.0 or (number(header, "BZERO") or 0.0) != 0.0:
+        raise ValueError(f"{path}: scaled float data")
+    width, height = int(header["NAXIS1"]), int(header["NAXIS2"])
+    planes = int(header.get("NAXIS3", "1")) if header.get("NAXIS") == "3" else 1
+    return np.memmap(path, ">f4", "r", offset, (planes, height, width))
+
+
 def rewrite_float(src: str, dst: str, data: np.ndarray) -> None:
     """`dst`: the header of `src` unchanged (plate solve, history, …) with new pixels of the same
     shape (BSCALE 1, BZERO 0 assumed: Siril writes neither for floats)."""

@@ -107,7 +107,7 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 
 ## Telescope web app
 
-**Status:** deployed 2026-10-19 at http://telescope.lab.internal ([apps/telescope](../apps/telescope/README.md); web app `apps/telescope/web`, Siril processor `apps/telescope/processor`): first release **R1**, second **R2** (notifications, planner, goals) and **R3** (calibration library, final stacks with Siril, downloads for own processing). Stacking, rejection, the archive, the notifications and the Siril pipeline were tested on synthetic frames only and wait for the first real night with the ASIAIR online. The rest is the idea list to choose from later. Builds on the telescope service (frames from the ASIAIR's SMB shares, its live JSON-RPC state, read only) and the dashboard's Telescope tab, which stays.
+**Status:** deployed 2026-10-19 at http://telescope.lab.internal ([apps/telescope](../apps/telescope/README.md); web app `apps/telescope/web`, Siril processor `apps/telescope/processor`): releases **R1**, **R2** (notifications, planner, goals), **R3** (calibration library, final stacks with Siril, downloads for own processing) and **R4** (full-resolution viewer, annotation, gallery with own uploads; the public gallery at https://telescope.shillyshally.org behind Cloudflare Access). First real data arrived the same evening: the ASIAIR came online, ~360 archived frames were backfilled and stacked live, and every plan frame carries the ASIAIR's plate solve (alignment ran on it). Not yet seen on real data: a Siril final with real calibration frames, the notifications in a real night, annotation on a real stack. The rest is the idea list to choose from later. Builds on the telescope service (frames from the ASIAIR's SMB shares, its live JSON-RPC state, read only) and the dashboard's Telescope tab, which stays.
 
 **What it can build on:** every frame as FITS (3008², 18 MB) with target, exposure, gain, temperatures, focuser position, site and the ASIAIR's plate solve in the header; the Autorun and PHD2 logs at the end of each run; live: exposure and plan progress, auto-focus V-curves, meridian flip/GoTo state, guiding every ~3 s, sensor/cooler/board telemetry; around it: Ruuvi temperature and humidity at the cabin, the NIBE's outdoor temperature, Open-Meteo, the cabin camera, apps/notify, Prometheus. The k3s node (i5-7600K, 4 cores, 30 GB RAM, ~800 GB free) stacks a frame in seconds; the cabin's mobile link has no data cap. Nothing is ever written to the ASIAIR.
 
@@ -130,8 +130,8 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 
 | # | Feature | Effort |
 |---|---|---|
-| B1 | Full-resolution viewer: zoom to 1:1 (tiles), histogram, star profile and FWHM on click | M |
-| B2 | Annotation of objects and bright stars from the plate solve | M |
+| B1 **R4** | Full-resolution viewer: zoom to 1:1 and beyond, histogram, star profile and FWHM on click | M |
+| B2 **R4** | Annotation of objects and bright stars from the plate solve | M |
 | B3 | Framing on a survey image (DSS): field of view 0.96° × 0.96° (670 mm, ASI533), mosaic planning | M |
 | B4 | Session timelapse (frames or the growing stack) | S |
 
@@ -152,7 +152,7 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 | D1 **R1** | Every FITS (lights, calibration frames) and log copied home over the VPN, by night and target (~1.8 GB per 100 frames); not in the Google Drive backup | S–M |
 | D2 **R3** | Calibration library (darks, flats, bias by gain, temperature, exposure; age warnings) | M |
 | D3 **R3** | Final stack after the session with Siril (headless): calibration, registration, multi-night stacking; the app's own processed version; FITS/TIFF and a tar of everything for own processing | M–L |
-| D4 | Gallery per target, optionally public behind Cloudflare Access | M |
+| D4 **R4** | Gallery per target (app finals and own uploads, versions), public read-only for published pictures behind Cloudflare Access | M |
 | D5 **R1** | Observing log: a report per night and target (frames, integration, rejections and why, guiding, HFR, telemetry, events) | S–M |
 | D6 | Statistics: hours per month and season, clear nights, guiding over time | S |
 | D7 | Mount analysis from the PHD2 logs (periodic error, backlash) | M |

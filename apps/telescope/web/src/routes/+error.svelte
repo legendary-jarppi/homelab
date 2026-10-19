@@ -7,7 +7,7 @@
 
 <Card title={page.status === 404 ? 'Not found' : 'Unavailable'}>
 	<p>{page.error?.message ?? 'Something went wrong.'}</p>
-	<p class="muted"><a href="/">Back to Live</a></p>
+	<p class="muted">{#if page.data.public}<a href="/gallery">Back to the gallery</a>{:else}<a href="/">Back to Live</a>{/if}</p>
 </Card>
 
 <style>

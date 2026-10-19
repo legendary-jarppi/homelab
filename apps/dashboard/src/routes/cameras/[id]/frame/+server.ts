@@ -1,24 +1,23 @@
 import { error } from '@sveltejs/kit';
 import { config } from '$lib/server/config';
-import { consoles } from '$lib/server/protect';
+import { linkedCamera } from '$lib/server/protect';
 import type { RequestHandler } from './$types';
 
 const jpeg = { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' };
 
 /**
- * A camera tile's picture: Protect's snapshot for cameras linked to a stream in *_PROTECT_CAMERAS (the
- * cabin's, over its mobile link), otherwise the latest keyframe from go2rtc, downscaled for tiles.
+ * A camera tile's picture: Protect's snapshot on consoles with tileSnapshots (the cabin, over its
+ * mobile link), otherwise the latest keyframe from go2rtc, downscaled for tiles.
  */
 export const GET: RequestHandler = async ({ params, url }) => {
 	if (!config.cameras.some((c) => c.id === params.id)) error(404, 'Unknown camera');
 
-	for (const protect of Object.values(consoles)) {
-		const camera = protect?.configured.find((c) => c.stream === params.id);
-		if (!protect || !camera) continue;
+	const linked = linkedCamera(params.id);
+	if (linked?.protect.tileSnapshots) {
 		try {
-			return new Response(new Uint8Array(await protect.snapshot(camera.name)), { headers: jpeg });
+			return new Response(new Uint8Array(await linked.protect.snapshot(linked.name)), { headers: jpeg });
 		} catch (e) {
-			console.error(`protect ${protect.site} snapshot ${camera.name}:`, e instanceof Error ? e.message : e);
+			console.error(`protect ${linked.protect.site} snapshot ${linked.name}:`, e instanceof Error ? e.message : e);
 			error(502, 'Camera unavailable');
 		}
 	}

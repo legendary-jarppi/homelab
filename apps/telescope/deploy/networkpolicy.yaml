@@ -1,7 +1,9 @@
 # Enforced by k3s's embedded network policy controller.
 #   telescope <- dashboard (API, previews), the telescope web app (API, images, manual frame
-#                decisions and target goals: the only caller of the POSTs and PUTs), the telescope
-#                processor (session reports with the frames' archive paths; GETs only), Prometheus (scrape)
+#                decisions, target goals and the gallery's uploads, edits and deletes: the only
+#                caller of the POSTs, PUTs and DELETEs), the telescope processor (session reports
+#                with the frames' archive paths; GETs only), Prometheus (scrape). Per port, not per
+#                path: only the web app is admitted that has any reason to write.
 #   telescope -> the cabin's ASIAIR (SMB 445, JSON-RPC 4700/4400) over the Site Magic VPN, apps/notify,
 #                the internet on 443 (Open-Meteo: air temperature and dew point for the dew notification), DNS
 apiVersion: networking.k8s.io/v1

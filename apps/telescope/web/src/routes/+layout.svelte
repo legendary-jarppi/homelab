@@ -12,14 +12,19 @@
 		{ href: '/goals', label: 'Goals' },
 		{ href: '/sessions', label: 'Sessions' },
 		{ href: '/library', label: 'Library' },
-		{ href: '/finals', label: 'Finals' }
+		{ href: '/finals', label: 'Finals' },
+		{ href: '/gallery', label: 'Gallery' }
 	];
+	// The public host (PUBLIC_HOST) has the gallery only.
+	const tabs = $derived(data.public ? TABS.filter((t) => t.href === '/gallery') : TABS);
 	const active = (href: string) => (href === '/' ? page.url.pathname === '/' : page.url.pathname === href || page.url.pathname.startsWith(`${href}/`));
 	const MODES: { mode: RedMode; label: string; title: string }[] = [
 		{ mode: 'off', label: 'Off', title: 'Normal colours' },
 		{ mode: 'on', label: 'Red', title: 'Red night mode' },
 		{ mode: 'auto', label: 'Auto', title: 'Red while the sun is below the horizon at the site' }
 	];
+	// Auto needs the site, which the public host does not get.
+	const modes = $derived(data.site ? MODES : MODES.filter((m) => m.mode !== 'auto'));
 
 	$effect(() => red.start(data.site));
 	$effect(() => red.apply(red.active));
@@ -34,18 +39,18 @@
 
 <div class="page">
 	<header>
-		<a class="brand" href="/">
+		<a class="brand" href={data.public ? '/gallery' : '/'}>
 			<svg viewBox="0 0 32 32" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 17l17-7 2 5-17 7z" /><path d="M14 19l-4 8M16 18l4 9" /></g></svg>
 			<span>Telescope</span>
 		</a>
-		<nav class="tabs" aria-label="Pages">
-			{#each TABS as t (t.href)}
+		<nav class="tabs" class:single={tabs.length === 1} aria-label="Pages">
+			{#each tabs as t (t.href)}
 				<a href={t.href} class:active={active(t.href)} aria-current={active(t.href) ? 'page' : undefined}>{t.label}</a>
 			{/each}
 		</nav>
 		<div class="redmode" role="group" aria-label="Red night mode">
 			<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z" fill="currentColor" /></svg>
-			{#each MODES as m (m.mode)}
+			{#each modes as m (m.mode)}
 				<button class:on={red.mode === m.mode} title={m.title} aria-pressed={red.mode === m.mode} onclick={() => red.set(m.mode)}>{m.label}</button>
 			{/each}
 		</div>
@@ -133,8 +138,8 @@
 			padding-left: max(12px, env(safe-area-inset-left));
 			padding-right: max(12px, env(safe-area-inset-right));
 		}
-		/* Seven pages: two rows of four on a phone. */
-		.tabs {
+		/* Eight pages: two rows of four on a phone. */
+		.tabs:not(.single) {
 			order: 3;
 			flex-basis: 100%;
 			display: grid;
@@ -142,7 +147,7 @@
 			gap: 2px;
 			border-radius: 16px;
 		}
-		.tabs a {
+		.tabs:not(.single) a {
 			padding: 8px 4px;
 			text-align: center;
 		}

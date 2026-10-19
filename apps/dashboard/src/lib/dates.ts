@@ -50,3 +50,17 @@ export function dayOf(value: string): string {
 export function clock(ms: number): string {
 	return new Intl.DateTimeFormat('en-GB', { timeZone: ZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(ms);
 }
+
+/** "14:32:05" today, "ti 7.10. 14:32:05" otherwise, in Finnish time: a position in recorded video. */
+export function instantTime(ms: number, now = Date.now()): string {
+	const day = new Intl.DateTimeFormat('en-CA', { timeZone: ZONE });
+	const hms = new Intl.DateTimeFormat('en-GB', { timeZone: ZONE, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(ms);
+	return day.format(ms) === day.format(now) ? hms : `${shortDay(day.format(ms))} ${hms}`;
+}
+
+/** Finnish time's offset from UTC at an instant, ms (+3 h in summer, +2 h in winter). */
+export function zoneOffsetMs(ms: number): number {
+	const name = new Intl.DateTimeFormat('en-US', { timeZone: ZONE, timeZoneName: 'longOffset' }).formatToParts(ms).find((p) => p.type === 'timeZoneName')?.value ?? '';
+	const m = /([+-])(\d{2}):(\d{2})/.exec(name);
+	return m ? (m[1] === '-' ? -1 : 1) * (Number(m[2]) * 60 + Number(m[3])) * 60_000 : 0;
+}

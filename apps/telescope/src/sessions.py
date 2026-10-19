@@ -27,6 +27,7 @@ import re
 import shutil
 import threading
 import time
+import warnings
 from collections import Counter
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -36,6 +37,8 @@ import numpy as np
 import analysis
 import autorun
 import fits
+import images
+import measure
 import register
 import rejection
 import stacking
@@ -117,6 +120,7 @@ class Store:
         self.retry_at: dict[str, float] = {}
         self.last_combine: dict[str, float] = {}
         self.logs: dict[str, tuple[int, autorun.Log | None]] = {}  # parsed archived Autorun logs
+        self.stack_numbers: dict[str, tuple[str, dict | None, dict | None]] = {}  # histogram per stack version
         os.makedirs(os.path.join(data, "sessions"), exist_ok=True)
         os.makedirs(os.path.join(data, "previews"), exist_ok=True)
         os.makedirs(cache, exist_ok=True)
@@ -532,7 +536,9 @@ class Store:
         folder = os.path.join(self.cache, sid)
         os.makedirs(folder, exist_ok=True)
         tmp = os.path.join(folder, f".{fid}.npy")
-        np.save(tmp, aligned.astype(np.float16))
+        # float16 tops out at 65504: saturated star cores (up to 65535 ADU) would become inf and
+        # poison the combine. NaN (outside the frame) passes through np.clip unchanged.
+        np.save(tmp, np.clip(aligned, None, np.finfo(np.float16).max).astype(np.float16))
         os.replace(tmp, os.path.join(folder, f"{fid}.npy"))
 
     @staticmethod
@@ -635,7 +641,8 @@ class Store:
         fits.write_float(os.path.join(folder, ".stack.fits"), image, cards)
         os.replace(os.path.join(folder, ".stack.fits"), os.path.join(folder, "stack.fits"))
         filled = np.where(np.isnan(image), np.nanmedian(image[::8, ::8], axis=(0, 1)), image)
-        large, small, width, height = fits.previews([filled[..., i] for i in range(filled.shape[2])])
+        # Full plane size (no downscaling): the web app's viewer zooms it to 1:1 and beyond.
+        large, small, width, height = fits.previews([filled[..., i] for i in range(filled.shape[2])], quality=92)
         del image, filled
         for name, data in (("stack.jpg", large), ("stack-small.jpg", small)):
             with open(os.path.join(folder, f".{name}"), "wb") as out:
@@ -742,6 +749,71 @@ class Store:
                 if s.get("stack"):
                     return self.stack_json(s)
         return None
+
+    def stack_image(self, sid: str) -> dict | None:
+        """Contract 1 for kind `stack`: the stack's full-resolution image, plate solution, histogram."""
+        with self.lock:
+            s = self.sessions.get(sid)
+            if s is None or not s.get("stack"):
+                return None
+            stack = dict(s["stack"])
+            solution = stack_wcs(s)
+            scale = pixel_scale(s, solution)
+            frame_at = {f["id"]: f["info"]["at"] for f in s["frames"] if f.get("info")}
+            target = s["target"]
+        path = os.path.join(self.folder(sid), "stack.fits")
+        histogram, stats = self._stack_numbers(sid, stack["imageId"], path)
+        version = f"?v={stack['imageId']}"
+        return {
+            "kind": "stack",
+            "id": sid,
+            "target": target,
+            "width": stack["width"],
+            "height": stack["height"],
+            "url": f"/stacks/{sid}.jpg{version}",
+            "smallUrl": f"/stacks/{sid}-small.jpg{version}",
+            "wcs": solution.cards() if solution else None,
+            "rowsTopDown": True,
+            "pixelScaleArcsec": r2(scale, 4),
+            "histogram": histogram,
+            "stats": stats,
+            "takenAt": min((frame_at[i] for i in stack["frames"] if i in frame_at), default=None),
+            "integrationS": stack["integrationS"],
+            "frames": stack["accepted"],
+            "measurable": os.path.exists(path),
+        }
+
+    def _stack_numbers(self, sid: str, image_id: str, path: str) -> tuple[dict | None, dict | None]:
+        cached = self.stack_numbers.get(sid)
+        if cached and cached[0] == image_id:
+            return cached[1], cached[2]
+        try:
+            _, data, bscale, bzero = fits.open_image(path)
+        except (OSError, ValueError):
+            return None, None
+        planes = [np.asarray(p, dtype=np.float32) * np.float32(bscale) + np.float32(bzero) for p in data]
+        del data
+        histogram, stats = images.describe(planes)
+        self.stack_numbers[sid] = (image_id, histogram, stats)
+        return histogram, stats
+
+    def stack_star(self, sid: str, x: float, y: float) -> dict | None:
+        """Contract 1's star measurement on the linear stack (the mean of its colour planes)."""
+        with self.lock:
+            s = self.sessions.get(sid)
+            if s is None or not s.get("stack"):
+                return None
+            scale = pixel_scale(s, stack_wcs(s))
+        try:
+            _, data, bscale, bzero = fits.open_image(os.path.join(self.folder(sid), "stack.fits"))
+        except (OSError, ValueError):
+            return None
+        y0, y1, x0, x1 = measure.region_around(data.shape, x, y)
+        with np.errstate(invalid="ignore"), warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)  # all-NaN pixels (no frame covers them)
+            region = np.nanmean(np.asarray(data[:, y0:y1, x0:x1], dtype=np.float32) * bscale + bzero, axis=0)
+        return measure.measure(region, x, y, origin=(x0, y0), saturation=analysis.SATURATED,
+                               scale_arcsec=scale, linear=True)
 
     def alert_view(self, sid: str) -> dict | None:
         """What the notifications look at (alerts.py): the analysed frames in time order, the set
@@ -974,7 +1046,37 @@ def header_fields(header: dict[str, str]) -> dict:
         "gain": fits.number(header, "GAIN"),
         "camera": header.get("INSTRUME"),
         "focalLengthMm": fits.number(header, "FOCALLEN"),
+        "pixelSizeUm": fits.number(header, "XPIXSZ"),
         "ra": r2(ra, 5),
         "dec": r2(dec, 5),
         "site": {"lat": r2(lat, 5), "lon": r2(lon, 5)} if lat is not None and lon is not None else None,
     }
+
+
+def stack_wcs(s: dict) -> fits.Wcs | None:
+    """The live stack's plate solution (FITS terms of stack.fits, rows top-down as displayed).
+
+    The stack is on the reference frame's plane grid: the reference's ASIAIR solve moved to the
+    superpixel grid (fits.Wcs.plane: CD × 2, CRPIX (c + 0.5)/2). Without a solve of the reference
+    (Live frames, a failed solve), the first aligned frame that has one, carried through its
+    transform onto the reference grid (fits.Wcs.through). None when no frame is solved."""
+    scale = s.get("refScale") or 2.0
+    reference = fits.Wcs.from_json(s.get("refWcs"))
+    if reference:
+        return reference.plane(scale)
+    frames = [f for f in s["frames"] if f.get("transform") and f.get("wcs")]
+    frames.sort(key=lambda f: not Store.accepted(f))
+    for f in frames:
+        matrix = np.vstack([np.array(f["transform"]), [0, 0, 1]])
+        return fits.Wcs.from_json(f["wcs"]).plane(scale).through(matrix)
+    return None
+
+
+def pixel_scale(s: dict, solution: fits.Wcs | None) -> float | None:
+    """Arcseconds per stack pixel: from the plate solve, else the header's pixel size and focal length."""
+    if solution:
+        return solution.pixel_scale_arcsec()
+    header = s.get("header") or {}
+    if header.get("pixelSizeUm") and header.get("focalLengthMm"):
+        return 206.265 * header["pixelSizeUm"] / header["focalLengthMm"] * (s.get("refScale") or 2.0)
+    return None

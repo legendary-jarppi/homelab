@@ -21,6 +21,8 @@ export interface Dso {
 	/** Major and minor axis, arcmin (none for the Sharpless objects from Wikidata). */
 	maj: number | null;
 	min: number | null;
+	/** Position angle of the major axis, degrees from north through east (OpenNGC; null when not given). */
+	pa: number | null;
 	mag: number | null;
 	/** IAU abbreviation; "" when unknown (Sharpless objects from Wikidata). */
 	con: string;
@@ -31,7 +33,7 @@ export const CATALOG_SOURCES: { name: string; url: string; license: string; lice
 
 type Row = [string, string[], string[], string, DsoGroup, number, number, number | null, number | null, number | null, number | null, string];
 
-export const catalog: Dso[] = (data.objects as unknown as Row[]).map(([id, aliases, names, type, group, ra, dec, maj, min, , mag, con]) => ({ id, aliases, names, type, group, ra, dec, maj, min, mag, con }));
+export const catalog: Dso[] = (data.objects as unknown as Row[]).map(([id, aliases, names, type, group, ra, dec, maj, min, pa, mag, con]) => ({ id, aliases, names, type, group, ra, dec, maj, min, pa, mag, con }));
 
 export const GROUP_LABELS: Record<DsoGroup, string> = {
 	nebula: 'Nebula',

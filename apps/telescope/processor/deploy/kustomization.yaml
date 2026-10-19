@@ -12,7 +12,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/telescope-processor
-    newTag: "20261019-185258"
+    newTag: "20261019-194828"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: telescope-processor-config
@@ -30,7 +30,8 @@ configMapGenerator:
       - SIRIL_THREADS=4
       # Intermediate frames in 16 bit when 32 bit would need more than this in the work area.
       - WORK_MAX_GB=40
-      # Done finals kept per target.
+      # Done finals kept complete per target; older ones stay as versions (record and JPEGs)
+      # without linear.fits and processed.tif, unless published.
       - FINALS_KEEP=3
       # A calibration set's master is built when no new frame arrived for this long.
       - SETTLE_MIN=10

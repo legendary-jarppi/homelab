@@ -1,9 +1,11 @@
 import { calendarConfigured } from '$lib/server/calendar';
 import { config } from '$lib/server/config';
+import { linkedCamera } from '$lib/server/protect';
+import type { LiveCamera } from '$lib/types';
 import type { PageServerLoad } from './$types';
 
 export const load: PageServerLoad = () => ({
-	cameras: config.cameras,
+	cameras: config.cameras.map((c): LiveCamera => ({ ...c, recorded: linkedCamera(c.id) !== null })),
 	weatherConfigured: config.weatherLocations.length > 0,
 	workoutConfigured: config.workoutToken !== '',
 	workoutAppUrl: config.workoutAppUrl,

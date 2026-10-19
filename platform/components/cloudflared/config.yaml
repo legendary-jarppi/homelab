@@ -19,4 +19,11 @@ ingress:
   # apps/news: the whole site (its own user login still applies).
   - hostname: news.shillyshally.org
     service: http://web.news.svc:3000
+  # apps/telescope (web app): only the public gallery of published pictures; the app itself also
+  # allows nothing else for this host. Everything else on it: 404 here.
+  - hostname: telescope.shillyshally.org
+    path: ^/(gallery(/.*)?|_app/.*|favicon\.svg|api/images/(final|upload)/.*|finals/[^/]+/[^/]+\.(jpe?g|png)|uploads/[^/]+\.jpg)$
+    service: http://telescope-web.telescope.svc:3000
+  - hostname: telescope.shillyshally.org
+    service: http_status:404
   - service: http_status:404

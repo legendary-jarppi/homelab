@@ -289,9 +289,81 @@ export interface Final {
 	/** Started by the processor after a session, not by hand. */
 	automatic: boolean;
 	calibration: CalibrationChoice;
-	outputs: { linearFits: string | null; processedTiff: string | null; previewJpg: string | null; previewSmallJpg: string | null };
+	outputs: { linearFits: string | null; processedTiff: string | null; previewJpg: string | null; previewSmallJpg: string | null; fullJpg?: string | null };
 	/** GET /api/finals/<id> only: the log's tail. */
 	log?: string[];
+	/** D4 gallery (newer processors): shown in the public gallery, the owner's title and note. */
+	published?: boolean;
+	title?: string | null;
+	note?: string | null;
+}
+
+/** The images the viewer opens (B1): the live stack, a final stack, an own upload. */
+export type ImageKind = 'stack' | 'final' | 'upload';
+
+/** FITS WCS keywords of the displayed image's data array (TAN, optionally SIP), as numbers and the CTYPE strings. */
+export type WcsHeader = Record<string, number | string>;
+
+/** GET /api/images/<kind>/<id>. */
+export interface ImageMeta {
+	kind: ImageKind;
+	id: string;
+	target: string | null;
+	width: number;
+	height: number;
+	/** Full resolution, 8-bit. */
+	url: string;
+	smallUrl: string | null;
+	wcs: WcsHeader | null;
+	/** FITS data row 1 is the image's top row (always true). */
+	rowsTopDown: boolean;
+	pixelScaleArcsec: number | null;
+	histogram: { bins: number; scale: string; r: number[]; g: number[]; b: number[] } | null;
+	/** Median and noise per channel, in the histogram's 0–1 scale. */
+	stats: Record<'r' | 'g' | 'b', { median: number | null; noise: number | null }> | null;
+	takenAt: number | null;
+	integrationS: number | null;
+	frames: number | null;
+	/** Star measurement possible (linear data, or an upload's own pixels). */
+	measurable: boolean;
+}
+
+/** GET /api/images/<kind>/<id>/star?x=&y= (display pixels, pixel centres at integers). */
+export interface StarMeasure {
+	found: boolean;
+	x?: number;
+	y?: number;
+	fwhmPx?: number;
+	fwhmArcsec?: number | null;
+	hfrPx?: number;
+	/** 0 = round. */
+	elongation?: number;
+	angleDeg?: number;
+	peak?: number;
+	background?: number;
+	snr?: number;
+	saturated?: boolean;
+	/** Measured on linear data (false: a stretched 8-bit upload). */
+	linear?: boolean;
+	/** [radius px, value above the background]. */
+	profile?: [number, number][];
+}
+
+/** An own processed image (D4, the service's GET /api/uploads). */
+export interface Upload {
+	id: string;
+	target: string;
+	title: string | null;
+	note: string | null;
+	createdAt: number;
+	takenAt: number | null;
+	published: boolean;
+	width: number;
+	height: number;
+	url: string;
+	smallUrl: string;
+	original: { filename: string; bytes: number; contentType: string };
+	imageKind: 'upload';
 }
 
 /** Wind at the site, hourly (unix s, m/s at 10 m). */

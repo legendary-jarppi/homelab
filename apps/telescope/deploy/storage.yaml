@@ -14,8 +14,12 @@ spec:
     requests:
       storage: 500Gi
 ---
-# Sessions (numbers, decisions, guiding and telemetry history), stacks (32-bit FITS, ~27 MB each)
-# and previews (~0.5 MB per frame). Backed up nightly like every local-path volume.
+# Sessions (numbers, decisions, guiding and telemetry history), stacks (32-bit FITS, ~27 MB each),
+# previews (~0.5 MB per frame) and the owner's own uploaded images (original + decoded pixels +
+# JPEGs, roughly 2–3 × the file each; up to 300 MB per file). Backed up nightly like every
+# local-path volume. local-path neither enforces nor resizes the request (no allowVolumeExpansion):
+# the directory lives on the node's /var/lib/rancher (~790 GB free), so uploads are bounded by the
+# host's disk, not by this number; the upload endpoint refuses a file when under 1 GiB would remain.
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

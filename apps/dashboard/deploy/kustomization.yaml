@@ -14,7 +14,7 @@ resources:
   - service-ingress.yaml
 images:
   - name: localhost/home-dashboard
-    newTag: "20261019-184539"
+    newTag: "20261019-191658"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: dashboard-config
@@ -58,9 +58,10 @@ configMapGenerator:
       - TELESCOPE_SITE=Ristiina:61.496:27.576
       # UniFi Protect motion events for the Cameras tab (login in secret dashboard-protect).
       - PROTECT_URL=https://192.168.1.1
-      # Protect camera name:label, in display order.
-      - PROTECT_CAMERAS=Ulko-ovi:Front door,Takapiha:Backyard,Autokatos:Carport
-      # The cabin's Protect (UCG Max, over the Site Magic VPN; same login): its cameras' events, and
-      # snapshots for their live tiles. name:label:CAMERAS id, in display order.
+      # Protect camera name:label:CAMERAS id, in display order. The id links the camera's live tile and
+      # video to its recordings (the viewer's timeline).
+      - PROTECT_CAMERAS=Ulko-ovi:Front door:front-door,Takapiha:Backyard:backyard,Autokatos:Carport:carport
+      # The cabin's Protect (UCG Max, over the Site Magic VPN; same login): its cameras' events and
+      # recordings, and snapshots for their live tiles (cheaper than go2rtc frames over its mobile link).
       - CABIN_PROTECT_URL=https://192.168.20.1
       - CABIN_PROTECT_CAMERAS=Sisääntulotie:Driveway:cabin-driveway,Etuovi:Cabin door:cabin-door,Piha talolta:Yard from cabin:cabin-yard,Piha saunalta:Yard from sauna:cabin-sauna-yard,Järvi saunalta:Lake:cabin-lake,Imeytyskenttä:Drain field:cabin-drain-field

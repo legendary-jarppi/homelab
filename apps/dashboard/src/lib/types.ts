@@ -418,3 +418,17 @@ export interface ProtectData {
 	events: { id: string; camera: string; start: number; end: number; types: string[] }[];
 	windowHours: number;
 }
+
+/** GET /api/cameras/<id>/timeline: a recorded camera's events in a window, unix ms; ongoing ones end now. */
+export interface CameraTimeline {
+	/** Oldest recording Protect still has (it deletes the oldest when the disk is full); null if unknown. */
+	recordingStart: number | null;
+	events: { start: number; end: number; types: string[] }[];
+}
+
+/** A live camera (CAMERAS) as the page gets it; `recorded`: linked to a Protect camera, so its viewer has a timeline. */
+export interface LiveCamera {
+	id: string;
+	label: string;
+	recorded: boolean;
+}

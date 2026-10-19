@@ -11,15 +11,15 @@ export interface WeatherLocation {
 	longitude: number;
 }
 
-/** A Protect camera as configured: its Protect name, the dashboard's label, optionally a go2rtc stream. */
+/** A Protect camera as configured: its Protect name, the dashboard's label, optionally its live camera. */
 export interface ProtectCameraConfig {
 	name: string;
 	label: string;
-	/** CAMERAS id whose tile pictures come from this camera's Protect snapshots instead of go2rtc. */
+	/** The CAMERAS id showing this camera live: its viewer gets this camera's recordings (and, on the cabin's console, its tile Protect's snapshots); '' for none. */
 	stream: string;
 }
 
-/** "Ulko-ovi:Front door,Etuovi:Cabin door:cabin-door" -> [{ name, label, stream }], in display order. */
+/** "Ulko-ovi:Front door:front-door,…" -> [{ name, label, stream }], in display order. */
 const protectCameras = (value: string | undefined): ProtectCameraConfig[] =>
 	(value ?? '')
 		.split(',')

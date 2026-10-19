@@ -15,17 +15,27 @@ Cluster-internal:
     GET  /api/targets                              integration goals and wishlist per target
     PUT  /api/targets/<key>                        {"goalHours"?, "wishlist"?, "note"?}
     GET  /frames/<id>.jpg, /frames/<id>-small.jpg  frame previews (~1504 px, ~300 px)
-    GET  /stacks/<id>.jpg, -small.jpg, .fits       the session's stack
+    GET  /stacks/<id>.jpg, -small.jpg, .fits       the session's stack (the .jpg at full resolution)
+    GET  /api/images/stack|upload/<id>             image metadata: full-resolution URL, plate solve, histogram
+    GET  /api/images/stack|upload/<id>/star?x=&y=  the star nearest a click, measured on the linear data
+    GET  /api/uploads, /api/uploads/<id>           the owner's own processed images (gallery)
+    POST /api/uploads                              multipart: file, target, title?, note?, takenAt?
+    PUT  /api/uploads/<id>                         {"target"?, "title"?, "note"?, "published"?, "takenAt"?}
+    DELETE /api/uploads/<id>
+    GET  /uploads/<id>.jpg, -small.jpg, /<id>/original   an upload: display JPEG, 600 px, the file as uploaded
     GET  /metrics                                  Prometheus
     GET  /healthz
 """
 
 from __future__ import annotations
 
+import email.message
 import json
 import logging
+import math
 import os
 import re
+import shutil
 import signal
 import threading
 import time
@@ -43,6 +53,7 @@ from live import Live
 from notify import Notifier
 from sessions import Store
 from targets import KEY as TARGET_KEY, Targets
+from uploads import ID as UPLOAD_ID, MAX_BYTES as UPLOAD_MAX_BYTES, UploadError, Uploads, parse_fields
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
 log = logging.getLogger("telescope")
@@ -96,6 +107,9 @@ SESSION = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})$")
 OVERRIDE = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})/frames/([0-9a-f]{16})$")
 REPROCESS = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})/reprocess$")
 TARGET = re.compile(r"^/api/targets/([^/?]{1,256})$")
+IMAGE = re.compile(r"^/api/images/(stack|upload)/([a-z0-9-]{1,128})(/star)?$")
+UPLOAD = re.compile(r"^/api/uploads/([0-9a-f]{16})$")
+UPLOAD_FILE = re.compile(r"^/uploads/([0-9a-f]{16})(?:(-small)?\.jpg|/(original))$")
 
 
 class Telescope:
@@ -456,7 +470,7 @@ def read_file(path: str) -> bytes | None:
         return None
 
 
-def serve(telescope: Telescope, store: Store, targets: Targets) -> ThreadingHTTPServer:
+def serve(telescope: Telescope, store: Store, targets: Targets, uploads: Uploads) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def send(self, status: int, kind: str, body: bytes, cache: str = "no-store") -> None:
             self.send_response(status)
@@ -471,6 +485,43 @@ def serve(telescope: Telescope, store: Store, targets: Targets) -> ThreadingHTTP
 
         def not_found(self) -> None:
             self.send(404, "text/plain", b"not found\n")
+
+        def text(self, status: int, message: str) -> None:
+            self.send(status, "text/plain", message.encode() + b"\n")
+
+        def send_path(self, path: str | None, kind: str, cache: str, disposition: str | None = None) -> None:
+            """A file streamed from disk (uploads' originals reach 300 MB)."""
+            try:
+                f = open(path, "rb") if path else None
+            except OSError:
+                f = None
+            if f is None:
+                return self.not_found()
+            with f:
+                self.send_response(200)
+                self.send_header("content-type", kind)
+                self.send_header("content-length", str(os.fstat(f.fileno()).st_size))
+                self.send_header("cache-control", cache)
+                if disposition:
+                    self.send_header("content-disposition", disposition)
+                self.end_headers()
+                shutil.copyfileobj(f, self.wfile, 2**20)
+
+        def image(self, kind: str, ident: str, star: bool, query: str) -> None:
+            if kind == "upload" and not UPLOAD_ID.match(ident):
+                return self.not_found()
+            if not star:
+                meta = store.stack_image(ident) if kind == "stack" else uploads.image(ident)
+                return self.json(200, meta) if meta else self.not_found()
+            params = urllib.parse.parse_qs(query)
+            try:
+                x, y = float(params["x"][0]), float(params["y"][0])
+                if not (math.isfinite(x) and math.isfinite(y)):
+                    raise ValueError
+            except (KeyError, ValueError):
+                return self.text(400, "expected ?x=<display px>&y=<display px>")
+            result = store.stack_star(ident, x, y) if kind == "stack" else uploads.star(ident, x, y)
+            return self.json(200, result) if result else self.not_found()
 
         def do_GET(self) -> None:  # noqa: N802 - http.server's naming
             path, _, query = self.path.partition("?")
@@ -499,22 +550,70 @@ def serve(telescope: Telescope, store: Store, targets: Targets) -> ThreadingHTTP
                 cache = "public, max-age=31536000, immutable" if "v=" in query else "no-cache"
                 kind = "application/fits" if m[3] == "fits" else "image/jpeg"
                 return self.send(200, kind, body, cache)
+            if m := IMAGE.match(path):
+                return self.image(m[1], m[2], bool(m[3]), query)
+            if path == "/api/uploads":
+                return self.json(200, uploads.list())
+            if m := UPLOAD.match(path):
+                entry = uploads.get(m[1])
+                return self.json(200, entry) if entry else self.not_found()
+            if m := UPLOAD_FILE.match(path):
+                if m[3]:
+                    info = uploads.original_info(m[1])
+                    if info is None:
+                        return self.not_found()
+                    name = info["filename"]
+                    ascii_name = re.sub(r'[^A-Za-z0-9._ -]', "_", name) or "upload"
+                    disposition = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{urllib.parse.quote(name)}"
+                    return self.send_path(uploads.path(m[1], "original"), info["contentType"],
+                                          "private, max-age=31536000, immutable", disposition)
+                # An upload's image never changes (a new version is a new upload): cacheable forever.
+                return self.send_path(uploads.path(m[1], "small.jpg" if m[2] else "display.jpg"), "image/jpeg",
+                                      "public, max-age=31536000, immutable")
             if path == "/metrics":
                 return self.send(200, "text/plain; version=0.0.4", telescope.metrics().encode())
             if path == "/healthz":
                 return self.send(200, "text/plain", b"ok\n")
             self.not_found()
 
-        def body(self):
-            """The request's JSON (None when it is not JSON or over 4 KB)."""
+        def body(self, limit: int = 4096):
+            """The request's JSON (None when it is not JSON or over `limit` bytes)."""
             try:
                 length = int(self.headers.get("content-length") or 0)
-                return json.loads(self.rfile.read(length) or b"{}") if length <= 4096 else None
+                return json.loads(self.rfile.read(length) or b"{}") if length <= limit else None
             except ValueError:
                 return None
 
+        def upload(self) -> None:
+            """POST /api/uploads: the multipart body streamed to disk, converted, kept."""
+            self.close_connection = True  # an error may leave the body unread
+            header = email.message.Message()
+            header["content-type"] = self.headers.get("content-type", "")
+            boundary = header.get_param("boundary")
+            if header.get_content_type() != "multipart/form-data" or not isinstance(boundary, str) \
+                    or not 0 < len(boundary) <= 200:
+                return self.text(400, "expected multipart/form-data with a boundary")
+            try:
+                length = int(self.headers["content-length"])
+            except (KeyError, TypeError, ValueError):
+                return self.text(411, "content-length required")
+            if length > UPLOAD_MAX_BYTES + 2**20:
+                return self.text(413, f"file over {UPLOAD_MAX_BYTES // 2**20} MB")
+            try:
+                entry = uploads.create(self.rfile, length, boundary.encode("latin-1"))
+            except UploadError as e:
+                log.warning("upload refused: %s", e)
+                return self.text(e.status, str(e))
+            except OSError as e:
+                log.warning("upload failed: %s", e)
+                return self.text(500, f"upload failed: {e}")
+            self.close_connection = False
+            return self.json(201, entry)
+
         def do_POST(self) -> None:  # noqa: N802
             path = self.path.split("?", 1)[0]
+            if path == "/api/uploads":
+                return self.upload()
             body = self.body()
             if m := OVERRIDE.match(path):
                 if not isinstance(body, dict) or "accepted" not in body or body["accepted"] not in (True, False, None):
@@ -533,6 +632,15 @@ def serve(telescope: Telescope, store: Store, targets: Targets) -> ThreadingHTTP
             self.not_found()
 
         def do_PUT(self) -> None:  # noqa: N802
+            if m := UPLOAD.match(self.path):
+                fields = parse_fields(self.body(16384), partial=True)
+                if isinstance(fields, str):
+                    return self.text(400, fields)
+                entry = uploads.update(m[1], fields)
+                if entry is None:
+                    return self.not_found()
+                log.info("upload %s: %s", m[1], json.dumps({k: v for k, v in fields.items() if k != "note"}))
+                return self.json(200, entry)
             m = TARGET.match(self.path)
             if not m:
                 return self.not_found()
@@ -545,6 +653,15 @@ def serve(telescope: Telescope, store: Store, targets: Targets) -> ThreadingHTTP
             entry = targets.put(key, fields)
             log.info("target %s: %s", key, json.dumps(fields))
             return self.json(200, entry)
+
+        def do_DELETE(self) -> None:  # noqa: N802
+            m = UPLOAD.match(self.path)
+            if not m:
+                return self.not_found()
+            if not uploads.delete(m[1]):
+                return self.not_found()
+            log.info("upload %s deleted", m[1])
+            return self.send(204, "text/plain", b"")
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002 - quiet access log
             pass
@@ -574,7 +691,7 @@ def main() -> None:
     store.online = telescope.is_online
     if live:
         Recorder(journal, live.snapshot)
-    serve(telescope, store, Targets(DATA_DIR))
+    serve(telescope, store, Targets(DATA_DIR), Uploads(DATA_DIR))
     Alerts(telescope, notifier, Weather(os.environ.get("WEATHER_URL", WEATHER_URL))).start()
     files, size = archive.totals()
     log.info("telescope: ASIAIR %s, roots %s, live %s, notifications %s, archive %d files (%.1f GB), listening on :%d",

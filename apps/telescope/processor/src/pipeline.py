@@ -27,7 +27,7 @@ and the app's own version of it:
                                            from the reference frame's ASIAIR solve, else Siril's)
   or imaging.star_white_balance           (when PCC cannot run)
   autostretch -linked -2.8 0.15; mirrorx  (rows top-down like the ASIAIR app and the live stack)
-  savetif -astro -deflate, savejpg 1504 px and 300 px
+  savetif -astro -deflate, savejpg full size (full.jpg, the viewer's), 1504 px and 300 px
 """
 
 from __future__ import annotations
@@ -192,9 +192,11 @@ class Final:
         shutil.rmtree(os.path.join(self.work, "stack"), ignore_errors=True)
         return description
 
-    def process(self, ra: float | None, dec: float | None, focal: float | None, pixel: float | None) -> str:
+    def process(self, ra: float | None, dec: float | None, focal: float | None,
+                pixel: float | None) -> tuple[str, dict]:
         """The app's own version: cut to the area with data, background, colour, stretch, TIFF
-        and JPEGs. Returns how the colour was calibrated."""
+        and JPEGs (`full.jpg` at full resolution for the viewer). Returns how the colour was
+        calibrated and the crop ({x, y, width, height} in the stack, 0-based)."""
         x0, y0, w, h, full_w, full_h = imaging.crop_to_coverage(os.path.join(self.work, "linear.fit"),
                                                                 os.path.join(self.work, "cropped.fit"))
         self.on_log(f"processed version cut to {w}×{h} at ({x0}, {y0}) of the {full_w}×{full_h} stack (area every pixel of has data)")
@@ -223,6 +225,6 @@ class Final:
                 colour = f"none (photometric calibration failed: {reason}; too few stars for a white balance: {e2})"
         # Linked (keeps the calibrated colour); sky at 15 % instead of Siril's 25 %: darker, more contrast.
         self.run(["load colour", "autostretch -linked -2.8 0.15", "mirrorx", "savetif processed -astro -deflate",
-                  f"resample -maxdim={PREVIEW_PX}", "savejpg preview 90",
+                  "savejpg full 92", f"resample -maxdim={PREVIEW_PX}", "savejpg preview 90",
                   f"resample -maxdim={SMALL_PX}", "savejpg preview-small 85"], "stretch", "stretching")
-        return colour
+        return colour, {"x": x0, "y": y0, "width": w, "height": h}

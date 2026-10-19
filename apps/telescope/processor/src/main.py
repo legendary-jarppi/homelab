@@ -5,6 +5,9 @@ Frames and their accept decisions come from the telescope service's API. Cluster
     GET  /api/library/match?target=<name>       masters for a target's lights, with warnings
     GET  /api/finals, /api/finals/<id>          final stacks (newest first; one with its log tail)
     POST /api/finals                            {"target": "<ASIAIR target>", "nights"?: [...]} → 202
+    PUT  /api/finals/<id>                       {"published"?, "title"?, "note"?} → the final
+    GET  /api/images/final/<id>                 the processed image for the viewer: size, plate solve, histogram
+    GET  /api/images/final/<id>/star?x=&y=      a star measured on the linear stack (display pixels)
     GET  /downloads/<target>.tar?nights=&include=rejected   lights, calibration, masters, final, README
     GET  /masters/<id>.fits, /finals/<id>/<file>
     GET  /metrics, /healthz
@@ -14,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -61,6 +65,7 @@ WORK_MAX_BYTES = int(env_number("WORK_MAX_GB", 40) * 1e9)
 TARGET = re.compile(r"^[^/\0]{1,128}$")
 NIGHT = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 FINAL = re.compile(r"^/api/finals/([a-z0-9-]{1,128})$")
+IMAGE = re.compile(r"^/api/images/final/([a-z0-9-]{1,128})(/star)?$")
 FINAL_FILE = re.compile(r"^/finals/([a-z0-9-]{1,128})/([a-z.-]{1,32})$")
 MASTER = re.compile(r"^/masters/([a-z0-9.-]{1,160})\.fits$")
 DOWNLOAD = re.compile(r"^/downloads/(.+)\.tar$")
@@ -158,12 +163,15 @@ def serve(library: Library, finals: Finals, service: Service) -> ThreadingHTTPSe
                 if m := FINAL.match(path):
                     final = finals.get(m[1])
                     return self.json(200, final) if final else self.text(404, "not found")
+                if m := IMAGE.match(path):
+                    return self.image(m[1], bool(m[2]), query)
                 if m := FINAL_FILE.match(path):
                     name = m[2]
                     final = finals.get(m[1])
                     download = f"{final['target']} {final['id']} {name}" if final else None
-                    # Finals never change once written: cacheable.
-                    return self.file(finals.file_path(m[1], name), download if name != "log.txt" else None,
+                    # Finals' files never change once written: cacheable. full.jpg is the viewer's
+                    # image (inline); the others download with readable names.
+                    return self.file(finals.file_path(m[1], name), download if name not in ("log.txt", "full.jpg") else None,
                                      "no-cache" if name == "log.txt" else "public, max-age=31536000, immutable")
                 if m := MASTER.match(path):
                     if m[1] not in {x["id"] for x in library.masters_list()}:
@@ -204,6 +212,46 @@ def serve(library: Library, finals: Finals, service: Service) -> ThreadingHTTPSe
                 self.wfile.write(chunk)
                 sent += len(chunk)
             log.info("download %s: %d files, %.1f GB in %.0f s", name, len(tar.members), sent / 1e9, time.time() - started)
+
+        def image(self, fid: str, star: bool, query: dict) -> None:
+            if not star:
+                image = finals.image(fid)
+                return self.json(200, image) if image else self.text(404, "not found")
+            try:
+                x, y = float((query.get("x") or [""])[0]), float((query.get("y") or [""])[0])
+            except ValueError:
+                return self.text(400, "expected ?x=<display px>&y=<display px>")
+            if not (math.isfinite(x) and math.isfinite(y)):
+                return self.text(400, "expected ?x=<display px>&y=<display px>")
+            if finals.image(fid) is None:
+                return self.text(404, "not found")
+            try:
+                measured = finals.star(fid, x, y)
+            except (OSError, ValueError):
+                measured = None
+            if measured is None:
+                return self.text(409, "no linear data kept for this final (an older version): not measurable")
+            self.json(200, measured)
+
+        def do_PUT(self) -> None:  # noqa: N802
+            m = FINAL.match(self.path.split("?", 1)[0])
+            if not m:
+                return self.text(404, "not found")
+            try:
+                length = int(self.headers.get("content-length") or 0)
+                body = json.loads(self.rfile.read(length) or b"{}") if length <= 16384 else None
+            except ValueError:
+                body = None
+            if not isinstance(body, dict):
+                return self.text(400, 'expected {"published"?: bool, "title"?: string|null, "note"?: string|null}')
+            try:
+                self.json(200, finals.update(m[1], body))
+            except KeyError:
+                self.text(404, "not found")
+            except ValueError as e:
+                self.text(400, str(e))
+            except PermissionError as e:
+                self.text(409, str(e))
 
         def do_POST(self) -> None:  # noqa: N802
             path = self.path.split("?", 1)[0]

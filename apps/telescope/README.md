@@ -6,16 +6,16 @@ The cabin telescope's imaging sessions for the dashboard's *Telescope* tab and t
 flowchart LR
   air[ASIAIR Plus<br/>cabin 192.168.20.121] -- "SMB 445 (guest, read only)<br/>JSON-RPC 4700/4400 (getters only)<br/>over Site Magic VPN" --> t[telescope]
   t --> a[(telescope-archive<br/>FITS, logs)]
-  t --> s[(telescope-data<br/>sessions, stacks, previews,<br/>live history, target goals)]
+  t --> s[(telescope-data<br/>sessions, stacks, previews,<br/>live history, target goals,<br/>own uploaded images)]
   t -- "/api/status, /frames/…jpg" --> d[dashboard: Telescope tab]
-  w[telescope-web<br/>telescope.lab.internal] -- "/api/…, /stacks/…, /frames/…,<br/>POST manual decisions, PUT target goals" --> t
+  w[telescope-web<br/>telescope.lab.internal] -- "/api/…, /stacks/…, /frames/…, /uploads/…,<br/>POST manual decisions, PUT target goals,<br/>POST/PUT/DELETE uploads" --> t
   pr[telescope-processor] -- "/api/sessions/…" --> t
   t -- "POST /api/send" --> n[notify]
   t -- "HTTPS 443: air temperature, dew point" --> om[Open-Meteo]
   p[Prometheus] -- /metrics --> t
 ```
 
-Cluster-internal only (`http://telescope.telescope.svc:8080`, no Ingress); a NetworkPolicy admits the dashboard, the web app (`app.kubernetes.io/name: telescope-web`, the only caller of the POSTs and PUTs), the telescope processor (`app.kubernetes.io/name: telescope-processor`: session reports with the frames' `archivePath`, GETs only) and Prometheus; out: the ASIAIR, apps/notify, DNS and the internet on 443 (Open-Meteo, for the dew notification only). Python 3.13 on `python:3.13-slim`: `numpy` and `scipy` (frames, registration, stacking), `pillow` (JPEG), `smbprotocol` (the shares). It only reads from the ASIAIR: files, and its state through getter methods; it never calls anything that changes the ASIAIR and never deletes anything there.
+Cluster-internal only (`http://telescope.telescope.svc:8080`, no Ingress); a NetworkPolicy admits the dashboard, the web app (`app.kubernetes.io/name: telescope-web`, the only caller of the POSTs, PUTs and DELETEs), the telescope processor (`app.kubernetes.io/name: telescope-processor`: session reports with the frames' `archivePath`, GETs only) and Prometheus; out: the ASIAIR, apps/notify, DNS and the internet on 443 (Open-Meteo, for the dew notification only). Python 3.13 on `python:3.13-slim`: `numpy` and `scipy` (frames, registration, stacking), `pillow` (JPEG, PNG), `tifffile` with `imagecodecs` (uploaded TIFFs; LZW needs the latter), `smbprotocol` (the shares). It only reads from the ASIAIR: files, and its state through getter methods; it never calls anything that changes the ASIAIR and never deletes anything there.
 
 ## What it reads
 
@@ -45,8 +45,10 @@ From these: `live.activity` (Exposing, Meridian flip, Auto focus, GoTo, Plate so
 | Where | What | Size |
 |---|---|---|
 | PVC `telescope-archive` (`/archive`, local-path, request 500 Gi, **not backed up**: `EXCLUDE` in [backup](../../platform/components/backup/README.md)) | Every file byte for byte as on the ASIAIR, by night (local date of the evening; before noon counts as the previous evening) and target: `<YYYY>/<night>/<target>/Light_….fit`, `<YYYY>/<night>/Bias|Dark|Flat/….fit`, `<YYYY>/<night>/Autorun_Log_….txt` (and PHD2 guide logs). Written to a temporary name and renamed with the ASIAIR's modification time; a file the ASIAIR rewrites (new size or newer time) is copied again | ~1.8 GB per 100 frames |
-| PVC `telescope-data` (`/data`, local-path, 20 Gi, backed up nightly) | `sessions/<id>/session.json` (frames: file, numbers, transform, automatic and manual decision; the reference frame's stars and plate solve; the stack's numbers), `sessions/<id>/stack.fits` (32-bit float, superpixel size 1504×1504×3, NaN where no frame covers), `stack.jpg` (1504 px), `stack-small.jpg` (300 px); `previews/<ab>/<frame id>[-small].jpg` for every frame; `live/<night>.jsonl`; `targets.json` (integration goals, wishlist and notes per target, from the web app) | ~0.5 MB per frame, ~28 MB per stack, ~2 MB per night |
+| PVC `telescope-data` (`/data`, local-path, request 20 Gi, backed up nightly) | `sessions/<id>/session.json` (frames: file, numbers, transform, automatic and manual decision; the reference frame's stars and plate solve; the stack's numbers), `sessions/<id>/stack.fits` (32-bit float, superpixel size 1504×1504×3, NaN where no frame covers), `stack.jpg` (full superpixel size 1504 px, JPEG quality 92), `stack-small.jpg` (300 px); `previews/<ab>/<frame id>[-small].jpg` for every frame; `live/<night>.jsonl`; `targets.json` (integration goals, wishlist and notes per target, from the web app); `uploads/<id>/` (the owner's own images, see [Own uploads](#own-uploads)) | ~0.5 MB per frame, ~28 MB per stack, ~2 MB per night; an upload ~2–3 × its file |
 | emptyDir `cache` (`/cache`, sizeLimit 20 Gi) | Aligned frames for restacking (`<session>/<frame id>.npy`, float16, sky-subtracted, 13.6 MB each), the least recently used sessions pruned above `CACHE_MAX_GB` (15); rebuilt from the archive when missing | up to 15 GB |
+
+local-path neither enforces nor resizes a request (the StorageClass has no `allowVolumeExpansion`): `telescope-data` is a directory on the node's `/var/lib/rancher` (~790 GB free), so the uploads are bounded by the host's disk, not by the 20 Gi in `deploy/storage.yaml`. An upload is refused (507) when less than 1 GiB would remain on the volume.
 
 At start the service scans the archive and loads every `session.json`: sessions, decisions and stacks survive restarts; light frames in the archive that no session knows (a deleted `session.json`, an older backup) are grouped into sessions again and analysed from the archive. Sessions are grouped when a frame is first seen and never regrouped; the id is the local time of the first frame and the target (`20261017-2034-c-9`).
 
@@ -123,6 +125,31 @@ Topic `telescope` (off by default: turn it on in the notify app). Each links to 
 
 A restart does not repeat notifications for what was already there: the run, the clouds and HFR trend of the session's frames as loaded, the live state at the first answer from the control ports and the storage at its first listing are taken as known (a guiding loss or a warm sensor already going on then is not announced).
 
+## Images: full resolution, plate solve, star measurement
+
+For the web app's viewer (zoom to 1:1 and beyond, annotation, star clicks) every image has a metadata endpoint, `GET /api/images/<kind>/<id>`, in one shape shared with the processor's finals (`kind` `stack` here with the session id, `upload` here, `final` in the processor). Pixel convention for all of them: the displayed image shows FITS data row 1 at the **top** (as every preview so far and the ASIAIR's own thumbnails); `wcs` is in FITS terms of the data array (1-based, `y` in data rows) with `rowsTopDown: true`; display pixel = FITS pixel − 1, i.e. the array's column/row index with pixel centres at integers. The star endpoint takes and returns display pixels.
+
+| Field | Live stack (`stack`) | Own upload (`upload`) |
+|---|---|---|
+| `url`, `smallUrl` | `/stacks/<id>.jpg?v=<imageId>` (the stack at full superpixel size, 1504², quality 92; no downscaling), `/stacks/<id>-small.jpg?v=…` (300 px) | `/uploads/<id>.jpg` (full resolution, quality 92), `/uploads/<id>-small.jpg` (600 px) |
+| `wcs` | FITS keywords `CTYPE1/2` (`RA---TAN`, `DEC--TAN`), `CRVAL1/2`, `CRPIX1/2`, `CD1_1…CD2_2`: the reference frame's ASIAIR plate solve moved to the superpixel grid (`fits.Wcs.plane`: plane pixel p spans camera pixels 2p, 2p+1, so `CD × 2` and `CRPIX = (CRPIX_camera + 0.5) / 2`). The stack is on the reference's grid, so that is its solution; if the reference has no solve (Live frames), the first aligned frame that has one, carried through its transform onto the reference grid (`fits.Wcs.through`, exact for an affine map). Null when no frame is solved (`sessions.stack_wcs`) | From an uploaded FITS with a TAN solution (CD, or CDELT with PC/CROTA2 turned into CD; `-SIP` keywords `A_ORDER`, `A_p_q`, `B_…`, `AP_…`, `BP_…` passed through). Null for JPEG/PNG/TIFF (XISF and "align to a final" are not supported) |
+| `pixelScaleArcsec` | From the solution, else the header's `XPIXSZ` and `FOCALLEN` × 2 (sessions analysed since this field exists), else null | From the solution, else null |
+| `histogram`, `stats` | From `stack.fits` (the linear data), computed once per stack version | Computed at upload from the decoded pixels (larger images row-sampled to ~4 MP per channel) |
+| `takenAt`, `integrationS`, `frames`, `measurable` | First stacked frame's start, accepted exposure, accepted frames; `measurable` while `stack.fits` exists | The form's `takenAt` (else FITS `DATE-OBS`), FITS `LIVETIME`/`EXPTIME` and `STACKCNT`/`NCOMBINE`, else null; `measurable` false for 8-bit files (a stretched image only; stars are still measured, `linear: false`) |
+
+`histogram`: `{ bins: 256, scale, min, max, r, g, b }`, integer counts over one range for all channels (`min`…`max` in the data's units: the finite data range for the stack, 0…full scale for uploads: 255, 65535, 1.0 for 0–1 float data, else the data maximum); mono data as r = g = b. `stats`: per channel `{ median, noise }` in the same normalised 0–1 scale (noise: MAD of horizontal neighbour differences × 1.4826 / √2).
+
+**Star measurement** (`measure.py`, numpy only; the processor uses the same file): on the stack the mean of the three linear planes of `stack.fits`, read through a memory map in a ±100 px window; on an upload the mean of the channels of `pixels.npy`. The brightest peak (3×3 mean) within 12 px of the click, 5σ above the local background (sigma-clipped median and MAD of a ±48 px box). An elliptical Moffat profile (β free, each pixel integrated by 3×3 sub-samples, saturated pixels left out) fitted by Levenberg–Marquardt gives the centroid, `fwhmPx` = √(major·minor), `elongation` = 1 − minor/major (0 = round) and `angleDeg` (the major axis, clockwise from +x on the screen, 0–180); second moments if the fit fails. `hfrPx` is the flux-weighted mean radius within 3 × FWHM (the frames' HFR formula without clipping noise at zero); `snr` the flux within 1.5 × FWHM over σ·√pixels (background-limited, no gain known for a stack); `peak` the highest pixel within 2 px; `saturated` at 60000 ADU on the stack (as the frames' analysis), 98 % of full scale on uploads; `profile` the mean value above the background in 0.5 px rings out to max(8, 3 × FWHM) px; `fwhmArcsec` with `pixelScaleArcsec`. Tested on synthetic Gaussian and Moffat stars (FWHM 2.2–10 px within 5 %); ~5–400 ms per click.
+
+## Own uploads
+
+The owner's own processed images (PixInsight, Siril exports) for the web app's gallery, `uploads.py`, under `/data/uploads/<id>/` on the backed-up volume: `meta.json` (target, title, note, dates, publish flag, the original's name/size/type, size, bit depth, solution, histogram), `original` (byte for byte), `pixels.npy` (the decoded pixels in their own type, memory-mapped for star clicks: about the uncompressed image size), `display.jpg` (full resolution, quality 92), `small.jpg` (600 px). Ids are 16 random hex characters; the image of an id never changes (a new version is a new upload), so its JPEGs are cacheable forever.
+
+- **Streaming:** the multipart body is parsed in 1 MiB chunks and the file written to `/data/uploads/.tmp-<id>/` as it arrives (never whole in memory); `Content-Length` is required and checked against 300 MB before reading. A failed or interrupted upload leaves nothing (the temporary folder is removed, also at start).
+- **Formats:** recognised by content, not name: JPEG, PNG (Pillow; 16-bit grey kept, 16-bit RGB PNG comes out as 8-bit), TIFF (`tifffile`: 8/16-bit integer, 32-bit float, RGB or grey, planar or interleaved, uncompressed, LZW, Deflate, PackBits; first page; alpha dropped), FITS (BITPIX 8/16/32/−32/−64, BZERO/BSCALE, 2-D or 3 colour planes, converted in row bands). One conversion at a time; measured locally: a 261 MB 16-bit RGB TIFF (6600²) in 1.6 s with a peak resident size of 800 MB for the whole service.
+- **Display:** data deeper than 8 bits whose median lies under 8 % of full scale is linear (an unstretched stack): it gets the frames' per-channel screen stretch and counts as `linear` for star measurements; anything else (the usual stretched export) is scaled to 8 bits as it is. No downscaling.
+- **Publishing** is only a flag here (`published`, false on upload); the web app decides what its public gallery shows.
+
 ## API
 
 JSON, times in unix seconds, nulls where unknown. Shapes in `src/main.py` (`status`), `src/live.py` (`snapshot`) and `src/sessions.py` (`summary`, `detail`, `frame_json`).
@@ -138,11 +165,18 @@ JSON, times in unix seconds, nulls where unknown. Shapes in `src/main.py` (`stat
 | `PUT /api/targets/<key>` | URL-encoded key, up to 64 of `A-Z a-z 0-9 space + . _ ( ) -`; JSON `{ "goalHours"?, "wishlist"?, "note"? }` (goal 0 < h ≤ 1000, note ≤ 500 characters): only the named fields change, null clears one, an entry with everything cleared is removed → 200 the entry (`{ goalHours: null, wishlist: false, note: null, updatedAt }` once removed); 400 with the reason in text |
 | `GET /frames/<id>.jpg`, `/frames/<id>-small.jpg` | Previews of every frame; ids change with the file, so they are cacheable forever |
 | `GET /stacks/<session id>.jpg`, `-small.jpg`, `.fits` | The stack; with `?v=<imageId>` cacheable forever, without it revalidated |
+| `GET /api/images/stack/<session id>`, `GET /api/images/upload/<id>` | Image metadata for the web app's viewer (the processor answers the same shape for `final`): `{ kind, id, target, width, height, url, smallUrl, wcs, rowsTopDown: true, pixelScaleArcsec, histogram, stats, takenAt, integrationS, frames, measurable }` (uploads also `title`), see [Images](#images-full-resolution-plate-solve-star-measurement) |
+| `GET /api/images/stack/<session id>/star?x=&y=`, `…/upload/<id>/star?x=&y=` | The brightest star within 12 px of display pixel (x, y): `{ found, x, y, fwhmPx, fwhmArcsec, hfrPx, elongation, angleDeg, peak, background, snr, saturated, linear, profile }`; 400 without numeric x/y, 404 for an unknown image |
+| `GET /api/uploads` | `[{ id, target, title, note, createdAt, takenAt, published, width, height, url, smallUrl, original { filename, bytes, contentType }, imageKind: "upload" }]`, newest first; `GET /api/uploads/<id>` one of them |
+| `POST /api/uploads` | `multipart/form-data`: `file` (JPEG, PNG, TIFF 8/16/32-bit, FITS; ≤ 300 MB), `target` (a catalog id as in `/api/targets`), `title`? (≤ 200), `note`? (≤ 2000), `takenAt`? (unix seconds or ISO 8601; else the FITS `DATE-OBS`) → 201 the upload (unpublished). Needs `Content-Length` (411 without), 413 over 300 MB, 415 not an image, 400 with the reason in text, 507 disk full |
+| `PUT /api/uploads/<id>` | JSON `{ "target"?, "title"?, "note"?, "published"?, "takenAt"? }` (null clears title, note, takenAt) → 200 the upload; 400 with the reason |
+| `DELETE /api/uploads/<id>` | The upload and its files → 204 |
+| `GET /uploads/<id>.jpg`, `-small.jpg`, `/uploads/<id>/original` | An upload's display JPEG (full resolution), 600 px version (both immutable, cacheable forever) and the file as uploaded (`Content-Disposition: attachment`) |
 | `GET /metrics` | `telescope_asiair_up`, `telescope_live_up`, `telescope_guiding_rms_arcsec{axis}` (`total`, `ra`, `dec`) while guiding; for the newest frame `telescope_last_frame_timestamp_seconds{target}`, `telescope_frame_background_adu`, `telescope_frame_stars`, `telescope_frame_hfr_pixels`, `telescope_sensor_temperature_celsius`; `telescope_stack_frames{target,decision}` and `telescope_stack_integration_seconds{target}` for the current stack; `telescope_archive_files`, `telescope_archive_bytes`, `telescope_backfill_remaining` (files on the ASIAIR not yet archived or analysed), `telescope_asiair_storage_free_bytes{share}` |
 
-NetworkPolicy is per port, not per path: the dashboard, the processor and Prometheus could reach the POSTs and PUTs too, but only the web app calls them.
+NetworkPolicy is per port, not per path: the dashboard, the processor and Prometheus could reach the POSTs, PUTs and DELETEs too, but only the web app calls them.
 
-Logs: `kubectl -n telescope logs deploy/telescope` (one line per frame with its numbers, alignment and decision, one per stack with its time; archived logs and calibration frames; the ASIAIR and its control ports going away and coming back; each new kind of live event once; manual decisions; target goal changes; notifications sent; a failed Open-Meteo request).
+Logs: `kubectl -n telescope logs deploy/telescope` (one line per frame with its numbers, alignment and decision, one per stack with its time; archived logs and calibration frames; the ASIAIR and its control ports going away and coming back; each new kind of live event once; manual decisions; target goal changes; uploads (file, size, bit depth, linear or not, plate solved or not, conversion time), their edits, deletes and refusals; notifications sent; a failed Open-Meteo request).
 
 ## Operations
 
@@ -150,7 +184,7 @@ Logs: `kubectl -n telescope logs deploy/telescope` (one line per frame with its 
 
 **Restore.** `telescope-data` comes back from the nightly backup like any volume; on start the service reloads the sessions, re-finds any newer archived frames and rebuilds the cache. The archive is not backed up: if it is lost, frames still on the ASIAIR are backfilled again, the rest are gone (their previews, numbers and stacks remain in `telescope-data`). Copy the archive elsewhere by hand if a night matters (`/var/lib/rancher/k3s/storage/pvc-…_telescope_telescope-archive/`).
 
-**Tests** (registration, rejection decisions, the stack's outlier rejection, the notification detectors in `alerts.py`; numpy and scipy needed): from `apps/telescope`, `python -m unittest discover -s tests` (or `python -m pytest tests`), e.g. in the image: `podman run --rm -v $PWD:/app:Z -w /app localhost/telescope:<tag> python -m unittest discover -s tests`.
+**Tests** (registration, rejection decisions, the stack's outlier rejection, the notification detectors in `alerts.py`, the live stack's plate solution against synthetic debayered frames (< 0.5 px), star measurement on synthetic PSFs (FWHM within 5 %), uploads: the streamed multipart parser, 16-bit TIFF and FITS-with-WCS round trips, edits, delete, reload; numpy, scipy, pillow and tifffile needed): from `apps/telescope`, `python -m unittest discover -s tests` (or `python -m pytest tests`), e.g. in the image: `podman run --rm -v $PWD:/app:Z -w /app localhost/telescope:<tag> python -m unittest discover -s tests`.
 
 ## ASIAIR side
 

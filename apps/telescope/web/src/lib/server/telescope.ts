@@ -1,6 +1,11 @@
 // The telescope service and its processor (apps/telescope) behind this app's server routes: the browser
 // never talks to them directly (they are cluster-internal). Ids are checked before they go into a URL.
 import { error, isHttpError, json } from '@sveltejs/kit';
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { Readable } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
+import type { ReadableStream as NodeReadableStream } from 'node:stream/web';
 import { config } from './config';
 
 /** Session and frame ids: URL-safe, no leading dot (so never "." or ".."). */
@@ -49,14 +54,28 @@ function base(upstream: Upstream): string {
 /** Pass a JSON answer through (status and body as they are); 502 when the service does not answer. */
 export async function proxyJson(path: string, init: RequestInit = {}, timeoutMs = 10_000, upstream: Upstream = 'telescope'): Promise<Response> {
 	try {
-		const response = await fetch(`${base(upstream)}${path}`, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+		const response = await fetch(`${base(upstream)}${path}`, { ...init, signal: init.signal ?? AbortSignal.timeout(timeoutMs) });
 		const body = await response.text();
+		// A DELETE's 204 has no body to pass on.
+		if (response.status === 204) return new Response(null, { status: 204, headers: { 'cache-control': 'no-store' } });
 		// Errors may come as text/plain; the browser always gets JSON.
 		if (!response.ok && !response.headers.get('content-type')?.includes('json')) return json({ message: body.slice(0, 500) || `HTTP ${response.status}` }, { status: response.status, headers: { 'cache-control': 'no-store' } });
 		return new Response(body, { status: response.status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } });
 	} catch (e) {
 		if (isHttpError(e)) throw e;
 		return json({ message: `${NAMES[upstream]} unavailable: ${(e as Error).message}` }, { status: 502 });
+	}
+}
+
+/** A JSON answer for a server load (the gallery, public mode's checks): the parsed body, or null when unavailable. */
+export async function upstreamJson<T>(path: string, upstream: Upstream, timeoutMs = 10_000): Promise<T | null> {
+	const url = upstream === 'telescope' ? config.telescopeUrl : config.processorUrl;
+	if (!url) return null;
+	try {
+		const response = await fetch(`${url}${path}`, { signal: AbortSignal.timeout(timeoutMs) });
+		return response.ok ? ((await response.json()) as T) : null;
+	} catch {
+		return null;
 	}
 }
 
@@ -88,4 +107,33 @@ export async function proxyFile(path: string, cacheControl: string, upstream: Up
 		if (value) headers.set(name, value);
 	}
 	return new Response(response.body, { headers });
+}
+
+/**
+ * Stream a large request body (an upload of up to 300 MB) to the telescope service as it arrives, with its
+ * type and length, and pass the JSON answer back. node:http with backpressure rather than fetch: fetch held
+ * the body in memory on its way (~370 MB peak for 290 MB measured, over the pod's limit), this stays near
+ * the app's usual size. The timeout covers a slow upload over the VPN.
+ */
+export function proxyUpload(path: string, request: Request, length: number, timeoutMs = 30 * 60_000): Promise<Response> {
+	const url = new URL(`${base('telescope')}${path}`);
+	const body = request.body;
+	if (!body) error(400, 'No body');
+	const { promise, resolve } = Promise.withResolvers<Response>();
+	const send = url.protocol === 'https:' ? httpsRequest : httpRequest;
+	const out = send(url, { method: 'POST', headers: { 'content-type': request.headers.get('content-type') ?? '', 'content-length': String(length) }, timeout: timeoutMs }, (res) => {
+		const chunks: Buffer[] = [];
+		res.on('data', (c: Buffer) => chunks.push(c));
+		res.on('end', () => {
+			const text = Buffer.concat(chunks).toString('utf8');
+			const status = res.statusCode ?? 502;
+			if (status >= 400 && !String(res.headers['content-type'] ?? '').includes('json')) resolve(json({ message: text.slice(0, 500) || `HTTP ${status}` }, { status }));
+			else resolve(new Response(text, { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' } }));
+		});
+	});
+	out.on('timeout', () => out.destroy(new Error('timed out')));
+	out.on('error', (e) => resolve(json({ message: `${NAMES.telescope} unavailable: ${e.message}` }, { status: 502 })));
+	// The browser going away ends the body with an error, which destroys the request (answered above).
+	pipeline(Readable.fromWeb(body as NodeReadableStream<Uint8Array>), out).catch(() => {});
+	return promise;
 }

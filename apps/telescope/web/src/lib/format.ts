@@ -48,11 +48,12 @@ export const arcsec = (v: number | null | undefined) => (v === null || v === und
 /** A number with `digits` decimals, or "–". */
 export const fixed = (v: number | null | undefined, digits = 0) => (v === null || v === undefined || !Number.isFinite(v) ? '–' : v.toFixed(digits));
 
-/** Degrees -> "02h 27m 36s" (RA) or "+62° 00′" (Dec). */
-export function formatRa(deg: number): string {
+/** Degrees -> "02h 27m 36s" (RA; "02h 27m" without seconds) or "+62° 00′" (Dec). */
+export function formatRa(deg: number, seconds = true): string {
 	const h = (((deg / 15) % 24) + 24) % 24;
-	const s = Math.round(h * 3600);
-	return `${String(Math.floor(s / 3600)).padStart(2, '0')}h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m ${String(s % 60).padStart(2, '0')}s`;
+	const s = Math.round(h * (seconds ? 3600 : 60)) * (seconds ? 1 : 60);
+	const hm = `${String(Math.floor(s / 3600) % 24).padStart(2, '0')}h ${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}m`;
+	return seconds ? `${hm} ${String(s % 60).padStart(2, '0')}s` : hm;
 }
 export function formatDec(deg: number): string {
 	const m = Math.round(Math.abs(deg) * 60);

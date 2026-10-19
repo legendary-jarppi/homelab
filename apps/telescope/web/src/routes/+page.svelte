@@ -88,6 +88,7 @@
 						{#if stack}<span class="num">{stack.accepted} frames · {formatDuration(stack.integrationS)}</span>{/if}
 					{/snippet}
 					<StackView
+						{sessionId}
 						stack={stack || detail?.hasStack ? stackUrl(sessionId, stack?.imageId) : null}
 						frame={latest ? `/frames/${latest.id}.jpg` : null}
 						alt="Stack of {detail?.target ?? stack?.target ?? 'the session'}"

@@ -1,5 +1,7 @@
+imagecodecs==2026.10.10
 numpy==2.5.4
 pillow==13.0.0
 scipy==1.18.1
 smbprotocol==1.17.0
+tifffile==2026.10.15
 tzdata==2026.5
