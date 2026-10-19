@@ -107,7 +107,7 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 
 ## Telescope web app
 
-**Status:** first release in progress (2026-10-19, items marked **R1**); the rest is the idea list to choose from later. Builds on [apps/telescope](../apps/telescope/README.md) (frames from the ASIAIR's SMB shares, its live JSON-RPC state, read only) and the dashboard's Telescope tab, which stays.
+**Status:** first release (items marked **R1**) deployed 2026-10-19 at http://telescope.lab.internal ([apps/telescope](../apps/telescope/README.md), web app in `apps/telescope/web`); stacking, rejection and the archive were tested on synthetic frames only and wait for the first real night with the ASIAIR online. The rest is the idea list to choose from later. Builds on the telescope service (frames from the ASIAIR's SMB shares, its live JSON-RPC state, read only) and the dashboard's Telescope tab, which stays.
 
 **What it can build on:** every frame as FITS (3008², 18 MB) with target, exposure, gain, temperatures, focuser position, site and the ASIAIR's plate solve in the header; the Autorun and PHD2 logs at the end of each run; live: exposure and plan progress, auto-focus V-curves, meridian flip/GoTo state, guiding every ~3 s, sensor/cooler/board telemetry; around it: Ruuvi temperature and humidity at the cabin, the NIBE's outdoor temperature, Open-Meteo, the cabin camera, apps/notify, Prometheus. The k3s node (i5-7600K, 4 cores, 30 GB RAM, ~800 GB free) stacks a frame in seconds; the cabin's mobile link has no data cap. Nothing is ever written to the ASIAIR.
 
