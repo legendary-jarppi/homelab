@@ -90,7 +90,7 @@ While on, anything running as the invoking user can reach root without a passwor
 
 ## UDM Pro memory cycle
 
-Found 2026-10-19 (Prometheus history from 2026-10-04 and `ps`/`top`/`vmstat` on the UDM). The home UDM Pro (4 GB RAM, UniFi OS 5.1.33, Network 10.6.106, Protect 7.3.70; also runs Access and Talk) repeats a cycle of about 5 days:
+Found 2026-10-19 (Prometheus history from 2026-10-04 and `ps`/`top`/`vmstat` on the UDM). The home UDM Pro (4 GB RAM, not expandable; UniFi OS 5.1.33, Network 10.6.106, Protect 7.3.70; Access and Talk until 2026-10-19) repeated a cycle of about 5 days:
 
 | Phase | Memory | CPU | What happens |
 |---|---|---|---|
@@ -98,4 +98,6 @@ Found 2026-10-19 (Prometheus history from 2026-10-04 and `ps`/`top`/`vmstat` on 
 | Busy, ~2 days | 77–90 %, 1.2 GB in swap | ~90 % (load ~5.6) | The Network app (Java, heap capped at 512 MB) runs at ~270 % CPU, mostly user and system time, not I/O wait; every Network API call takes 1–5 s instead of ~0.3 s |
 | Reset | back to ~57 % | ~12 % | `unifi-core` restarts by itself (seen 2026-10-15); the UDM and the Network app keep running |
 
-Episodes (Finnish time): 2026-10-08 ~00:30 → 10-10 ~05:15, 10-13 ~11:30 → 10-15 ~14:45, 10-18 ~06:30 →. Unrelated to traffic (WAN a few Mbit/s) and to camera streaming. At UnPoller's former 10 s interval each poll took 20–30 s during a busy phase, abandoned polls piled up (up to 6 at once) and only 16 % of scrapes succeeded; hence 30 s. Whether our polling feeds the growth shows as a lower memory slope after the change. On the UDM side: uninstalling unused apps (Access, Talk: ~300 MB together) delays the busy phase; a UniFi OS update may fix the leak.
+Episodes (Finnish time): 2026-10-08 ~00:30 → 10-10 ~05:15, 10-13 ~11:30 → 10-15 ~14:45, 10-18 ~06:30 → 10-19 ~14:15. Unrelated to traffic (WAN a few Mbit/s) and to camera streaming. At UnPoller's former 10 s interval each poll took 20–30 s during a busy phase, abandoned polls piled up (up to 6 at once) and only 16 % of scrapes succeeded; hence 30 s.
+
+**2026-10-19 ~14:15: Access and Talk uninstalled** over SSH (`apt purge unifi-access unifi-talk`; neither was in use). Memory used 2882 → 2002 MB, available 778 → 1659 MB, swap 1.2 → 0.8 GB; CPU 90 % → 15 %, load 5.5 → 1.7; UnPoller polls 0.6–1 s again and every scrape succeeds. Still to see: whether `unifi-core` keeps growing (685 MB after 4 days on 2026-10-19) and the busy phase returns later, checked with `free -m` and `ps -o pid,rss,etime,cmd -C unifi-core` on the UDM. If it stays away, the home poll can go back to 10 s for the dashboard's live chart. More RAM means other hardware (UDM Pro Max, 8 GB) or moving Protect to its own recorder.
