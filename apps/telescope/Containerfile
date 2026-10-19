@@ -1,6 +1,7 @@
-# Build: apps/telescope/deploy.sh. Python (numpy for the FITS frames, smbprotocol for the ASIAIR's
-# SMB shares); wheels only, no compiler in the image.
-FROM docker.io/library/python:3.13-alpine
+# Build: apps/telescope/deploy.sh. Python (numpy and scipy for frames, registration and stacking,
+# smbprotocol for the ASIAIR's SMB shares); wheels only, no compiler in the image. glibc (slim, not
+# alpine): scipy publishes manylinux wheels.
+FROM docker.io/library/python:3.13-slim
 WORKDIR /app
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080
 COPY requirements.txt ./

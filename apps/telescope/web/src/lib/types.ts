@@ -1,0 +1,289 @@
+// The telescope service's HTTP API (apps/telescope, unix seconds; any field may be null) and this
+// app's own server routes (conditions: unix ms).
+
+/** A recent light frame in /api/status (the dashboard's shape). */
+export interface StatusFrame {
+	id: string;
+	target: string;
+	mode: string;
+	number: number | null;
+	at: number;
+	exposureS: number | null;
+	gain: number | null;
+	sensorTempC: number | null;
+	setTempC: number | null;
+	camera: string | null;
+	focalLengthMm: number | null;
+	backgroundAdu: number | null;
+	stars: number | null;
+	hfr: number | null;
+	width: number | null;
+	height: number | null;
+}
+
+export interface Live {
+	connected: boolean;
+	updatedAt: number | null;
+	/** "Exposing", "Meridian flip", "Auto focus", "GoTo", "Plate solving", "Finding star", "Polar alignment", "Live stacking", "Idle". */
+	activity: string | null;
+	exposure: { startedAt: number | null; totalS: number | null; elapsedS: number | null } | null;
+	plan: {
+		target: string | null;
+		targetIndex: number | null;
+		targets: number | null;
+		targetDone: number | null;
+		targetTotal: number | null;
+		planDone: number | null;
+		planTotal: number | null;
+		ended: boolean | null;
+	} | null;
+	guiding: {
+		state: string | null;
+		rmsArcsec: number | null;
+		rmsRaArcsec: number | null;
+		rmsDecArcsec: number | null;
+		samples: number | null;
+		snr: number | null;
+		pixelScaleArcsec: number | null;
+		history: [number, number, number][] | null;
+	} | null;
+	sensorTempC: number | null;
+	controllerTempC: number | null;
+	wifiDbm: number | null;
+	coolerPowerPct?: number | null;
+	underVoltage?: boolean | null;
+	overTemp?: boolean | null;
+}
+
+export interface Stack {
+	sessionId: string;
+	target: string;
+	accepted: number;
+	rejected: number;
+	integrationS: number;
+	updatedAt: number | null;
+	width: number | null;
+	height: number | null;
+	/** Changes with every restack: the preview URL's ?v=. */
+	imageId: string;
+}
+
+export interface Storage {
+	name: string;
+	freeBytes: number | null;
+	totalBytes: number | null;
+}
+
+/** GET /api/status. */
+export interface Status {
+	online: boolean;
+	lastContact: number | null;
+	error: string | null;
+	session: {
+		target: string;
+		mode: string;
+		frames: number;
+		integrationS: number;
+		firstFrameAt: number;
+		lastFrameAt: number;
+		exposureS: number | null;
+		active: boolean;
+	} | null;
+	plan: {
+		name: string | null;
+		target: string | null;
+		planned: number | null;
+		current: number | null;
+		exposureS: number | null;
+		state: string;
+		activity: string | null;
+		startedAt: number | null;
+		updatedAt: number | null;
+		events: { at: number; text: string }[];
+	} | null;
+	live: Live | null;
+	frames: StatusFrame[];
+	stack?: Stack | null;
+	storage?: Storage[] | null;
+	updatedAt: number;
+}
+
+/** GET /api/sessions (newest first). */
+export interface SessionSummary {
+	id: string;
+	/** Local date of the evening, YYYY-MM-DD. */
+	night: string;
+	target: string;
+	mode: string;
+	firstFrameAt: number;
+	lastFrameAt: number;
+	frames: number;
+	accepted: number;
+	rejected: number;
+	integrationS: number;
+	active: boolean;
+	hasStack: boolean;
+}
+
+export interface Frame {
+	id: string;
+	number: number | null;
+	at: number;
+	exposureS: number | null;
+	backgroundAdu: number | null;
+	stars: number | null;
+	hfr: number | null;
+	fwhmPx: number | null;
+	/** 0 = round. */
+	elongation: number | null;
+	guidingRmsArcsec: number | null;
+	accepted: boolean;
+	rejectReason: string | null;
+	/** Decided by hand (override). */
+	manual: boolean;
+	/** Registered onto the stack's reference (newer services). */
+	aligned?: boolean;
+}
+
+export type GuideEventKind = 'dither' | 'settle' | 'lost' | 'start' | 'stop';
+export type TimelineKind = 'plan_start' | 'plan_end' | 'target_start' | 'autofocus' | 'meridian_flip' | 'goto' | 'centering' | 'guiding_lost' | 'frame';
+
+export interface Guiding {
+	rmsArcsec: number | null;
+	rmsRaArcsec: number | null;
+	rmsDecArcsec: number | null;
+	samples: number | null;
+	/** [t, RA ″, Dec ″, settling 0/1], oldest first. */
+	history: [number, number, number, number][];
+	events: { at: number; kind: GuideEventKind }[];
+}
+
+export type Series = [number, number][];
+
+export interface Telemetry {
+	sensorTempC: Series;
+	setTempC: number | null;
+	coolerPowerPct: Series;
+	boardTempC: Series;
+	wifiDbm: Series;
+}
+
+/** GET /api/sessions/<id>. */
+export interface SessionDetail extends Omit<SessionSummary, 'frames'> {
+	exposureS: number | null;
+	gain: number | null;
+	camera: string | null;
+	focalLengthMm: number | null;
+	/** Target, degrees. */
+	ra: number | null;
+	dec: number | null;
+	site: { lat: number; lon: number } | null;
+	plan: { planned: number | null; current: number | null; targetIndex: number | null; targets: number | null } | null;
+	frames: Frame[];
+	guiding: Guiding | null;
+	timeline: { at: number; kind: TimelineKind; text: string }[];
+	telemetry: Telemetry | null;
+	archive: { frames: number; bytes: number } | null;
+	/** Frames found but not processed yet (newer services); `frames` lists only processed ones. */
+	pending?: number;
+	/** This session's stack (newer services), the shape of status.stack. */
+	stack?: Stack | null;
+}
+
+/** Wind at the site, hourly (unix s, m/s at 10 m). */
+export interface WindPoint {
+	time: number;
+	wind: number | null;
+	gusts: number | null;
+}
+
+/** A source of the conditions page: its data, or why it is missing. */
+export type Sourced<T> = { data: T; error: null; fetchedAt: number } | { data: null; error: string; fetchedAt: null };
+
+export interface TimeWindow {
+	start: number;
+	end: number;
+}
+
+/** Darkness and moon for one night (unix ms), computed with SunCalc. */
+export interface Sky {
+	noon: number;
+	nextNoon: number;
+	sunset: number | null;
+	sunrise: number | null;
+	/** Sun below −18°; null in the light summer nights. */
+	astronomical: TimeWindow | null;
+	/** Sun below −12°. */
+	nautical: TimeWindow | null;
+	/** Lowest sun altitude of the night, degrees. */
+	sunLowest: number;
+	moon: {
+		illumination: number;
+		phase: number;
+		events: { at: number; kind: 'rise' | 'set' }[];
+		upAtDark: boolean;
+	};
+}
+
+/** Open-Meteo hour (best-match model). */
+export interface WeatherHour {
+	time: number;
+	cloud: number | null;
+	temperature: number | null;
+	dewPoint: number | null;
+	humidity: number | null;
+	/** m/s, 10 m. */
+	wind: number | null;
+	gusts: number | null;
+}
+
+export interface ModelClouds {
+	id: string;
+	label: string;
+	/** Per hour, aligned with `times`: total, low, mid, high (%), null past the model's range. */
+	total: (number | null)[];
+	low: (number | null)[];
+	mid: (number | null)[];
+	high: (number | null)[];
+}
+
+export interface SeeingPoint {
+	time: number;
+	/** 7Timer scales: seeing 1 (< 0.5″) … 8 (> 2.5″), transparency 1 (< 0.3 mag/airmass) … 8 (> 1), cloud 1 (0–6 %) … 9 (94–100 %). */
+	seeing: number | null;
+	transparency: number | null;
+	cloud: number | null;
+}
+
+export interface KpPoint {
+	time: number;
+	kp: number;
+	/** "observed", "estimated" or "predicted". */
+	kind: string;
+}
+
+export interface Aurora {
+	/** OVATION probability (%) at the site's grid point, and the most within ~1000 km to the north. */
+	probability: number;
+	northProbability: number;
+	observedAt: number | null;
+	forecastAt: number | null;
+}
+
+/** GET /api/conditions. */
+export interface Conditions {
+	site: { name: string; lat: number; lon: number };
+	sky: Sky;
+	/** The night's hours (unix ms), sunset to sunrise. */
+	times: number[];
+	/** Moon altitude (degrees) at the middle of each hour. */
+	moonAltitude: number[];
+	weather: Sourced<WeatherHour[]>;
+	models: Sourced<ModelClouds[]>;
+	seeing: Sourced<SeeingPoint[]>;
+	kp: Sourced<{ now: number | null; nowAt: number | null; points: KpPoint[] }>;
+	aurora: Sourced<Aurora>;
+	verdict: string;
+	auroraLine: string;
+	updatedAt: number;
+}

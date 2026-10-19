@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telescope-web
+  labels:
+    app.kubernetes.io/name: telescope-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: telescope-web
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: telescope-web
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: telescope-web
+          # Built locally and imported into k3s (deploy.sh); never pulled.
+          image: localhost/telescope-web
+          imagePullPolicy: Never
+          envFrom:
+            - configMapRef:
+                name: telescope-web-config
+          ports:
+            - name: http
+              containerPort: 3000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 64Mi
+            limits:
+              # The OVATION map (~1 MB of JSON, parsed every 10 min) is the largest thing it holds.
+              memory: 256Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telescope-web
+  labels:
+    app.kubernetes.io/name: telescope-web
+spec:
+  selector:
+    app.kubernetes.io/name: telescope-web
+  ports:
+    - name: http
+      port: 3000
+      targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: telescope-web
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: telescope.lab.internal
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: telescope-web
+                port:
+                  name: http

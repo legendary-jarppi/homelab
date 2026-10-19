@@ -5,9 +5,9 @@ Nightly encrypted backup of the cluster's data to Google Drive: a CronJob (03:30
 | What | How |
 |---|---|
 | Postgres databases | `pg_dump` (custom format) inside every pod labelled `backup.homelab/dump: postgres`; their raw data volumes are not copied (a live copy is not consistent). Today: `news`, `workout` |
-| Files | Every local-path volume in `/var/lib/rancher/k3s/storage`, new ones included automatically (read-only hostPath). Today: news images, dashboard packages, Grafana |
+| Files | Every local-path volume in `/var/lib/rancher/k3s/storage`, new ones included automatically (read-only hostPath). Today: news images, dashboard packages, Grafana, telescope sessions and stacks (`telescope-data`) |
 | Secrets | Opaque secrets of all namespaces without an owner (`secrets.json`, a `kubectl apply`-able List); they are not in git |
-| Left out | `EXCLUDE` in `kustomization.yaml` (`<namespace>/<pvc>`): Prometheus (15 days of metrics, rebuilt by scraping) |
+| Left out | `EXCLUDE` in `kustomization.yaml` (`<namespace>/<pvc>`, space-separated): Prometheus (15 days of metrics, rebuilt by scraping), the telescope's FITS archive (`telescope/telescope-archive`, hundreds of GB of raw frames; see [apps/telescope](../../../apps/telescope/README.md#restore)) |
 
 Restic encrypts everything before upload (Google sees only random-named blobs), stores unchanged data once, and keeps 7 daily, 5 weekly and 12 monthly snapshots. On Sundays the run also downloads and verifies 10% of the data (`restic check --read-data-subset 10%`).
 

@@ -1,0 +1,22 @@
+# Telescope web app at http://telescope.lab.internal: live stack, conditions, observing log (no login;
+# home network and VPN only). In the telescope namespace beside the service it reads (apps/telescope,
+# which owns the namespace: apply that first). No secrets. Build + apply: apps/telescope/web/deploy.sh (sets newTag below).
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: telescope
+resources:
+  - app.yaml
+  - networkpolicy.yaml
+images:
+  - name: localhost/telescope-web
+    newTag: "20261019-155727"
+configMapGenerator:
+  # Hashed name: changes roll the pod.
+  - name: telescope-web-config
+    literals:
+      # Origin per request from Traefik's headers (see apps/dashboard for why not a fixed ORIGIN).
+      - PROTOCOL_HEADER=x-forwarded-proto
+      - HOST_HEADER=x-forwarded-host
+      - TELESCOPE_URL=http://telescope:8080
+      # name:latitude:longitude, as the ASIAIR reports it: conditions, wind, automatic red mode.
+      - TELESCOPE_SITE=Ristiina:61.496:27.576

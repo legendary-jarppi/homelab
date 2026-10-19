@@ -116,3 +116,68 @@ def parse(text: str, tz: ZoneInfo) -> Plan | None:
         elif text_.startswith("[Guide] Guide Settle"):
             plan.activity = "Guiding settle"
     return plan if seen else None
+
+
+@dataclass
+class Target:
+    """One target's part of a run: [Autorun|Begin] … [Autorun|End]."""
+
+    name: str
+    index: int
+    started_at: float
+    ended_at: float | None = None
+    planned: int | None = None
+    current: int | None = None
+
+
+@dataclass
+class Log:
+    """A whole Autorun log as timeline events (at, kind, text) and per-target parts."""
+
+    started_at: float
+    ended_at: float
+    events: list[tuple[float, str, str]]
+    targets: list[Target]
+
+
+def step_kind(name: str) -> str | None:
+    name = name.lower()
+    for key, kind in (("meridian", "meridian_flip"), ("focus", "autofocus"), ("center", "centering"), ("goto", "goto")):
+        if key in name:
+            return kind
+    return None
+
+
+def timeline(text: str, tz: ZoneInfo) -> Log | None:
+    events: list[tuple[float, str, str]] = []
+    targets: list[Target] = []
+    first = last = None
+    for raw in text.splitlines():
+        m = LINE.match(raw.strip())
+        if not m:
+            continue
+        at = datetime.strptime(m[1], "%Y/%m/%d %H:%M:%S").replace(tzinfo=tz).timestamp()
+        line = m[2].strip()
+        first, last = first or at, at
+        if p := PLAN.match(line):
+            events.append((at, "plan_start" if p[2] == "Start" else "plan_end", line))
+        elif s := STEP.match(line):
+            name, edge, rest = s[1], s[2], s[3]
+            if name == "Autorun":
+                if edge == "Begin":
+                    target = rest.removesuffix(" Start").strip()
+                    targets.append(Target(target, len(targets) + 1, at))
+                    events.append((at, "target_start", line))
+                elif targets:
+                    targets[-1].ended_at = at
+            elif edge == "Begin" and (kind := step_kind(name)):
+                events.append((at, kind, line))
+        elif (s := SHOOTING.match(line)) and targets:
+            targets[-1].planned = int(s[1])
+        elif (e := EXPOSURE.match(line)) and targets:
+            targets[-1].current = int(e[2])
+        elif "lost" in line.lower() and "guide" in line.lower():
+            events.append((at, "guiding_lost", line))
+    if first is None:
+        return None
+    return Log(first, last, events, targets)

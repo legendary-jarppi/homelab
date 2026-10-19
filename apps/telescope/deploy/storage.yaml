@@ -1,0 +1,28 @@
+# The archive: every FITS (lights, Autorun Bias/Dark/Flat) and log from the ASIAIR, by night and
+# target (~1.8 GB per 100 frames). Not in the nightly backup (EXCLUDE in
+# platform/components/backup): the frames are large and still on the ASIAIR or its USB disk for a
+# while; losing the archive loses only what the ASIAIR no longer has. local-path does not enforce
+# the request.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: telescope-archive
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 500Gi
+---
+# Sessions (numbers, decisions, guiding and telemetry history), stacks (32-bit FITS, ~27 MB each)
+# and previews (~0.5 MB per frame). Backed up nightly like every local-path volume.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: telescope-data
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: local-path
+  resources:
+    requests:
+      storage: 20Gi

@@ -19,6 +19,7 @@ configMapGenerator:
       - RESTIC_REPOSITORY=rclone:gdrive:homelab-backup
       # Fixed: pod names change every run, restic groups snapshots by host.
       - BACKUP_HOST=shilly-shally-lab-01
-      # <namespace>/<pvc> left out. Prometheus: 15 days of metrics, rebuilt by scraping.
-      - EXCLUDE=monitoring/prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0
+      # <namespace>/<pvc> left out, space-separated. Prometheus: 15 days of metrics, rebuilt by
+      # scraping. telescope-archive: every FITS from the ASIAIR (hundreds of GB, too big for Drive).
+      - EXCLUDE=monitoring/prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0 telescope/telescope-archive
       - TZ=Europe/Helsinki

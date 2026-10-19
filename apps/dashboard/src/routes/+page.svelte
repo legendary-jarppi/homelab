@@ -302,6 +302,11 @@
 			<ClimateCard {climate} configured={data.climateConfigured} onchange={(next) => (climate = next)} />
 		</main>
 	{:else if tab === 'telescope'}
+		<!-- The telescope web app (home network and VPN only; not through dashboard.shillyshally.org). -->
+		<a class="homelab-link" href="http://telescope.lab.internal" target="_blank" rel="noopener">
+			Open telescope app
+			<span class="muted">telescope.lab.internal ↗</span>
+		</a>
 		<main class="grid telescope-page">
 			<div class="area frame">
 				<LatestFrameCard {telescope} configured={data.telescopeConfigured} onopen={(i) => (frameViewer = i)} />

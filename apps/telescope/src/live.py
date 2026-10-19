@@ -26,6 +26,15 @@ ASK_EVERY_S = 5
 RETRY_S = 15
 STALE_S = 30
 RMS_STEPS = 50
+# Guider events kept in the session history (guiding.events), PHD2 names → contract kinds.
+GUIDER_EVENTS = {
+    "GuidingDithered": "dither",
+    "SettleBegin": "settle",
+    "StarLost": "lost",
+    "GuideStarLostTooMuch": "lost",
+    "StartGuiding": "start",
+    "GuidingStopped": "stop",
+}
 HISTORY_STEPS = 120
 # What the imager is busy with, most specific first (get_app_state keys).
 ACTIVITIES = (
@@ -91,7 +100,7 @@ class Connection:
 
 
 class Live:
-    def __init__(self, host: str):
+    def __init__(self, host: str, on_record=None):
         self.lock = threading.Lock()
         self.imager_at: float | None = None
         self.guider_at: float | None = None
@@ -103,8 +112,13 @@ class Live:
         self.snr: float | None = None
         self.sensor_temp: float | None = None
         self.controller_temp: float | None = None
+        self.cooler_power: float | None = None
+        self.under_voltage: bool | None = None
+        self.over_temp: bool | None = None
         self.wifi: int | None = None
         self.seen_events: set[str] = set()
+        # Guide steps and guider events for the session history (journal.py), called outside the lock.
+        self.on_record = on_record or (lambda record: None)
         Connection(host, 4700, ["get_app_state"], self.imager_line, lambda: self.down("imager"))
         Connection(host, 4400, ["get_app_state", "get_app_state", "get_pixel_scale"], self.guider_line,
                    lambda: self.down("guider"))
@@ -135,6 +149,10 @@ class Live:
                 self.sensor_temp = message.get("value")
             elif event == "PiStatus":
                 self.controller_temp = message.get("temp")
+                self.under_voltage = bool(message.get("is_undervolt"))
+                self.over_temp = bool(message.get("is_overtemp"))
+            elif event == "CoolerPower":
+                self.cooler_power = message.get("value")
             elif event == "Station":
                 self.wifi = message.get("sig_lev")
         if event:
@@ -143,6 +161,7 @@ class Live:
     def guider_line(self, message: dict) -> None:
         now = time.time()
         event = message.get("Event")
+        record = None
         with self.lock:
             self.guider_at = now
             method, result = message.get("method"), message.get("result")
@@ -156,6 +175,12 @@ class Live:
                     settling = bool(message.get("IsSettle") or message.get("IsDither"))
                     self.steps.append((now, ra * self.pixel_scale, dec * self.pixel_scale, settling))
                     self.snr = message.get("SNR")
+                    record = {"t": round(now, 1), "k": "guide", "ra": round(ra * self.pixel_scale, 3),
+                              "dec": round(dec * self.pixel_scale, 3), "s": int(settling), "snr": self.snr}
+            elif event in GUIDER_EVENTS:
+                record = {"t": round(now, 1), "k": "gev", "e": GUIDER_EVENTS[event]}
+        if record:
+            self.on_record(record)
         if event and event != "GuideStep":
             self.note_event("guider", message)
 
@@ -170,6 +195,7 @@ class Live:
             age = now - self.app_state_at
             guiding = self._guiding() if self.guider_at and now - self.guider_at <= STALE_S else None
             sensor, controller, wifi = self.sensor_temp, self.controller_temp, self.wifi
+            cooler, under_voltage, over_temp = self.cooler_power, self.under_voltage, self.over_temp
         capture = state.get("capture") or {}
         activity = next((label for key, label in ACTIVITIES if (state.get(key) or {}).get("is_working")), None)
         exposure = None
@@ -191,6 +217,9 @@ class Live:
             "sensorTempC": sensor,
             "controllerTempC": controller,
             "wifiDbm": wifi,
+            "coolerPowerPct": cooler,
+            "underVoltage": under_voltage,
+            "overTemp": over_temp,
         }
 
     @staticmethod

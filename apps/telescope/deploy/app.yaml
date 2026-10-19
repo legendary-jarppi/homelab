@@ -5,7 +5,7 @@ metadata:
   labels:
     app.kubernetes.io/name: telescope
 spec:
-  # Recent previews live in memory (rebuilt from the ASIAIR at start): one replica.
+  # One worker owns the archive and session files (RWO volumes): one replica, never two at once.
   replicas: 1
   strategy:
     type: Recreate
@@ -22,6 +22,7 @@ spec:
         runAsNonRoot: true
         runAsUser: 1000
         runAsGroup: 1000
+        fsGroup: 1000
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -51,16 +52,37 @@ spec:
             periodSeconds: 30
           resources:
             requests:
-              cpu: 20m
-              memory: 160Mi
-            # A frame is 18 MB raw and ~150 MB while being rendered; 40 previews are ~25 MB.
-            limits:
+              cpu: 100m
               memory: 512Mi
+            # A frame is 18 MB raw and ~300 MB while analysed and warped; restacking reads the
+            # aligned frames in row bands (~150 MB working set) through memory maps, whose pages
+            # are reclaimable cache. Measured peak: see README (Stacking).
+            limits:
+              memory: 2Gi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop: [ALL]
+          volumeMounts:
+            - name: archive
+              mountPath: /archive
+            - name: data
+              mountPath: /data
+            - name: cache
+              mountPath: /cache
+      volumes:
+        - name: archive
+          persistentVolumeClaim:
+            claimName: telescope-archive
+        - name: data
+          persistentVolumeClaim:
+            claimName: telescope-data
+        # Aligned frames for restacking (float16, 13.6 MB each); rebuilt from the archive when
+        # missing, pruned to CACHE_MAX_GB.
+        - name: cache
+          emptyDir:
+            sizeLimit: 20Gi
 ---
 apiVersion: v1
 kind: Service

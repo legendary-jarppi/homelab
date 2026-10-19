@@ -1,0 +1,123 @@
+:root {
+	--bg: #070a12;
+	--surface: rgba(255, 255, 255, 0.045);
+	--surface-strong: rgba(255, 255, 255, 0.08);
+	--border: rgba(255, 255, 255, 0.08);
+	--text: #eef1f7;
+	--muted: #8a93a8;
+	--faint: #59627a;
+	--accent: #38bdf8;
+	--ok: #34d399;
+	--warn: #fbbf24;
+	--bad: #f87171;
+	/* Chart series: guiding axes, then general lines. */
+	--ra: #38bdf8;
+	--dec: #f87171;
+	--line1: #38bdf8;
+	--line2: #c084fc;
+	--line3: #34d399;
+	--line4: #fbbf24;
+	--dark: rgba(56, 189, 248, 0.07);
+	--cloud: 230, 236, 245;
+	--image-filter: none;
+	--radius: 22px;
+	--gap: 14px;
+	--font: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Inter', 'Segoe UI', system-ui, sans-serif;
+	color-scheme: dark;
+}
+
+/* Red night mode (A10): deep red on black, nothing blue or white; images through the #red-only filter
+   (luminance into the red channel, defined in +layout.svelte). Series are told apart by shade and dash. */
+:root.red {
+	--bg: #000;
+	--surface: rgba(255, 0, 0, 0.035);
+	--surface-strong: rgba(255, 0, 0, 0.07);
+	--border: rgba(255, 30, 0, 0.16);
+	--text: #d01a0a;
+	--muted: #8a1408;
+	--faint: #5c0e06;
+	--accent: #e02010;
+	--ok: #c01808;
+	--warn: #ff3a1a;
+	--bad: #ff3a1a;
+	--ra: #ff2a10;
+	--dec: #8e1206;
+	--line1: #ff2a10;
+	--line2: #a51608;
+	--line3: #d01a0a;
+	--line4: #7a1006;
+	--dark: rgba(255, 0, 0, 0.05);
+	--cloud: 210, 24, 10;
+	--image-filter: url(#red-only);
+}
+
+*,
+*::before,
+*::after {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	min-height: 100%;
+	background: var(--bg);
+	color: var(--text);
+	font-family: var(--font);
+	-webkit-font-smoothing: antialiased;
+	-webkit-text-size-adjust: 100%;
+	-webkit-tap-highlight-color: transparent;
+	overscroll-behavior: none;
+}
+
+body {
+	background:
+		radial-gradient(1200px 700px at 10% -10%, rgba(56, 189, 248, 0.11), transparent 60%),
+		radial-gradient(900px 600px at 95% 0%, rgba(192, 132, 252, 0.1), transparent 60%),
+		var(--bg);
+	background-attachment: fixed;
+}
+
+:root.red body {
+	background: #000;
+}
+
+img,
+video {
+	filter: var(--image-filter);
+}
+
+a {
+	color: var(--accent);
+}
+
+button {
+	font: inherit;
+	color: inherit;
+}
+
+.num {
+	font-variant-numeric: tabular-nums;
+	letter-spacing: -0.02em;
+}
+
+.muted {
+	color: var(--muted);
+}
+
+.faint {
+	color: var(--faint);
+}
+
+.warn {
+	color: var(--warn);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	*,
+	*::before,
+	*::after {
+		animation: none !important;
+		transition: none !important;
+	}
+}

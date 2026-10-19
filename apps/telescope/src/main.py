@@ -1,19 +1,23 @@
-"""Telescope: the cabin's ZWO ASIAIR imaging session for the dashboard's Telescope tab.
+"""Telescope: the cabin's ZWO ASIAIR imaging sessions, for the dashboard's Telescope tab and the
+telescope web app.
 
-Polls the ASIAIR's SMB shares (over the Site Magic VPN): renders each new light frame into preview
-JPEGs with sky-quality numbers and reads each run's Autorun log once it ends. Follows the ASIAIR's
-own control ports read only (live.py) for what it is doing right now: exposure, plan progress,
-guiding. Sends push notifications (imaging started, finished, stopped). Never changes anything on
-the ASIAIR. Cluster-internal:
-    GET /api/status              JSON (session, plan, live, recent frames)
-    GET /frames/<id>.jpg         preview (~1504 px); /frames/<id>-small.jpg (~300 px)
-    GET /metrics                 Prometheus
-    GET /healthz
+Polls the ASIAIR's SMB shares (over the Site Magic VPN) and hands every light frame, calibration
+frame and log to the worker in sessions.py (archive at home, previews, frame numbers, automatic
+rejection, registration, live stack). Follows the ASIAIR's own control ports read only (live.py) for
+what it is doing right now and records it (journal.py). Sends push notifications (imaging started,
+finished, stopped). Never changes anything on the ASIAIR. Cluster-internal:
+    GET  /api/status                               JSON (session, plan, live, stack, recent frames)
+    GET  /api/sessions, /api/sessions/<id>         observing log: sessions, one session's report
+    POST /api/sessions/<id>/frames/<frame id>      {"accepted": true|false|null}: manual decision
+    POST /api/sessions/<id>/reprocess              analyse, align and stack again from the archive
+    GET  /frames/<id>.jpg, /frames/<id>-small.jpg  frame previews (~1504 px, ~300 px)
+    GET  /stacks/<id>.jpg, -small.jpg, .fits       the session's stack
+    GET  /metrics                                  Prometheus
+    GET  /healthz
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -21,17 +25,17 @@ import re
 import signal
 import threading
 import time
-from collections import OrderedDict
-from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from zoneinfo import ZoneInfo
 
 import autorun
-import fits
+from archive import Archive
 from asiair import Asiair, FrameFile
+from journal import Journal, Recorder
 from live import Live
 from notify import Notifier
+from sessions import Store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
 log = logging.getLogger("telescope")
@@ -63,7 +67,6 @@ TZ = ZoneInfo(os.environ.get("ASIAIR_TZ", "Europe/Helsinki"))
 PORT = int(env_number("PORT", 8080))
 POLL_S = env_number("POLL_S", 30)
 KEEP_FRAMES = int(env_number("KEEP_FRAMES", 40))
-STARTUP_FRAMES = int(env_number("STARTUP_FRAMES", 12))
 LIVE = os.environ.get("LIVE", "on") != "off"
 # Live: the ASIAIR idle this long during a run that has not ended → "Imaging stopped".
 # Without live: no frame for one exposure plus twice this (a meridian flip with refocusing and
@@ -72,29 +75,33 @@ STALL_S = env_number("STALL_MIN", 15) * 60
 SESSION_GAP_S = 2 * 3600
 SESSION_MAX_AGE_S = 12 * 3600
 PLAN_MAX_AGE_S = 24 * 3600
+# Volumes: the archive (every file from the ASIAIR), the data (sessions, stacks, previews, live
+# history) and the cache of aligned frames (disposable).
+ARCHIVE_DIR = os.environ.get("ARCHIVE_DIR", "/archive")
+DATA_DIR = os.environ.get("DATA_DIR", "/data")
+CACHE_DIR = os.environ.get("CACHE_DIR", "/cache")
+CACHE_MAX_BYTES = int(env_number("CACHE_MAX_GB", 15) * 2**30)
+# Calibration frames and free space are listed every this many polls (more round trips).
+SLOW_POLLS = 10
 FRAME_ID = re.compile(r"^/frames/([0-9a-f]{16})(-small)?\.jpg$")
-
-
-@dataclass
-class Frame:
-    id: str
-    file: FrameFile
-    info: dict
-    large: bytes
-    small: bytes
+STACK = re.compile(r"^/stacks/([a-z0-9-]{1,128}?)(-small)?\.(jpg|fits)$")
+SESSION = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})$")
+OVERRIDE = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})/frames/([0-9a-f]{16})$")
+REPROCESS = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})/reprocess$")
 
 
 class Telescope:
-    def __init__(self, asiair: Asiair, live: Live | None, notifier: Notifier):
+    def __init__(self, asiair: Asiair, live: Live | None, notifier: Notifier, store: Store, archive: Archive):
         self.asiair = asiair
         self.live = live
         self.notifier = notifier
+        self.store = store
+        self.archive = archive
         self.lock = threading.Lock()
-        self.frames: OrderedDict[str, Frame] = OrderedDict()  # oldest first
-        self.done: set[tuple[str, int]] = set()  # rendered, or failed for good
         self.files: list[FrameFile] = []
         self.plan: autorun.Plan | None = None
         self.log_key: tuple[str, int] | None = None
+        self.storage: list[dict] = []
         self.online = False
         self.last_contact: float | None = None
         self.error: str | None = None
@@ -109,17 +116,22 @@ class Telescope:
 
     def poll(self) -> None:
         first = self.polls == 0
+        slow = self.polls % SLOW_POLLS == 0
         self.polls += 1
         try:
             files = self.asiair.frames()
-            newest_log = self.asiair.newest_log()
+            logs = self.asiair.logs()
+            others = list(logs) + (self.asiair.calibration() if slow else [])
+            storage = self.asiair.storage() if slow else None
+            newest_log = self.asiair.newest_log(logs)
             plan = self.plan
             if newest_log and (newest_log.path, newest_log.size) != self.log_key:
                 plan = autorun.parse(self.asiair.read(newest_log.path).decode("utf-8", "replace"), TZ)
                 self.log_key = (newest_log.path, newest_log.size)
         except Exception as e:  # noqa: BLE001 - offline, VPN down, ASIAIR switched off
             message = str(e) or type(e).__name__
-            if self.online or self.last_contact is None:
+            # Once when it goes away (or on the first failed poll), not every 30 s while it is off.
+            if self.online or (self.last_contact is None and self.error is None):
                 log.warning("ASIAIR not answering: %s", message)
             with self.lock:
                 self.online, self.error = False, message[:200]
@@ -130,15 +142,12 @@ class Telescope:
             log.info("ASIAIR answering (%d frames on its storage)", len(files))
         with self.lock:
             self.files, self.plan = files, plan
+            if storage is not None:
+                self.storage = storage
             self.online, self.error, self.last_contact = True, None, time.time()
-
-        todo = sorted((f for f in files if self.key(f) not in self.done), key=lambda f: f.saved_at)
-        # At start only the latest frames; after an outage only the newest few (each is ~18 MB).
-        # Newest first, so the dashboard has the current frame within seconds.
-        keep = STARTUP_FRAMES if first else 5
-        for f in reversed(todo[-keep:]):
-            self.render(f)
-        self.done.update(self.key(f) for f in todo[:-keep])
+        # The worker (sessions.py) archives, analyses and stacks them, newest session first.
+        self.store.add_frames(files)
+        self.store.set_others(others, self.asiair.log_time)
 
         now = time.time()
         session = self.session(now, self.live_now())
@@ -149,55 +158,9 @@ class Telescope:
             self.check_finished(session, now)
         self.check_stall(now)
 
-    @staticmethod
-    def key(f: FrameFile) -> tuple[str, int]:
-        # Not the modification time: the ASIAIR touches a frame again after writing it.
-        return (f.path, f.size)
-
-    def render(self, f: FrameFile) -> None:
-        started = time.time()
-        try:
-            raw = self.asiair.read(f.path)
-            header, offset = fits.parse_header(raw)
-            rendered = fits.render(fits.read_pixels(raw, header, offset), header)
-        except fits.IncompleteFrame:
-            return  # still being written: next poll
-        except Exception as e:  # noqa: BLE001
-            log.error("frame %s: %s", f.path, e)
-            if not isinstance(e, OSError):
-                self.done.add(self.key(f))  # unreadable for good (OSError: retry next poll)
-            return
-        frame_id = hashlib.sha1("|".join(map(str, self.key(f))).encode()).hexdigest()[:16]
-        info = {
-            "id": frame_id,
-            "target": header.get("OBJECT") or f.target,
-            "mode": f.mode,
-            "number": f.number,
-            "at": date_obs(header.get("DATE-OBS")) or f.saved_at - f.exposure_s,
-            "exposureS": fits.number(header, "EXPTIME") or f.exposure_s,
-            "gain": fits.number(header, "GAIN"),
-            "sensorTempC": fits.number(header, "CCD-TEMP"),
-            "setTempC": fits.number(header, "SET-TEMP"),
-            "camera": header.get("INSTRUME"),
-            "focalLengthMm": fits.number(header, "FOCALLEN"),
-            "backgroundAdu": round(rendered.background_adu),
-            "stars": rendered.stars,
-            "hfr": rendered.hfr,
-            "width": rendered.width,
-            "height": rendered.height,
-        }
+    def is_online(self) -> bool:
         with self.lock:
-            for old in [k for k, v in self.frames.items() if v.file.path == f.path]:
-                del self.frames[old]
-            self.frames[frame_id] = Frame(frame_id, f, info, rendered.large, rendered.small)
-            self.frames = OrderedDict(sorted(self.frames.items(), key=lambda kv: kv[1].info["at"]))
-            while len(self.frames) > KEEP_FRAMES:
-                self.frames.popitem(last=False)
-            self.done.add(self.key(f))
-        log.info(
-            "frame %s #%d %s: background %d ADU, %d stars, HFR %s (%.1f s)",
-            info["target"], f.number, f.mode, info["backgroundAdu"], info["stars"], info["hfr"], time.time() - started,
-        )
+            return self.online
 
     # --- derived state -------------------------------------------------------------------------
 
@@ -223,7 +186,10 @@ class Telescope:
             return None
         exposure = run[-1].exposure_s
         first_frame_at = run[0].saved_at - run[0].exposure_s
+        newest_rel = self.archive.rel(newest.saved_at, newest.target, newest.path.rsplit("\\", 1)[-1])
         session = {
+            # The same session in /api/sessions (null until the worker has seen its frames).
+            "id": self.store.session_of(newest_rel),
             "target": newest.target,
             "mode": newest.mode,
             "root": newest.root,
@@ -366,8 +332,7 @@ class Telescope:
             current = self.current_plan(now)
             plan = current.json() if current else None
         with self.lock:
-            frames = [f.info for f in reversed(self.frames.values())]
-            online, last_contact, error = self.online, self.last_contact, self.error
+            online, last_contact, error, storage = self.online, self.last_contact, self.error, self.storage
         if session:
             session = {k: v for k, v in session.items() if k != "root"}
         return {
@@ -377,14 +342,24 @@ class Telescope:
             "session": session,
             "plan": plan,
             "live": live,
-            "frames": frames,
+            "frames": self.store.recent_infos(KEEP_FRAMES),
+            "stack": self.store.current_stack(session["id"] if session else None),
+            "storage": storage,
             "updatedAt": now,
         }
 
-    def image(self, frame_id: str, small: bool) -> bytes | None:
-        with self.lock:
-            frame = self.frames.get(frame_id)
-        return None if frame is None else (frame.small if small else frame.large)
+    def active_id(self) -> tuple[str | None, dict | None]:
+        """The stored id of the session being imaged now, and the live plan."""
+        live = self.live_now()
+        session = self.session(time.time(), live)
+        return (session["id"] if session and session["active"] else None), (live or {}).get("plan")
+
+    def sessions(self) -> list[dict]:
+        return self.store.list(self.active_id()[0])
+
+    def session_detail(self, sid: str) -> dict | None:
+        active, live_plan = self.active_id()
+        return self.store.detail(sid, active, live_plan)
 
     def metrics(self) -> str:
         status = self.status()
@@ -417,16 +392,29 @@ class Telescope:
                       "# TYPE telescope_guiding_rms_arcsec gauge"]
             for axis, key in (("total", "rmsArcsec"), ("ra", "rmsRaArcsec"), ("dec", "rmsDecArcsec")):
                 lines.append(f'telescope_guiding_rms_arcsec{{axis="{axis}"}} {guiding[key]}')
+        stack = status["stack"]
+        if stack:
+            labels = f'target="{escape(stack["target"])}"'
+            lines += ["# HELP telescope_stack_frames Frames of the current session's stack, by decision.",
+                      "# TYPE telescope_stack_frames gauge",
+                      f'telescope_stack_frames{{{labels},decision="accepted"}} {stack["accepted"]}',
+                      f'telescope_stack_frames{{{labels},decision="rejected"}} {stack["rejected"]}',
+                      "# HELP telescope_stack_integration_seconds Exposure time in the current session's stack.",
+                      "# TYPE telescope_stack_integration_seconds gauge",
+                      f"telescope_stack_integration_seconds{{{labels}}} {stack['integrationS']}"]
+        files, size = self.archive.totals()
+        lines += ["# HELP telescope_archive_files Files in the archive at home.",
+                  "# TYPE telescope_archive_files gauge", f"telescope_archive_files {files}",
+                  "# HELP telescope_archive_bytes Size of the archive at home.",
+                  "# TYPE telescope_archive_bytes gauge", f"telescope_archive_bytes {size}",
+                  "# HELP telescope_backfill_remaining Files on the ASIAIR not yet archived and analysed.",
+                  "# TYPE telescope_backfill_remaining gauge", f"telescope_backfill_remaining {self.store.backlog()}"]
+        if status["storage"]:
+            lines += ["# HELP telescope_asiair_storage_free_bytes Free space on the ASIAIR's storage.",
+                      "# TYPE telescope_asiair_storage_free_bytes gauge"]
+            lines += [f'telescope_asiair_storage_free_bytes{{share="{escape(s["name"])}"}} {s["freeBytes"]}'
+                      for s in status["storage"]]
         return "\n".join(lines) + "\n"
-
-
-def date_obs(value: str | None) -> float | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value).replace(tzinfo=timezone.utc).timestamp()
-    except ValueError:
-        return None
 
 
 def duration(seconds: float) -> str:
@@ -438,7 +426,15 @@ def escape(value: str) -> str:
     return value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
-def serve(telescope: Telescope) -> ThreadingHTTPServer:
+def read_file(path: str) -> bytes | None:
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def serve(telescope: Telescope, store: Store) -> ThreadingHTTPServer:
     class Handler(BaseHTTPRequestHandler):
         def send(self, status: int, kind: str, body: bytes, cache: str = "no-store") -> None:
             self.send_response(status)
@@ -448,20 +444,65 @@ def serve(telescope: Telescope) -> ThreadingHTTPServer:
             self.end_headers()
             self.wfile.write(body)
 
+        def json(self, status: int, value) -> None:
+            self.send(status, "application/json", json.dumps(value).encode())
+
+        def not_found(self) -> None:
+            self.send(404, "text/plain", b"not found\n")
+
         def do_GET(self) -> None:  # noqa: N802 - http.server's naming
-            path = self.path.split("?", 1)[0]
+            path, _, query = self.path.partition("?")
             if path == "/api/status":
-                return self.send(200, "application/json", json.dumps(telescope.status()).encode())
+                return self.json(200, telescope.status())
+            if path == "/api/sessions":
+                return self.json(200, telescope.sessions())
+            if m := SESSION.match(path):
+                detail = telescope.session_detail(m[1])
+                return self.json(200, detail) if detail else self.not_found()
             if m := FRAME_ID.match(path):
-                image = telescope.image(m[1], bool(m[2]))
+                image = read_file(store.preview_path(m[1], bool(m[2])))
                 if image is None:
-                    return self.send(404, "text/plain", b"not found\n")
+                    return self.not_found()
                 return self.send(200, "image/jpeg", image, "public, max-age=31536000, immutable")
+            if m := STACK.match(path):
+                if m[3] == "fits" and m[2]:
+                    return self.not_found()
+                name = "stack.fits" if m[3] == "fits" else f"stack{m[2] or ''}.jpg"
+                body = read_file(os.path.join(store.folder(m[1]), name))
+                if body is None:
+                    return self.not_found()
+                # ?v=<imageId> names one version of the stack: cacheable; without it, always fresh.
+                cache = "public, max-age=31536000, immutable" if "v=" in query else "no-cache"
+                kind = "application/fits" if m[3] == "fits" else "image/jpeg"
+                return self.send(200, kind, body, cache)
             if path == "/metrics":
                 return self.send(200, "text/plain; version=0.0.4", telescope.metrics().encode())
             if path == "/healthz":
                 return self.send(200, "text/plain", b"ok\n")
-            self.send(404, "text/plain", b"not found\n")
+            self.not_found()
+
+        def do_POST(self) -> None:  # noqa: N802
+            path = self.path.split("?", 1)[0]
+            try:
+                length = int(self.headers.get("content-length") or 0)
+                body = json.loads(self.rfile.read(length) or b"{}") if length <= 4096 else None
+            except ValueError:
+                body = None
+            if m := OVERRIDE.match(path):
+                if not isinstance(body, dict) or "accepted" not in body or body["accepted"] not in (True, False, None):
+                    return self.send(400, "text/plain", b'expected {"accepted": true|false|null}\n')
+                frame = store.override(m[1], m[2], body["accepted"])
+                if frame is None:
+                    return self.not_found()
+                log.info("frame %s of %s: %s by hand", m[2], m[1],
+                         {True: "accepted", False: "rejected", None: "automatic"}[body["accepted"]])
+                return self.json(200, {"frame": frame, "restacking": True})
+            if m := REPROCESS.match(path):
+                if not store.reprocess(m[1]):
+                    return self.not_found()
+                log.info("session %s: reprocessing", m[1])
+                return self.json(202, {"reprocessing": True})
+            self.not_found()
 
         def log_message(self, format: str, *args) -> None:  # noqa: A002 - quiet access log
             pass
@@ -481,11 +522,22 @@ def main() -> None:
         os.environ.get("NOTIFY_TOKEN", ""),
         os.environ.get("NOTIFY_LINK", "https://dashboard.shillyshally.org/?tab=telescope"),
     )
-    telescope = Telescope(Asiair(HOST, ROOTS, TZ), Live(HOST) if LIVE else None, notifier)
-    serve(telescope)
-    log.info("telescope: ASIAIR %s, roots %s, live %s, notifications %s, listening on :%d",
+    asiair = Asiair(HOST, ROOTS, TZ)
+    journal = Journal(os.path.join(DATA_DIR, "live"), TZ)
+    live = Live(HOST, journal.append) if LIVE else None
+    archive = Archive(ARCHIVE_DIR, TZ)
+    store = Store(DATA_DIR, CACHE_DIR, archive, journal, asiair, TZ, CACHE_MAX_BYTES)
+    telescope = Telescope(asiair, live, notifier, store, archive)
+    # The worker reads from the ASIAIR only while its storage answers the polls.
+    store.online = telescope.is_online
+    if live:
+        Recorder(journal, live.snapshot)
+    serve(telescope, store)
+    files, size = archive.totals()
+    log.info("telescope: ASIAIR %s, roots %s, live %s, notifications %s, archive %d files (%.1f GB), listening on :%d",
              HOST, ", ".join(f"{s}\\{r}".rstrip("\\") for s, r in ROOTS), "on" if LIVE else "off",
-             "on" if notifier.token else "off", PORT)
+             "on" if notifier.token else "off", files, size / 1e9, PORT)
+    store.start()
     while True:
         started = time.time()
         telescope.poll()

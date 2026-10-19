@@ -1,5 +1,6 @@
-# Telescope: the cabin's ZWO ASIAIR imaging session (previews, plan progress, notifications) for the
-# dashboard's Telescope tab. Cluster-internal at http://telescope.telescope.svc:8080.
+# Telescope: the cabin's ZWO ASIAIR imaging sessions (archive, previews, frame rejection, live
+# stacks, observing log, notifications) for the dashboard's Telescope tab and the telescope web app
+# (../web). Cluster-internal at http://telescope.telescope.svc:8080.
 # Optional secret telescope-notify (NOTIFY_TOKEN; apps/notify/README.md#adding-a-sender), not in git.
 # Build + apply: apps/telescope/deploy.sh (sets newTag below).
 apiVersion: kustomize.config.k8s.io/v1beta1
@@ -7,11 +8,12 @@ kind: Kustomization
 namespace: telescope
 resources:
   - namespace.yaml
+  - storage.yaml
   - app.yaml
   - networkpolicy.yaml
 images:
   - name: localhost/telescope
-    newTag: "20261017-233326"
+    newTag: "20261019-155920"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: telescope-config
@@ -27,3 +29,5 @@ configMapGenerator:
       - STALL_MIN=15
       - NOTIFY_URL=http://web.notify.svc:3000
       - NOTIFY_LINK=https://dashboard.shillyshally.org/?tab=telescope
+      # Aligned frames kept for restacking (the cache emptyDir's sizeLimit is 20Gi).
+      - CACHE_MAX_GB=15
