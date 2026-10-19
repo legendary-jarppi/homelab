@@ -73,3 +73,34 @@ Measure how full the cabin's septic tank is, so emptying can be booked before it
 - Measurement interval: a few times a day is plenty, which keeps the battery going for years.
 
 **In Home Assistant:** fill percentage from the measured distance and the tank's depth, an alert at a threshold (for example 75 % = book emptying), and the fill rate to estimate when it will be full; optionally on the dashboard's cabin card.
+
+## DSC Neo alarms (home and cabin)
+
+**Status:** planned (2026-10-18); the panels are not on the network yet. Research and decisions below.
+
+**Hardware** (as reported): DSC PowerSeries Neo **HS2032** panel with a **TL2803G** communicator (Ethernet + 3G). No security company monitors them, and the installer code is at hand, so all four integration slots are free.
+
+**How:** the Neo's integration protocol ITv2 through the TL280-family communicator: the panel *dials out* to a receiver on the LAN and pushes zone, partition, alarm and trouble changes (AES-encrypted). The older Neo-incompatible routes (Envisalink, dscKeybusInterface ESP32 boards) do not apply. Receiver: the Home Assistant integration [HA_DSC_Neo_ITv2](https://github.com/LawPaul/HA_DSC_Neo_ITv2) (`dsc_neo_itv2`, GPL-3, v1.0.0 from 2026-07, developed against an HS2032 + TL280; supports the TL2803G). Alternative: [NeoHub](https://github.com/BrianHumlicek/NeoHub) (own web UI; its HA integration is unfinished). Fallback without the communicator: PGM outputs (armed, alarm, fire) into an ESP32 over optocouplers, status only.
+
+**Panel programming** (per panel, `[*][8]` + installer code; sections for communicator firmware v5.0+, older boards differ):
+
+| Section | Value |
+|---|---|
+| `[851][422]` | Integration ID: read only, write the 12 digits down |
+| `[851][425]` | Integration options: bits 3, 4, 5 (`--345---`) |
+| `[851][426]` | Polling / notifications: bit 3 only (`--3-----`) |
+| `[851][428]` | Receiver IP: `192.168.1.10` (Home Assistant runs on the node's network) |
+| `[851][429]` | Receiver port, **hex**: home `0C00` (3072), cabin `0C01` (3073) |
+| `[851][700]` | Type 2 access key, 32 hex characters: a new random one, not the factory default |
+
+**Homelab changes when the panels are connected:**
+- TL2803G on the LAN by Ethernet (a fixed address at each site); the cabin panel reaches `192.168.1.10` over the Site Magic VPN.
+- firewalld (`platform/host/prepare.sh`): 3072–3073/tcp from `192.168.1.0/24` and `192.168.20.0/24` only, never port-forwarded.
+- Home Assistant: the integration from a pinned release in git (not HACS), one config entry per panel (ports 3072 and 3073); no user PIN stored, so HA asks for the code on every arm/disarm.
+- **Dashboard: status only** (decided 2026-10-18; no arming or disarming there, it is too easy to tap by accident and the dashboard has no login): per site armed state, alarm / fire / trouble, open zones, recent events.
+- Notifications through apps/notify: alarm and fire (with the cabin camera's latest picture), AC power loss (a power cut at the cabin), low battery, communicator trouble, armed/disarmed by which user.
+- Optional: a reminder when everyone has left home (apps/presence) and the alarm is not armed; Grafana timeline of arming and zone activity.
+
+**Cabin heating by alarm state** (idea to keep): *armed away* → economy (NIBE heating offset down, Innova lower or off; keep frost protection and hot water); *disarmed* → comfort. Disarming happens on arrival, which is too late to warm a cold cabin, so pre-warming needs its own trigger (a "heading to the cabin" action, or presence). Who acts (an HA automation calling apps/climate, or apps/climate reading the alarm state) is to be decided; apps/climate already controls both heat pumps.
+
+**Risks:** a life-safety system and a young, reverse-engineered integration. The panel keeps protecting regardless; a Home Assistant restart or a broken link only makes HA's view stale. Never disarm from automations or untrusted input.
