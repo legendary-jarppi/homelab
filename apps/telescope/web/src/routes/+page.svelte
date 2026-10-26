@@ -9,10 +9,11 @@
 	import Telemetry from '$lib/components/Telemetry.svelte';
 	import Timeline from '$lib/components/Timeline.svelte';
 	import { estimateFinish } from '$lib/eta';
+	import { nightNoon, sky } from '$lib/sky';
 	import { formatAgo, formatDuration } from '$lib/format';
 	import { now } from '$lib/now.svelte';
 	import { SessionData, stackUrl } from '$lib/session.svelte';
-	import type { SessionSummary, Status } from '$lib/types';
+	import type { AdviceReport, SessionSummary, Status } from '$lib/types';
 
 	/**
 	 * Live: the current session (or the most recent one): stack, head, timeline, guiding, frames, telemetry.
@@ -30,6 +31,11 @@
 	const STATUS_MS = 10_000;
 	const SESSIONS_MS = 60_000;
 	const DETAIL_MS = 30_000;
+	/** R6: calibration reminders (the server rebuilds them at most every 10 min). */
+	const ADVICE_MS = 600_000;
+	let advice = $state.raw<AdviceReport | null>(null);
+	/** What is due: the reminders that are warnings (flats before turning the camera, missing darks or bias). */
+	const due = $derived(advice?.calibration.filter((c) => c.level === 'warn') ?? []);
 
 	const sessionId = $derived(status?.stack?.sessionId ?? sessions?.[0]?.id ?? null);
 	/** Changes when the service has something new for the session: a frame, a restack. */
@@ -38,6 +44,13 @@
 	const live = $derived(status?.live?.connected ? status.live : null);
 	const nowS = $derived(now.ms / 1000);
 	const finish = $derived(estimateFinish(detail, live));
+	/** End of tonight's darkness (astronomical, else nautical): a finish later than this will not happen. */
+	const dawn = $derived.by(() => {
+		const where = detail?.site ?? data.site;
+		if (!detail || !where) return null;
+		const night = sky(where.lat, where.lon, nightNoon(detail.night));
+		return night.astronomical?.end ?? night.nautical?.end ?? null;
+	});
 	const stack = $derived(detail?.stack ?? (status?.stack?.sessionId === sessionId ? status?.stack : null) ?? null);
 	const latest = $derived(detail?.frames.at(-1) ?? null);
 
@@ -59,10 +72,19 @@
 			// The status poll reports the service being away.
 		}
 	}
+	async function refreshAdvice() {
+		try {
+			const response = await fetch('/api/advice');
+			if (response.ok) advice = (await response.json()) as AdviceReport;
+		} catch {
+			// Not shown without it.
+		}
+	}
 
 	$effect(() => now.use());
 	$effect(() => {
-		const timers = [setInterval(refreshStatus, STATUS_MS), setInterval(refreshSessions, SESSIONS_MS)];
+		void refreshAdvice();
+		const timers = [setInterval(refreshStatus, STATUS_MS), setInterval(refreshSessions, SESSIONS_MS), setInterval(refreshAdvice, ADVICE_MS)];
 		return () => timers.forEach(clearInterval);
 	});
 	$effect(() => {
@@ -107,7 +129,12 @@
 		{/if}
 	</div>
 	<div class="right">
-		<div class="head"><SessionHeader {status} session={detail} {nowS} {finish} {failedSince} /></div>
+		<div class="head">
+			<SessionHeader {status} session={detail} {nowS} {finish} {dawn} {failedSince} />
+			{#if due.length}
+				<p class="todo small"><a href="/library">Calibration</a>: {due[0].text.split(': ')[0]}{due.length > 1 ? ` (+${due.length - 1} more)` : ''}</p>
+			{/if}
+		</div>
 		{#if session.error && !detail && sessionId}
 			<div class="timeline"><Card title="Session"><p class="warn">Session report unavailable: {session.error}</p></Card></div>
 		{/if}
@@ -145,6 +172,11 @@
 	}
 	.head {
 		order: 1;
+	}
+	.todo {
+		margin-top: 8px;
+		font-size: 13px;
+		color: var(--warn);
 	}
 	.stack {
 		order: 2;

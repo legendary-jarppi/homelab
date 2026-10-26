@@ -31,6 +31,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import fitsio
+import filters
 import library as lib
 import pipeline
 import siril
@@ -415,7 +416,7 @@ class Finals:
             with self.lock:
                 final.update(status="done", progress=None, finishedAt=time.time(), files=files, colour=colour,
                              view=shown, equipment={"camera": plan["camera"], "focalMm": plan["focal"],
-                                                    "pixelUm": plan["pixel"],
+                                                    "pixelUm": plan["pixel"], "filter": plan.get("filter"),
                                                     "pixelScaleArcsec": shown["pixelScaleArcsec"]},
                              stacking={"method": method, "frames": registered, "registered": registered,
                                        "intermediate": "16-bit" if steps.force_16bit else "32-bit",
@@ -479,6 +480,9 @@ class Finals:
         first = lights[0]
         pointed = next((x for x in lights if x["ra"] is not None and x["dec"] is not None), None)
         ra, dec = (pointed["ra"], pointed["dec"]) if pointed else (None, None)
+        # The filter(s) the lights were taken through; None when none of them had one.
+        used = {filters.on(x["night"], x.get("filter")) for x in lights}
+        filter_text = "; ".join(sorted(name or "no filter" for name in used)) if any(used) else None
         return {
             "sessions": [s["id"] for s in sessions],
             "frames": len(lights),
@@ -490,6 +494,7 @@ class Finals:
             "focal": statistics.median([x["focalMm"] for x in lights if x.get("focalMm")] or [0]) or None,
             "pixel": statistics.median([x["pixelUm"] for x in lights if x.get("pixelUm")] or [0]) or None,
             "camera": first["camera"],
+            "filter": filter_text,
             "takenAt": max((x["at"] for x in lights if x.get("at")), default=None),
         }
 

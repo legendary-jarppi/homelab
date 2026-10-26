@@ -1,18 +1,21 @@
-// Public mode (D4): requests for PUBLIC_HOST (telescope.shillyshally.org through cloudflared, behind Cloudflare
-// Access) may only read the gallery and the published items' pictures, details and star measurements. The
-// tunnel routes only those paths too, but this is the check that counts.
+// Public mode (D4): requests for PUBLIC_HOST (astro.shillyshally.org through cloudflared, open to anyone: an
+// Access application with a bypass policy) may only read the gallery and the published items' pictures,
+// details and star measurements. The full app is at telescope.shillyshally.org behind Access (policy Family)
+// and at telescope.lab.internal. The tunnel routes only the gallery paths for the share host too, but this is
+// the check that counts.
 import { config } from './config';
 import { upstreamJson } from './telescope';
 import type { Final, Upload } from '$lib/types';
 
 /**
- * A request for the public host: its Host header or the forwarded host names it, or it came through
- * Cloudflare at all (cloudflared passes on client headers, so any one of them is enough to be public).
+ * A request for the public share host: its Host header or the forwarded host names it. Cloudflare routes by
+ * Host and applies that host's Access application, so the full app's address (behind the family login) is
+ * never the share host; a client adding the share host in X-Forwarded-Host only restricts itself.
  */
 export function isPublicRequest(request: Request): boolean {
 	if (!config.publicHost) return false;
 	const hosts = [request.headers.get('host'), request.headers.get('x-forwarded-host')].map((h) => h?.split(',')[0].trim().toLowerCase().replace(/:\d+$/, ''));
-	return hosts.includes(config.publicHost) || request.headers.has('cf-connecting-ip');
+	return hosts.includes(config.publicHost);
 }
 
 /** How long the published ids are trusted before they are asked again. */

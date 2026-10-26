@@ -1,5 +1,6 @@
 # Enforced by k3s's embedded network policy controller. Default deny, then:
-#   web      <- cloudflared (the web app, through the tunnel), home dashboard (/api/send)
+#   web      <- cloudflared (the web app, through the tunnel), senders (/api/send): home dashboard, the telescope
+#               service, the telescope web app (digests)
 #   web      -> postgres; the internet on 443 (push services, Cloudflare Access keys), not the LAN
 #   postgres <- web
 # Everything may resolve DNS.
@@ -75,6 +76,12 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: telescope
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: telescope
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: telescope-web
       ports:
         - port: http
 ---

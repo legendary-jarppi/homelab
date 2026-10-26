@@ -1,7 +1,8 @@
 <script lang="ts">
 	import Card from '$lib/components/Card.svelte';
+	import { ANGLE_MATCH_DEG, BIAS_MAX_DAYS, DARK_MAX_DAYS, FLAT_MAX_DAYS, RECENT_DAYS, TEMP_MATCH_C } from '$lib/calibration';
 	import { fixed, nightLabel } from '$lib/format';
-	import type { CalibrationChoice, CalibrationSet, CalibrationType, LibraryMatch, Master } from '$lib/types';
+	import type { AdviceReport, CalibrationChoice, CalibrationSet, CalibrationType, LibraryMatch, Master } from '$lib/types';
 
 	/**
 	 * D2: the calibration library: masters (with downloads) and the raw sets they were built from, by kind,
@@ -10,8 +11,8 @@
 	 */
 	let { data } = $props();
 
-	/** Ages past which the kind is worth renewing, days: the processor's own limits against the lights (FLAT_MAX_DAYS …). */
-	const STALE_DAYS: Record<CalibrationType, number> = { flat: 7, dark: 180, bias: 365 };
+	/** Ages past which the kind is worth renewing, days: the processor's own limits against the lights. */
+	const STALE_DAYS: Record<CalibrationType, number> = { flat: FLAT_MAX_DAYS, dark: DARK_MAX_DAYS, bias: BIAS_MAX_DAYS };
 	const TYPES: [CalibrationType, string][] = [
 		['dark', 'Darks'],
 		['flat', 'Flats'],
@@ -40,6 +41,22 @@
 			})
 			.catch((e: Error) => {
 				if (e.name !== 'AbortError') matchError = e.message;
+			});
+		return () => controller.abort();
+	});
+
+	// R6: what to take next (the server's calibration reminders, built at most every 10 min).
+	let advice = $state.raw<AdviceReport | null>(null);
+	let adviceError = $state<string | null>(null);
+	$effect(() => {
+		const controller = new AbortController();
+		fetch('/api/advice', { signal: controller.signal })
+			.then(async (r) => {
+				if (!r.ok) throw new Error(`HTTP ${r.status}`);
+				advice = (await r.json()) as AdviceReport;
+			})
+			.catch((e: Error) => {
+				if (e.name !== 'AbortError') adviceError = e.message;
 			});
 		return () => controller.abort();
 	});
@@ -82,6 +99,23 @@
 		<Card title="Calibration library"><p class="muted">Unavailable: {data.libraryError}</p></Card>
 	{:else}
 		{@const lib = data.library}
+		<Card title="To do">
+			{#snippet accessory()}{#if advice?.calibration.length}<span class="num">{advice.calibration.length}</span>{/if}{/snippet}
+			{#if adviceError}<p class="warn">Reminders unavailable: {adviceError}</p>
+			{:else if !advice}<p class="muted">Loading…</p>
+			{:else if !advice.calibration.length}<p class="small ok">Nothing to take: the lights of the last {RECENT_DAYS} days (and of targets with a goal) have matching calibration.</p>
+			{:else}
+				<ul class="list">
+					{#each advice.calibration as item (item.text)}
+						<li>
+							<span class="tag" class:accent={item.kind === 'flat'}>{item.kind}</span>
+							<span class="body" class:warn={item.level === 'warn'}>{item.text}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
+			<p class="faint small">For the targets imaged in the last {RECENT_DAYS} days or with a goal, from the processor's match below and its limits: flats at the lights' camera angle (±{ANGLE_MATCH_DEG}°, modulo 180°) within {FLAT_MAX_DAYS} days, darks of the lights' exposure, gain and temperature (±{TEMP_MATCH_C} °C) up to {DARK_MAX_DAYS} days older, a bias up to {BIAS_MAX_DAYS} days old.</p>
+		</Card>
 		<div class="match">
 			<Card title="Calibration for a target">
 				{#snippet accessory()}
@@ -138,7 +172,7 @@
 							<li>
 								<span class="body">
 									<span class="num">{setting(s, s.sensorTempC)}</span>
-									<span class="small muted num">{nightLabel(s.night)} · <span class:warn={days > STALE_DAYS[type]}>{days} d</span> · {s.count} frames{s.setTempC !== null ? ` · set ${s.setTempC} °C` : ''}{s.binning && s.binning > 1 ? ` · bin ${s.binning}` : ''}{s.camera ? ` · ${s.camera}` : ''}</span>
+									<span class="small muted num">{nightLabel(s.night)} · <span class:warn={days > STALE_DAYS[type]}>{days} d</span> · {s.count} frames{s.setTempC !== null ? ` · set ${s.setTempC} °C` : ''}{s.binning && s.binning > 1 ? ` · bin ${s.binning}` : ''}{s.camera ? ` · ${s.camera}` : ''}{type === 'flat' ? ` · ${s.filter ?? 'no filter'}` : ''}</span>
 								</span>
 							</li>
 						{/each}

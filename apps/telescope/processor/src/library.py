@@ -13,9 +13,11 @@ offset, binning, temperature, camera angle):
 - dark: same gain, offset, binning and exposure, temperature within ±2 °C, nearest in time; else
   within 5 °C (warned); else another exposure at the right temperature, scaled by Siril (`-opt`,
   needs a bias; warned as missing); else none: hot pixels are then found in the lights themselves.
-- flat: same camera angle (modulo 180°: a meridian flip turns the sky angle, not the camera against
-  the optics, so its dust stays put), nearest in time; else any angle (warned). Warned when more
-  than `FLAT_MAX_DAYS` from the lights.
+- flat: the same filter (a flat taken without the lights' filter, or with another, has other
+  vignetting and dust; the filter comes from the header's FILTER, else the FILTERS history in
+  filters.py), the same camera angle (modulo 180°: a meridian flip turns the sky angle, not the
+  camera against the optics, so its dust stays put), nearest in time; else another filter or angle
+  (warned). Warned when more than `FLAT_MAX_DAYS` from the lights.
 - bias: needed without a matching dark or for a scaled dark; same gain, offset, binning, nearest
   temperature and time. The flat master records the bias or dark-flat it was calibrated with.
 """
@@ -33,6 +35,7 @@ import time
 from datetime import date
 
 import fitsio
+import filters
 
 log = logging.getLogger("library")
 
@@ -88,6 +91,7 @@ def frame_fields(header: dict[str, str]) -> dict:
         "width": int(fitsio.number(header, "NAXIS1") or 0),
         "height": int(fitsio.number(header, "NAXIS2") or 0),
         "bayer": header.get("BAYERPAT") or None,
+        "filter": (header.get("FILTER") or "").strip() or None,
         "at": fitsio.date_obs(header.get("DATE-OBS")),
     }
 
@@ -150,7 +154,9 @@ def group_sets(frames: list[dict]) -> list[dict]:
     keyed: dict[tuple, list[dict]] = {}
     for f in frames:
         exposure = round(f["exposureS"], 4) if f["exposureS"] is not None and f["kind"] != "flat" else None
-        key = (f["kind"], f["night"], f["camera"], f["width"], f["height"], f["gain"], f["offset"], f["binning"], exposure)
+        # The filter only matters for flats (bias and darks are taken with the telescope capped).
+        key = (f["kind"], f["night"], f["camera"], f["width"], f["height"], f["gain"], f["offset"], f["binning"], exposure,
+               filters.on(f["night"], f.get("filter")) if f["kind"] == "flat" else None)
         keyed.setdefault(key, []).append(f)
     sets = []
     for key, members in keyed.items():
@@ -173,6 +179,7 @@ def group_sets(frames: list[dict]) -> list[dict]:
                     "binning": group[0]["binning"],
                     "rotatorDeg": round(statistics.median(angles), 1) if kind == "flat" and angles else None,
                     "camera": group[0]["camera"], "width": group[0]["width"], "height": group[0]["height"],
+                    "filter": key[9],
                     "firstAt": min(times) if times else None, "lastAt": max(times) if times else None,
                     "files": [f["rel"] for f in group],
                     "digest": hashlib.sha1(json.dumps([[f["rel"], f["size"], f["mtime"]] for f in group]).encode()).hexdigest()[:8],
@@ -196,7 +203,7 @@ def light_groups(lights: list[dict]) -> list[dict]:
     keyed: dict[tuple, list[dict]] = {}
     for f in lights:
         key = (f["night"], f["camera"], f["width"], f["height"], f["gain"], f["offset"], f["binning"],
-               round(f["exposureS"] or 0, 3))
+               round(f["exposureS"] or 0, 3), filters.on(f["night"], f.get("filter")))
         keyed.setdefault(key, []).append(f)
     groups = []
     for key, members in sorted(keyed.items(), key=lambda kv: (kv[0][0], kv[0][7])):
@@ -217,7 +224,7 @@ def light_groups(lights: list[dict]) -> list[dict]:
                 times = [f["at"] for f in run if f["at"] is not None]
                 groups.append({
                     "night": key[0], "camera": key[1], "width": key[2], "height": key[3], "gain": key[4],
-                    "offset": key[5], "binning": key[6], "exposureS": run[0]["exposureS"],
+                    "offset": key[5], "binning": key[6], "exposureS": run[0]["exposureS"], "filter": key[8],
                     "sensorTempC": round(statistics.median(temps), 1) if temps else None,
                     "rotatorDeg": round(angles[0], 1) if angles else None,
                     "angles": sorted({round(a) % 360 for a in angles}),
@@ -303,19 +310,28 @@ def match_group(group: dict, masters: list[dict]) -> dict:
         warnings.append(f"Bias is {-_age_days(lights_bias, group):.0f} days older than the lights")
 
     flats = [m for m in masters if m["type"] == "flat" and same_camera(m, group)]
+    lights_filter = group.get("filter")
+
+    def flat_filter(m: dict) -> str | None:
+        # Masters built before filters were tracked carry none: their night's filter from the history.
+        return m["filter"] if "filter" in m else filters.on(m["night"])
 
     def flat_key(m: dict) -> tuple:
         if m["rotatorDeg"] is None or group["rotatorDeg"] is None:
             angle = 1  # unknown: after a known match, before a known mismatch
         else:
             angle = 0 if angle_diff(m["rotatorDeg"], group["rotatorDeg"]) <= ANGLE_MATCH_DEG else 2
-        return angle, abs(_age_days(m, group)), m["gain"] != group["gain"], -m["frames"]
+        return flat_filter(m) != lights_filter, angle, abs(_age_days(m, group)), m["gain"] != group["gain"], -m["frames"]
 
     flat = min(flats, key=flat_key, default=None)
     if flat is None:
         warnings.append("No flat: vignetting and dust spots stay in the image")
     else:
-        if flat_key(flat)[0] == 2:
+        if flat_key(flat)[0]:
+            taken = f"with the {flat_filter(flat)}" if flat_filter(flat) else "without a filter"
+            lights = f"with the {lights_filter}" if lights_filter else "without a filter"
+            warnings.append(f"Flat taken {taken}, lights {lights} (vignetting and dust spots differ)")
+        if flat_key(flat)[1] == 2:
             lights = "/".join(f"{a}°" for a in group["angles"]) or f"{group['rotatorDeg']:.0f}°"
             warnings.append(f"Flat taken at camera angle {flat['rotatorDeg']:.0f}°, lights at {lights} (dust spots may not match)")
         days = days_between(group["night"], flat["night"])
@@ -327,7 +343,7 @@ def match_group(group: dict, masters: list[dict]) -> dict:
     calibrated_with = (flat or {}).get("calibratedWith") or {}
     return {
         "night": group["night"], "frames": len(group["frames"]), "exposureS": exposure, "gain": group["gain"],
-        "offset": group["offset"], "tempC": temp, "rotatorDeg": group["rotatorDeg"],
+        "offset": group["offset"], "tempC": temp, "rotatorDeg": group["rotatorDeg"], "filter": lights_filter,
         "bias": (lights_bias or {}).get("id") or calibrated_with.get("bias"),
         "dark": dark["id"] if dark else None,
         "flat": flat["id"] if flat else None,
@@ -480,7 +496,8 @@ class Library:
             "id": mid, "type": s["type"], "builtAt": None, "sets": [s["id"]], "frames": s["count"],
             "exposureS": s["exposureS"], "gain": s["gain"], "offset": s["offset"], "tempC": s["sensorTempC"],
             "setTempC": s["setTempC"], "rotatorDeg": s["rotatorDeg"], "night": s["night"], "binning": s["binning"],
-            "camera": s["camera"], "width": s["width"], "height": s["height"], "firstAt": s["firstAt"],
+            "camera": s["camera"], "width": s["width"], "height": s["height"], "filter": s.get("filter"),
+            "firstAt": s["firstAt"],
             "lastAt": s["lastAt"], "median": (stats or {}).get("median"), "noise": (stats or {}).get("noise"),
             "fitsUrl": f"/masters/{mid}.fits", "calibratedWith": calibrator if s["type"] == "flat" else None,
             "warnings": warnings, "digest": s["digest"],
@@ -550,13 +567,16 @@ class Library:
 
     def json(self) -> dict:
         public_set = ("id", "type", "night", "count", "exposureS", "gain", "offset", "sensorTempC", "setTempC",
-                      "binning", "rotatorDeg", "camera", "firstAt", "lastAt")
+                      "binning", "rotatorDeg", "camera", "filter", "firstAt", "lastAt")
         public_master = ("id", "type", "builtAt", "sets", "frames", "exposureS", "gain", "offset", "tempC",
                          "rotatorDeg", "night", "median", "noise", "fitsUrl", "binning", "camera", "calibratedWith",
                          "warnings")
         with self.lock:
             sets = [{k: s[k] for k in public_set} for s in self.sets]
-            masters = [{k: m.get(k) for k in public_master} for m in sorted(self.masters.values(), key=lambda m: (m["night"], m["id"]))]
+            # Flats built before filters were tracked: their night's filter from the history; bias and darks have none.
+            masters = [{**{k: m.get(k) for k in public_master},
+                        "filter": (m["filter"] if "filter" in m else filters.on(m["night"])) if m["type"] == "flat" else None}
+                       for m in sorted(self.masters.values(), key=lambda m: (m["night"], m["id"]))]
             failed = [{"set": sid, **f} for sid, f in self.failed.items()]
             updated = self.updated_at
         pending = [p["id"] for p in self.pending()] if updated else []

@@ -320,10 +320,12 @@
 			<ClimateCard {climate} configured={data.climateConfigured} onchange={(next) => (climate = next)} />
 		</main>
 	{:else if tab === 'telescope'}
-		<!-- The telescope web app (home network and VPN only; not through dashboard.shillyshally.org). -->
-		<a class="homelab-link" href="http://telescope.lab.internal" target="_blank" rel="noopener">
+		<!-- The telescope web app at the address matching this one: lab.internal at home, its public name
+		     (Cloudflare Access, the same family login) through dashboard.shillyshally.org. -->
+		{@const telescopeHost = page.url.hostname.endsWith('.shillyshally.org') ? 'telescope.shillyshally.org' : 'telescope.lab.internal'}
+		<a class="homelab-link" href="{telescopeHost === 'telescope.lab.internal' ? 'http' : 'https'}://{telescopeHost}" target="_blank" rel="noopener">
 			Open telescope app
-			<span class="muted">telescope.lab.internal ↗</span>
+			<span class="muted">{telescopeHost} ↗</span>
 		</a>
 		<main class="grid telescope-page">
 			<div class="area frame">

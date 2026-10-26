@@ -12,8 +12,19 @@
 		session,
 		nowS,
 		finish,
+		dawn = null,
 		failedSince
-	}: { status: Status | null; session: SessionDetail | null; nowS: number; finish: { target: number | null; plan: number | null }; failedSince: number | null } = $props();
+	}: {
+		status: Status | null;
+		session: SessionDetail | null;
+		nowS: number;
+		finish: { target: number | null; plan: number | null };
+		/** End of tonight's darkness (unix ms), if known. */
+		dawn?: number | null;
+		failedSince: number | null;
+	} = $props();
+	/** A finish after dawn is not a time the plan will reach tonight: say dawn comes first. */
+	const pastDawn = (s: number) => dawn !== null && s * 1000 > dawn;
 
 	const live = $derived(status?.live?.connected ? status.live : null);
 	const plan = $derived(session?.active ? live?.plan : null);
@@ -77,8 +88,8 @@
 			<div><dt>Integration</dt><dd class="num">{formatDuration(session.integrationS)}</dd></div>
 			{#if session.exposureS}<div><dt>Exposure</dt><dd class="num">{session.exposureS} s</dd></div>{/if}
 			<div><dt>Last frame</dt><dd class="num">{formatAgo(session.lastFrameAt, nowS * 1000)}</dd></div>
-			{#if finish.target}<div><dt>Target done</dt><dd class="num">≈ {clock(finish.target * 1000)}</dd></div>{/if}
-			{#if finish.plan}<div><dt>Plan done</dt><dd class="num">≈ {clock(finish.plan * 1000)}</dd></div>{/if}
+			{#if finish.target}<div><dt>Target done</dt><dd class="num" class:warn={pastDawn(finish.target)}>{pastDawn(finish.target) ? `dawn ${clock(dawn!)} first` : `≈ ${clock(finish.target * 1000)}`}</dd></div>{/if}
+			{#if finish.plan}<div><dt>Plan done</dt><dd class="num" class:warn={pastDawn(finish.plan)}>{pastDawn(finish.plan) ? `dawn ${clock(dawn!)} first` : `≈ ${clock(finish.plan * 1000)}`}</dd></div>{/if}
 		</dl>
 	{/if}
 </Card>

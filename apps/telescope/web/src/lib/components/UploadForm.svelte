@@ -36,6 +36,11 @@
 		form.set('title', title.trim());
 		form.set('note', note.trim());
 		if (takenOn) form.set('takenAt', String(Math.round(new Date(`${takenOn}T12:00:00`).getTime() / 1000)));
+		// D8: the target's catalog position as the plate solver's starting point (else it searches the whole sky).
+		if (dso) {
+			form.set('raHint', String(dso.ra));
+			form.set('decHint', String(dso.dec));
+		}
 		// XMLHttpRequest for the upload progress (fetch has none).
 		const xhr = new XMLHttpRequest();
 		xhr.open('POST', '/api/uploads');
@@ -104,7 +109,7 @@
 		{#if problem}<span class="small warn">{problem}</span>{/if}
 		{#if done}<span class="small">{done}</span>{/if}
 	</div>
-	<p class="small muted wide">JPEG, PNG, TIFF (8 or 16 bit) or FITS, up to 300 MB. Kept on the backed-up data volume; a FITS with a plate solve gets annotated. Private until published.</p>
+	<p class="small muted wide">JPEG, PNG, TIFF (8 or 16 bit) or FITS, up to 300 MB. Kept on the backed-up data volume; plate solved after the upload (unless a FITS brings its own solution) and then annotated. Private until published.</p>
 </form>
 
 <style>

@@ -14,7 +14,8 @@ restacking) are a disposable cache (<cache>/<id>/), rebuilt from the archive whe
 
 One worker thread does all the processing, highest priority first: the newest session's frames
 (newest first) and its restack, the logs, then the backfill of older sessions and calibration frames
-with a pause between files, so a running session's new frames never wait behind the backfill.
+with a pause between files, so a running session's new frames never wait behind the backfill. A
+second thread plate solves (ASTAP) frames analysed without a solution while the worker is idle.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ import logging
 import os
 import re
 import shutil
+import statistics
 import threading
 import time
 import warnings
@@ -37,11 +39,16 @@ import numpy as np
 import analysis
 import autorun
 import fits
+import filters
+import focus
 import images
 import measure
 import register
 import rejection
+import solve
+import skyq
 import stacking
+import trails
 from archive import Archive, night_of
 from asiair import FRAME, Asiair, FrameFile, LogFile, OtherFile
 from journal import Journal
@@ -59,6 +66,10 @@ COMBINE_EVERY_S = 60
 SETTLE_S = 15
 BACKFILL_PAUSE_S = 2.0
 RETRY_S = 60
+# The solver thread looks for frames without a plate solve this often when it found none.
+SOLVER_IDLE_S = 60
+# Folders in /cache that are not a session's aligned frames: never pruned (tilt.Inspector, guidelog.GuideLogs).
+CACHE_SHARED = {"inspect", "guidelogs"}
 # Live history around a session: before its first frame (GoTo, centering, auto focus) and after.
 LEAD_S = 1800
 TRAIL_S = 600
@@ -68,6 +79,11 @@ TIMELINE_ACTIVITIES = {"Auto focus": "autofocus", "Meridian flip": "meridian_fli
                        "Plate solving": "centering"}
 # The camera angle in a frame's name: Light_M 31_180.0s_Bin1_20260903-021110_93deg_0001.fit.
 NAME_ANGLE = re.compile(r"_(-?\d+(?:\.\d+)?)deg_")
+# A rejection's first reason (rejection.py's and reason()'s wording) as a kind for the statistics;
+# "stars elongated" before the star count's "stars …".
+REJECT_KINDS = (("only ", "stars"), ("stars elongated", "elongation"), ("stars ", "stars"), ("HFR", "hfr"),
+                ("background", "background"), ("guiding", "guiding"), ("not aligned", "alignment"),
+                ("rejected by hand", "manual"), ("unreadable", "unreadable"))
 
 
 def slug(text: str) -> str:
@@ -104,6 +120,13 @@ def r2(value: float | None, digits: int = 2) -> float | None:
     return None if value is None else round(value, digits)
 
 
+def reject_kind(reason: str | None) -> str:
+    for prefix, kind in REJECT_KINDS:
+        if reason and reason.startswith(prefix):
+            return kind
+    return "other"
+
+
 class Store:
     def __init__(self, data: str, cache: str, archive: Archive, journal: Journal, asiair: Asiair,
                  tz: ZoneInfo, cache_max_bytes: int):
@@ -120,7 +143,14 @@ class Store:
         self.retry_at: dict[str, float] = {}
         self.last_combine: dict[str, float] = {}
         self.logs: dict[str, tuple[int, autorun.Log | None]] = {}  # parsed archived Autorun logs
+        self.focus = focus.Focus(archive, tz)  # auto focus runs from the archived Autorun logs
         self.stack_numbers: dict[str, tuple[str, dict | None, dict | None]] = {}  # histogram per stack version
+        self.scratch = os.path.join(cache, ".solve")  # ASTAP's working files
+        self.idle = threading.Event()  # set while the worker has nothing to do: the solver runs then
+        # R6: the D05 stars for the frames' photometry, the sensor's noise from archived bias frames.
+        self.catalog = skyq.Catalog(solve.DATABASE)
+        self.sensors_path = os.path.join(data, "sensor.json")
+        self.sensors: dict[str, dict] = self._load_sensors()
         os.makedirs(os.path.join(data, "sessions"), exist_ok=True)
         os.makedirs(os.path.join(data, "previews"), exist_ok=True)
         os.makedirs(cache, exist_ok=True)
@@ -239,7 +269,8 @@ class Store:
     @staticmethod
     def _reset_frame(f: dict) -> None:
         for key in ("id", "info", "fwhmPx", "elongation", "bg", "noise", "wcs", "transform", "alignError",
-                    "matches", "alignRmsPx", "alignMethod", "guidingRmsArcsec", "auto", "error"):
+                    "matches", "alignRmsPx", "alignMethod", "guidingRmsArcsec", "auto", "error", "solve", "trails",
+                    "skyq"):
             f.pop(key, None)
         f["state"] = "pending"
 
@@ -299,6 +330,28 @@ class Store:
                 for rel, f in sorted(self.others.items(), key=lambda kv: -kv[1].mtime):
                     if self.retry_at.get(rel, 0) <= now and not self.archive.has(rel, f.size, f.mtime):
                         return ("other", None, rel, True)
+            # Focuser positions of frames analysed before `focusPos` was kept: from the archived
+            # files' header blocks, one session per job, after everything else.
+            for s in sessions:
+                if any(self._needs_focus(f) for f in s["frames"]):
+                    return ("focus", s["id"], None, True)
+            # Trails (A7) in frames analysed before they were marked: from the archive, one frame per
+            # job, newest session first, after everything else.
+            for s in sessions:
+                for f in s["frames"]:
+                    if (f["state"] == "done" and f.get("trails") is None and self.retry_at.get(f["rel"], 0) <= now
+                            and self.archive.has(f["rel"], f["size"])):
+                        return ("trails", s["id"], f["rel"], True)
+            # R6, after everything else: the sensor's bias level, read noise and dark current from a
+            # night's archived bias (and dark) frames, newest night first; then each frame's sky
+            # brightness from the archive, one frame per job, newest session first.
+            for night, files in sorted(self.calibration_nights().items(), reverse=True):
+                if night not in self.sensors and len(files["Bias"]) >= 2 and self.retry_at.get(night, 0) <= now:
+                    return ("sensor", None, night, True)
+            for s in sessions:
+                for f in s["frames"]:
+                    if self.retry_at.get(f["rel"], 0) <= now and self._needs_sky(f):
+                        return ("sky", s["id"], f["rel"], True)
         return None
 
     def backlog(self) -> int:
@@ -316,9 +369,16 @@ class Store:
                 log.exception("pick")
                 job = None
             if job is None:
+                self.idle.set()
                 self.wake.wait(30)
                 self.wake.clear()
                 continue
+            # The solver also runs beside the lowest backfill (focus positions, trails, sky brightness):
+            # those can take hours after a first start, and a pending solve matters more.
+            if job[0] in ("focus", "trails", "sensor", "sky"):
+                self.idle.set()
+            else:
+                self.idle.clear()
             kind, sid, rel, backfill = job
             try:
                 if kind == "frame":
@@ -327,6 +387,14 @@ class Store:
                     self.combine(sid)
                 elif kind == "refresh":
                     self.refresh(sid, rel)
+                elif kind == "focus":
+                    self.fill_focus(sid)
+                elif kind == "trails":
+                    self.scan_trails(sid, rel)
+                elif kind == "sensor":
+                    self.measure_sensor(rel)
+                elif kind == "sky":
+                    self.measure_sky(sid, rel)
                 else:
                     self.copy_other(rel)
             except Exception as e:  # noqa: BLE001 - one bad file must not stop the worker
@@ -344,11 +412,30 @@ class Store:
                             self.save(s)
                     elif kind == "combine" and s:
                         s["dirty"] = True
+                    elif kind == "trails" and s:
+                        # Counts as scanned: the same frame would fail again on every retry.
+                        frame = next((x for x in s["frames"] if x["rel"] == rel), None)
+                        if frame and frame.get("trails") is None:
+                            frame["trails"] = []
+                            self.save(s)
+                    elif kind == "sky" and s:
+                        # Recorded with the error: the same frame would fail again on every retry.
+                        frame = next((x for x in s["frames"] if x["rel"] == rel), None)
+                        if frame:
+                            frame["skyq"] = {"error": f"{type(e).__name__}: {e}"[:200]}
+                            self.save(s)
+                    elif kind == "sensor":
+                        self.sensors[rel] = {"error": f"{type(e).__name__}: {e}"[:200], "measuredAt": time.time()}
+                        self._save_sensors()
             if backfill:
                 time.sleep(BACKFILL_PAUSE_S)
 
     def start(self) -> None:
         threading.Thread(target=self.run, name="worker", daemon=True).start()
+        if solve.available():
+            threading.Thread(target=self.run_solver, name="solver", daemon=True).start()
+        else:
+            log.warning("ASTAP not found (%s, %s): no own plate solving", solve.ASTAP, solve.DATABASE)
 
     # --- reading files -------------------------------------------------------------------------
 
@@ -409,6 +496,128 @@ class Store:
         self.archive.write(rel, raw, f.mtime)
         log.info("archived %s (%.1f MB)", rel, len(raw) / 1e6)
 
+    def _needs_focus(self, f: dict) -> bool:
+        return (f["state"] == "done" and f.get("info") is not None and "focusPos" not in f["info"]
+                and self.archive.has(f["rel"], f["size"]))
+
+    def fill_focus(self, sid: str) -> None:
+        """FOCUSPOS for a session's frames analysed before it was kept (null when the header has none)."""
+        with self.lock:
+            todo = [(f["rel"], f["size"]) for f in self.sessions[sid]["frames"] if self._needs_focus(f)]
+        found: dict[str, float | None] = {}
+        for rel, _ in todo:
+            try:
+                found[rel] = focus.focus_position(self.archive.path(rel))
+            except OSError as e:
+                log.warning("focus position %s: %s", rel, e)
+                found[rel] = None
+        with self.lock:
+            s = self.sessions[sid]
+            for f in s["frames"]:
+                if f["rel"] in found and f.get("info") is not None and "focusPos" not in f["info"]:
+                    f["info"]["focusPos"] = found[f["rel"]]
+            self.save(s)
+        log.info("session %s: focuser positions of %d frames from their headers", sid, len(found))
+
+    # --- plate solving (ASTAP, for frames whose header has none) --------------------------------
+
+    def _solve_hint(self, s: dict, rel: str, header: dict[str, str]) -> tuple[float | None, float | None, float]:
+        """Where to search: a solved frame of the same session (the nearest in time), else the header's
+        RA/Dec; and the field height from the header."""
+        ra, dec, fov = solve.frame_hints(header)
+        at = next(f["savedAt"] for f in s["frames"] if f["rel"] == rel)
+        solved = [f for f in s["frames"] if f.get("wcs") and f["rel"] != rel]
+        if solved:
+            ra, dec = min(solved, key=lambda f: abs(f["savedAt"] - at))["wcs"]["crval"]
+        return ra, dec, fov
+
+    def _solve(self, rel: str, stars: int, hint: tuple, blind: bool, timeout: float) -> tuple[fits.Wcs | None, dict]:
+        """ASTAP on the archived frame: its solution (camera pixels, linear part as for ASIAIR solves)
+        and the frame's `solve` record (`retry`: the solver thread should search further)."""
+        now = time.time()
+        if stars < solve.MIN_STARS:
+            return None, {"source": None, "at": now, "error": f"too few stars ({stars}) to plate solve", "retry": False}
+        ra, dec, fov = hint
+        try:
+            result = solve.solve(self.archive.path(rel), self.scratch, ra, dec, fov, timeout, blind)
+            plate = fits.wcs(result.cards)
+            if plate is None:
+                raise solve.SolveError("degenerate solution", result.seconds)
+        except solve.SolveError as e:
+            log.info("plate solve %s: %s (%.1f s)", rel, e, e.seconds)
+            return None, {"source": None, "at": now, "error": str(e)[:200], "retry": not blind}
+        except Exception as e:  # noqa: BLE001 - a failed solve must never fail the frame's analysis
+            log.exception("plate solve %s", rel)
+            return None, {"source": None, "at": now, "error": f"{type(e).__name__}: {e}"[:200], "retry": not blind}
+        log.info("plate solve %s: RA %.4f Dec %.4f, %.3f\"/px%s (%.1f s)", rel, plate.crval[0], plate.crval[1],
+                 plate.pixel_scale_arcsec(), ", whole-sky search" if result.blind else "", result.seconds)
+        return plate, {"source": "astap", "at": now, "error": None, "seconds": round(result.seconds, 2), "retry": False}
+
+    def _needs_solve(self, f: dict) -> bool:
+        record = f.get("solve")
+        return (f["state"] == "done" and not f.get("wcs") and (record is None or record.get("retry"))
+                and (f.get("info") or {}).get("stars", 0) >= solve.MIN_STARS and self.archive.has(f["rel"], f["size"]))
+
+    def _pick_solve(self) -> tuple[str, str] | None:
+        """Newest session first; in it the frame with the most stars, so that the best frame takes a
+        whole-sky search and the others are then searched around its solution."""
+        with self.lock:
+            for s in self.ordered():
+                todo = [f for f in s["frames"] if self._needs_solve(f)]
+                if todo:
+                    return s["id"], max(todo, key=lambda f: f["info"]["stars"])["rel"]
+        return None
+
+    def solve_frame(self, sid: str, rel: str) -> None:
+        """A frame analysed without a plate solve: searched around a solved frame of its session, else
+        around the header's position and then (accepted frames only) the whole sky. The stack needs no
+        restack: stack_wcs takes the solution from the frames as they are."""
+        with open(self.archive.path(rel), "rb") as fh:
+            header, _ = fits.read_header_file(fh)
+        with self.lock:
+            s = self.sessions[sid]
+            f = next(x for x in s["frames"] if x["rel"] == rel)
+            size, stars = f["size"], f["info"]["stars"]
+            blind = not any(x.get("wcs") for x in s["frames"]) and self.accepted(f)
+            hint = self._solve_hint(s, rel, header)
+        plate, record = self._solve(rel, stars, hint, blind, solve.FRAME_TIMEOUT_S)
+        record["retry"] = False
+        with self.lock:
+            s = self.sessions[sid]
+            f = next((x for x in s["frames"] if x["rel"] == rel), None)
+            if f is None or f["size"] != size or f["state"] != "done" or f.get("wcs"):
+                return  # analysed again meanwhile
+            f["solve"] = record
+            if plate:
+                f["wcs"] = plate.json()
+                if s.get("reference") == rel and not s.get("refWcs"):
+                    s["refWcs"] = f["wcs"]
+            self.save(s)
+
+    def run_solver(self) -> None:
+        """The solver thread: frames without a plate solve (analysed before ASTAP was here, or whose
+        search around the header's position failed), one at a time, only while the worker is idle and
+        with a pause after each, so a running session's new frames never wait for a long search."""
+        while True:
+            self.idle.wait()
+            job = None
+            try:
+                job = self._pick_solve()
+                if job is None:
+                    time.sleep(SOLVER_IDLE_S)
+                    continue
+                self.solve_frame(*job)
+            except Exception as e:  # noqa: BLE001 - an unreadable file must not stop the solver
+                log.exception("plate solve %s", job)
+                with self.lock:
+                    s = self.sessions.get(job[0]) if job else None
+                    f = next((x for x in s["frames"] if x["rel"] == job[1]), None) if s else None
+                    if f is not None:
+                        f["solve"] = {"source": None, "at": time.time(), "error": f"{type(e).__name__}: {e}"[:200],
+                                      "retry": False}
+                        self.save(s)
+            time.sleep(BACKFILL_PAUSE_S)
+
     # --- analysis and registration -------------------------------------------------------------
 
     def process(self, sid: str, rel: str) -> None:
@@ -431,6 +640,7 @@ class Store:
             return
         del raw
         rendered = fits.render(pixels, header)
+        step = skyq.adu_step(pixels)
         del pixels
         fid = frame_id(f.get("src") or rel, f["size"])
         for small, data in ((False, rendered.large), (True, rendered.small)):
@@ -460,6 +670,7 @@ class Store:
             "camera": header.get("INSTRUME"),
             "focalLengthMm": fits.number(header, "FOCALLEN"),
             "rotatorDeg": fits.number(header, "ROTATOR"),
+            "focusPos": fits.number(header, "FOCUSPOS"),
             "backgroundAdu": round(rendered.background_adu),
             "stars": rendered.stars,
             "hfr": rendered.hfr,
@@ -468,6 +679,16 @@ class Store:
         }
         scale = rendered.scale
         plate = fits.wcs(header)
+        if plate:
+            solved = {"source": "asiair", "at": time.time(), "error": None}
+        elif solve.available():
+            # Only around the header's position here (~0.2 s, ~2.4 s when it fails); further searches
+            # are the solver thread's.
+            with self.lock:
+                hint = self._solve_hint(self.sessions[sid], rel, header)
+            plate, solved = self._solve(rel, rendered.stars, hint, False, solve.HINT_TIMEOUT_S)
+        else:
+            solved = None
         shape = luminance.shape
         result = {
             "state": "done", "id": fid, "info": info,
@@ -475,7 +696,11 @@ class Store:
             "elongation": r2(stars.elongation),
             "bg": [round(m, 2) for m, _ in sky], "noise": [round(n, 3) for _, n in sky],
             "wcs": plate.json() if plate else None,
+            "solve": solved,
             "guidingRmsArcsec": r2(guide_total),
+            "trails": self._trails(rel, planes, sky, stars.fwhm),
+            # R6: zero point and sky brightness (~0.1 s); without a solve yet, the backfill measures it later.
+            "skyq": self._skyq(rel, f, luminance, header, plate, scale, step, stars.fwhm),
         }
 
         # Registration against the session's reference (this frame becomes it if there is none).
@@ -531,6 +756,171 @@ class Store:
                  f"aligned ({result.get('matches', 'ref')} stars, {result.get('alignMethod', 'reference')})"
                  if "transform" in result else result.get("alignError"),
                  "" if decision[0] else f", rejected: {decision[1]}", time.time() - started)
+
+    @staticmethod
+    def _trails(rel: str, planes: list[np.ndarray], sky: list[tuple[float, float]], fwhm: float | None) -> list | None:
+        """A7: the frame's trails on the preview grid; None when the scan failed (the backfill tries
+        again): marking trails must never fail a frame's analysis."""
+        try:
+            return trails.detect(planes, sky, fwhm)
+        except Exception:  # noqa: BLE001
+            log.exception("trails %s", rel)
+            return None
+
+    def scan_trails(self, sid: str, rel: str) -> None:
+        """A7 backfill: the trails of a frame analysed before they were marked, from the archive."""
+        started = time.time()
+        with self.lock:
+            f = next(x for x in self.sessions[sid]["frames"] if x["rel"] == rel)
+            size, fwhm = f["size"], f.get("fwhmPx")
+        raw = self.archive.read(rel)
+        header, offset = fits.parse_header(raw)
+        pixels = fits.read_pixels(raw, header, offset)
+        del raw
+        planes = fits.channels(pixels, header)
+        scale = pixels.shape[1] / planes[0].shape[1]
+        del pixels
+        found = trails.detect(planes, [analysis.background(p) for p in planes], fwhm / scale if fwhm else None)
+        with self.lock:
+            s = self.sessions[sid]
+            frame = next((x for x in s["frames"] if x["rel"] == rel), None)
+            if frame is None or frame["size"] != size or frame["state"] != "done":
+                return
+            frame["trails"] = found
+            self.save(s)
+        log.info("trails %s #%d: %d (backfill, %.1f s)", f["target"], f["number"], len(found), time.time() - started)
+
+    # --- sky brightness and the sensor (R6, skyq.py) -------------------------------------------
+
+    def _load_sensors(self) -> dict[str, dict]:
+        try:
+            with open(self.sensors_path) as f:
+                return json.load(f)
+        except FileNotFoundError:
+            return {}
+        except (OSError, ValueError) as e:
+            log.error("sensor.json: %s", e)
+            return {}
+
+    def _save_sensors(self) -> None:
+        tmp = self.sensors_path + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(self.sensors, f, separators=(",", ":"))
+        os.replace(tmp, self.sensors_path)
+
+    def calibration_nights(self) -> dict[str, dict[str, list[str]]]:
+        """Archived bias and dark frames by night: { night: { "Bias": [rel], "Dark": [rel] } }."""
+        with self.archive.lock:
+            rels = list(self.archive.files)
+        out: dict[str, dict[str, list[str]]] = {}
+        for rel in rels:
+            parts = rel.split(os.sep)
+            if len(parts) == 4 and parts[2] in ("Bias", "Dark") and parts[3].lower().endswith((".fit", ".fits")):
+                out.setdefault(parts[1], {"Bias": [], "Dark": []})[parts[2]].append(rel)
+        return out
+
+    def _read_archived(self, rel: str) -> tuple[dict[str, str], np.ndarray]:
+        raw = self.archive.read(rel)
+        header, offset = fits.parse_header(raw)
+        return header, fits.read_pixels(raw, header, offset)
+
+    def measure_sensor(self, night: str) -> None:
+        """Bias level, read noise (two bias frames) and dark current (a dark of the same gain and
+        offset) of one night's calibration frames, kept in <data>/sensor.json by night."""
+        started = time.time()
+        files = self.calibration_nights()[night]
+        bias = sorted(files["Bias"])[:2]
+        header, a = self._read_archived(bias[0])
+        _, b = self._read_archived(bias[1])
+        dark = dark_s = None
+        used = list(bias)
+        if files["Dark"]:
+            rel = sorted(files["Dark"])[0]
+            dark_header, pixels = self._read_archived(rel)
+            if all(fits.number(dark_header, k) == fits.number(header, k) for k in ("GAIN", "OFFSET")):
+                dark, dark_s = pixels, fits.number(dark_header, "EXPTIME")
+                used.append(rel)
+        record = skyq.sensor_noise(a, b, header, dark, dark_s)
+        record.update(night=night, files=[r.replace(os.sep, "/") for r in used], darkExposureS=dark_s,
+                      measuredAt=time.time())
+        with self.lock:
+            self.sensors[night] = record
+            self._save_sensors()
+        log.info("sensor %s: gain %s offset %s, bias %.1f ADU, read noise %.2f e- (%.2f ADU), dark current %s e-/s (%.1f s)",
+                 night, record["gain"], record["offset"], record["biasAdu"], record["readNoiseE"] or 0,
+                 record["readNoiseAdu"], record["darkCurrentEps"], time.time() - started)
+
+    def sensor_for(self, gain: float | None, offset: float | None, night: str | None = None) -> dict | None:
+        """The sensor measurement for a gain (and offset, when known) from the night nearest `night`
+        (else the newest)."""
+        def days(n: str) -> int:
+            return datetime.strptime(n, "%Y-%m-%d").toordinal()
+
+        found = [(n, r) for n, r in self.sensors.items()
+                 if r.get("readNoiseE") is not None and r.get("gain") == gain
+                 and (offset is None or r.get("offset") == offset)]
+        if not found:
+            return None
+        if night is None:
+            return max(found)[1]
+        return min(found, key=lambda nr: (abs(days(nr[0]) - days(night)), nr[0]))[1]
+
+    def _skyq(self, rel: str, f: dict, plane: np.ndarray, header: dict[str, str], plate: fits.Wcs | None,
+              scale: float, step: int, fwhm: float | None) -> dict:
+        """A frame's `skyq` record (skyq.measure); never fails the frame's analysis. Without a sensor
+        measurement it notes how many nights were measured, so the backfill tries again only after
+        another one."""
+        try:
+            sensor = self.sensor_for(fits.number(header, "GAIN"), fits.number(header, "OFFSET"),
+                                     night_of(f["savedAt"], self.tz))
+            record = skyq.measure(plane, header, plate, scale, step, sensor, self.catalog, fwhm)
+        except Exception as e:  # noqa: BLE001
+            log.exception("sky brightness %s", rel)
+            return {"error": f"{type(e).__name__}: {e}"[:200]}
+        if record.get("needs") == "sensor":
+            record["sensors"] = len(self.sensors)
+        return record
+
+    def _needs_sky(self, f: dict) -> bool:
+        """A frame to measure from the archive: never measured (once a sensor measurement for its gain
+        exists), measured before its plate solve came, or before a sensor measurement of its gain."""
+        if f["state"] != "done" or not self.archive.has(f["rel"], f["size"]):
+            return False
+        record = f.get("skyq")
+        needs = record.get("needs") if record else "sensor"
+        if needs == "solve":
+            return bool(f.get("wcs"))
+        if needs == "sensor":
+            if record and record.get("sensors") == len(self.sensors):
+                return False
+            gain = (f.get("info") or {}).get("gain")
+            return any(r.get("readNoiseE") is not None and r.get("gain") == gain for r in self.sensors.values())
+        return False
+
+    def measure_sky(self, sid: str, rel: str) -> None:
+        """R6 backfill: a frame's zero point and sky brightness from the archive."""
+        started = time.time()
+        with self.lock:
+            f = dict(next(x for x in self.sessions[sid]["frames"] if x["rel"] == rel))
+        header, pixels = self._read_archived(rel)
+        step = skyq.adu_step(pixels)
+        planes = fits.channels(pixels, header)
+        scale = pixels.shape[1] / planes[0].shape[1]
+        del pixels
+        plane = planes[1] if len(planes) == 3 else planes[0]
+        fwhm = f.get("fwhmPx")
+        record = self._skyq(rel, f, plane, header, fits.Wcs.from_json(f.get("wcs")), scale, step,
+                            fwhm / scale if fwhm else None)
+        with self.lock:
+            s = self.sessions[sid]
+            frame = next((x for x in s["frames"] if x["rel"] == rel), None)
+            if frame is None or frame["size"] != f["size"] or frame["state"] != "done":
+                return
+            frame["skyq"] = record
+            self.save(s)
+        log.info("sky %s #%d: %s mag/arcsec², zero point %s, %s stars%s (backfill, %.2f s)", f["target"], f["number"],
+                 record.get("skyMag"), record.get("zeroPoint"), record.get("stars"),
+                 f", {record['error']}" if record.get("error") else "", time.time() - started)
 
     def _write_aligned(self, sid: str, fid: str, aligned: np.ndarray) -> None:
         folder = os.path.join(self.cache, sid)
@@ -670,14 +1060,21 @@ class Store:
         self.prune_cache(keep=sid)
 
     def prune_cache(self, keep: str) -> None:
-        """Aligned frames are rebuilt from the archive when missing: keep the recently used under the cap."""
+        """Aligned frames (and timelapses, in <session>/timelapse/) are rebuilt when missing: keep the
+        recently used under the cap. The timelapse thread prunes too, so a folder may vanish meanwhile."""
         entries = []
         for sid in os.listdir(self.cache):
+            if sid.startswith(".") or sid in CACHE_SHARED:
+                continue  # ASTAP's working files (.solve), the inspector's and guide logs' results
             folder = os.path.join(self.cache, sid)
-            size = sum(e.stat().st_size for e in os.scandir(folder) if e.is_file())
-            entries.append((os.stat(folder).st_mtime, sid, size, folder))
+            try:
+                size = sum(os.path.getsize(os.path.join(d, n)) for d, _, names in os.walk(folder) for n in names)
+                entries.append((os.stat(folder).st_mtime, sid, size, folder))
+            except OSError:
+                continue
         total = sum(e[2] for e in entries)
-        newest = self.ordered()[0]["id"] if self.sessions else None
+        with self.lock:
+            newest = self.ordered()[0]["id"] if self.sessions else None
         for _, sid, size, folder in sorted(entries):
             if total <= self.cache_max_bytes:
                 break
@@ -758,6 +1155,7 @@ class Store:
                 return None
             stack = dict(s["stack"])
             solution = stack_wcs(s)
+            source = stack_solve_source(s) if solution else None
             scale = pixel_scale(s, solution)
             frame_at = {f["id"]: f["info"]["at"] for f in s["frames"] if f.get("info")}
             target = s["target"]
@@ -775,6 +1173,7 @@ class Store:
             "wcs": solution.cards() if solution else None,
             "rowsTopDown": True,
             "pixelScaleArcsec": r2(scale, 4),
+            "solveSource": source,
             "histogram": histogram,
             "stats": stats,
             "takenAt": min((frame_at[i] for i in stack["frames"] if i in frame_at), default=None),
@@ -837,6 +1236,14 @@ class Store:
         start = first["info"]["at"] if first.get("info") else first["savedAt"] - first["exposureS"]
         header = s.get("header") or {}
         exposures = Counter(f["info"]["exposureS"] for f in frames if f.get("info"))
+        rejected = [f for f in judged if not self.accepted(f)]
+        guide = [f["guidingRmsArcsec"] for f in judged if f.get("guidingRmsArcsec") is not None]
+
+        def median(values: list) -> float | None:
+            present = [v for v in values if v is not None]
+            return statistics.median(present) if present else None
+
+        stars, background = median([f["info"]["stars"] for f in accepted]), median([f["info"]["backgroundAdu"] for f in accepted])
         return {
             "id": s["id"],
             "night": s["night"],
@@ -854,26 +1261,44 @@ class Store:
             "dec": header.get("dec"),
             "exposureS": exposures.most_common(1)[0][0] if exposures else frames[-1]["exposureS"],
             "gain": header.get("gain"),
+            # The filter in the train that night (header FILTER, else the FILTERS history): sky brightness and
+            # flats depend on it.
+            "filter": filters.on(s["night"], header.get("filter")),
+            # D6 statistics without every detail: rejected exposure time, the accepted frames' medians, the
+            # frames' guiding RMS during their exposures combined (quadratic mean), rejections by first reason.
+            "rejectedS": round(sum((f.get("info") or {}).get("exposureS", f["exposureS"]) for f in rejected)),
+            "hfr": r2(median([f["info"]["hfr"] for f in accepted])),
+            "fwhmPx": r2(median([f.get("fwhmPx") for f in accepted])),
+            "stars": None if stars is None else round(stars),
+            "backgroundAdu": None if background is None else round(background),
+            "guidingRmsArcsec": r2((sum(g * g for g in guide) / len(guide)) ** 0.5) if guide else None,
+            "rejectReasons": dict(Counter(reject_kind(self.reason(f)) for f in rejected)),
+            # R6: medians of the accepted frames' sky brightness (mag/arcsec²), zero point and sky e-/s per
+            # pixel, and the read noise (e-) of the sensor measurement for its gain nearest its night.
+            **self._sky_summary(s, accepted),
         }
 
     def list(self, active: str | None) -> list[dict]:
         with self.lock:
             return [self.summary(s, active) for s in self.ordered()]
 
+    def reason(self, f: dict) -> str | None:
+        """Why a judged frame is out of the stack, None when it is in."""
+        auto = f.get("auto") or [False, None]
+        if f["state"] == "failed":
+            return f"unreadable: {f.get('error')}"
+        if self.accepted(f):
+            return None
+        if f.get("manual") is False:
+            return "rejected by hand" + (f" (also: {auto[1]})" if auto[1] else "")
+        if f.get("manual") and not f.get("transform"):
+            return f"not aligned: {f.get('alignError')}"
+        return auto[1]
+
     def frame_json(self, f: dict) -> dict:
         info = f.get("info") or {}
-        auto = f.get("auto") or [False, None]
         accepted = self.accepted(f)
-        if f["state"] == "failed":
-            reason = f"unreadable: {f.get('error')}"
-        elif accepted:
-            reason = None
-        elif f.get("manual") is False:
-            reason = "rejected by hand" + (f" (also: {auto[1]})" if auto[1] else "")
-        elif f.get("manual") and not f.get("transform"):
-            reason = f"not aligned: {f.get('alignError')}"
-        else:
-            reason = auto[1]
+        reason = self.reason(f)
         rotator = info.get("rotatorDeg")
         if rotator is None and (m := NAME_ANGLE.search(os.path.basename(f["rel"]))):
             rotator = float(m[1])
@@ -896,7 +1321,37 @@ class Store:
             # Relative to the archive volume's root, "/"-separated; null until it is archived.
             "archivePath": f["rel"].replace(os.sep, "/") if self.archive.has(f["rel"], f["size"]) else None,
             "rotatorDeg": rotator,
+            "focusPos": info.get("focusPos"),
+            "solve": solve_state(f),
+            # A7: [{x0, y0, x1, y1, widthPx}] on the preview grid; null until scanned.
+            "trails": f.get("trails"),
+            # R6: sky brightness (mag/arcsec², green against Gaia BP) and zero point (mag for 1 e-/s);
+            # null until measured, or when it cannot be (no plate solve, too few catalogue stars).
+            "skyMag": (f.get("skyq") or {}).get("skyMag"),
+            "zeroPoint": (f.get("skyq") or {}).get("zeroPoint"),
         }
+
+    def _sky_summary(self, s: dict, accepted: list[dict]) -> dict:
+        def median(key: str) -> float | None:
+            values = [(f.get("skyq") or {}).get(key) for f in accepted]
+            values = [v for v in values if v is not None]
+            return statistics.median(values) if values else None
+
+        sensor = self.sensor_for((s.get("header") or {}).get("gain"), None, s["night"])
+        sky_mag, zero_point, sky_eps = median("skyMag"), median("zeroPoint"), median("skyEps")
+        return {
+            "skyMag": r2(sky_mag),
+            "zeroPoint": r2(zero_point, 3),
+            "skyEps": None if sky_eps is None else round(sky_eps, 4),
+            "readNoiseE": r2(sensor["readNoiseE"]) if sensor else None,
+        }
+
+    def _exposure(self, s: dict, summary: dict) -> dict | None:
+        """R6: the sub length the session's sky asks for (skyq.advice), null before its sky is measured."""
+        sensor = self.sensor_for((s.get("header") or {}).get("gain"), None, s["night"])
+        if sensor is None:
+            return None
+        return skyq.advice(sensor["readNoiseE"], sensor.get("darkCurrentEps"), summary["skyEps"], summary["exposureS"])
 
     def detail(self, sid: str, active: str | None, live_plan: dict | None) -> dict | None:
         with self.lock:
@@ -954,8 +1409,28 @@ class Store:
             "guiding": guiding,
             "timeline": self._timeline(frames, logs, records, start, end),
             "telemetry": telemetry,
+            "autofocus": self._autofocus(start, end, window),
             "archive": {"frames": len(archived), "bytes": sum(archived)},
+            "trails": trail_counts(frames),
+            # R6: { readNoiseE, darkCurrentEps, skyEps, recommendedSubS, currentSubS, readNoiseShare, text }.
+            "exposure": self._exposure(s, summary),
         }
+
+    def _autofocus(self, start: float, end: float, window: list[dict]) -> list[dict]:
+        """The auto focus runs in the session's window: from the Autorun logs; while the run's log
+        is not on the share yet, only when they ran (the live history's "Auto focus" activity)."""
+        runs = [{**r, "source": "log"} for r in self.focus.between(start, end)]
+        if runs:
+            return runs
+        acts = [r for r in window if r["k"] == "act"]
+        out = []
+        for i, r in enumerate(acts):
+            if r["a"] == "Auto focus" and (i == 0 or acts[i - 1]["a"] != "Auto focus"):
+                ended = next((x["t"] for x in acts[i + 1:] if x["a"] != "Auto focus"), None)
+                out.append({"at": r["t"], "endedAt": ended, "night": None, "target": None, "reason": None,
+                            "exposureS": None, "temperatureC": None, "success": None, "position": None,
+                            "points": [], "bestSize": None, "failure": None, "source": "live"})
+        return out
 
     def logs_between(self, start: float, end: float) -> list[autorun.Log]:
         out = []
@@ -1045,6 +1520,7 @@ def header_fields(header: dict[str, str]) -> dict:
     return {
         "gain": fits.number(header, "GAIN"),
         "camera": header.get("INSTRUME"),
+        "filter": (header.get("FILTER") or "").strip() or None,
         "focalLengthMm": fits.number(header, "FOCALLEN"),
         "pixelSizeUm": fits.number(header, "XPIXSZ"),
         "ra": r2(ra, 5),
@@ -1072,6 +1548,25 @@ def stack_wcs(s: dict) -> fits.Wcs | None:
     return None
 
 
+def solve_state(f: dict) -> dict | None:
+    """A frame's plate solve for the API: `source` asiair (its header) or astap (our own), when, or
+    why not (source null with the error). Frames analysed before ASTAP have no record."""
+    record = f.get("solve")
+    if record:
+        return {"source": record["source"], "at": record["at"], "error": record["error"]}
+    return {"source": "asiair", "at": None, "error": None} if f.get("wcs") else None
+
+
+def stack_solve_source(s: dict) -> str | None:
+    """Who solved the frame that stack_wcs takes the stack's solution from."""
+    frames = [f for f in s["frames"] if f.get("wcs")]
+    if s.get("refWcs"):
+        frames = [f for f in frames if f["rel"] == s.get("reference")]
+    else:
+        frames = sorted((f for f in frames if f.get("transform")), key=lambda f: not Store.accepted(f))
+    return (solve_state(frames[0]) or {}).get("source") if frames else None
+
+
 def pixel_scale(s: dict, solution: fits.Wcs | None) -> float | None:
     """Arcseconds per stack pixel: from the plate solve, else the header's pixel size and focal length."""
     if solution:
@@ -1080,3 +1575,9 @@ def pixel_scale(s: dict, solution: fits.Wcs | None) -> float | None:
     if header.get("pixelSizeUm") and header.get("focalLengthMm"):
         return 206.265 * header["pixelSizeUm"] / header["focalLengthMm"] * (s.get("refScale") or 2.0)
     return None
+
+
+def trail_counts(frames: list[dict]) -> dict:
+    """A7 in the session detail: frames scanned for trails, frames with trails, trails."""
+    scanned = [f["trails"] for f in frames if f.get("trails") is not None]
+    return {"scanned": len(scanned), "frames": sum(1 for t in scanned if t), "count": sum(len(t) for t in scanned)}

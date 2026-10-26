@@ -45,7 +45,6 @@
 				{to}
 				height={64}
 				axis={false}
-				yFormat={(v) => v.toFixed(0)}
 				series={[{ points: telemetry!.sensorTempC, color: 'var(--line1)' }]}
 				hlines={setPoint !== null ? [{ y: setPoint, color: 'var(--muted)', dash: true }] : []}
 				gapS={900}
@@ -54,9 +53,9 @@
 			<span class="plabel">Cooler power %</span>
 			<TimeChart {from} {to} height={54} axis={false} yMin={0} yMax={100} series={[{ points: telemetry!.coolerPowerPct, color: 'var(--line2)' }]} gapS={900} label="Cooler power" />
 			<span class="plabel">ASIAIR board °C</span>
-			<TimeChart {from} {to} height={54} axis={false} yFormat={(v) => v.toFixed(0)} series={[{ points: telemetry!.boardTempC, color: 'var(--line4)' }]} gapS={900} label="Board temperature" />
+			<TimeChart {from} {to} height={54} axis={false} series={[{ points: telemetry!.boardTempC, color: 'var(--line4)' }]} gapS={900} label="Board temperature" />
 			<span class="plabel">Wi-Fi dBm</span>
-			<TimeChart {from} {to} height={70} yFormat={(v) => v.toFixed(0)} series={[{ points: telemetry!.wifiDbm, color: 'var(--line3)' }]} gapS={900} label="Wi-Fi signal" />
+			<TimeChart {from} {to} height={70} series={[{ points: telemetry!.wifiDbm, color: 'var(--line3)' }]} gapS={900} label="Wi-Fi signal" />
 		</div>
 	{:else}
 		<p class="muted small">No telemetry recorded for this session{live ? ' yet' : ' (sessions before the web app have none)'}.</p>

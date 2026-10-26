@@ -12,7 +12,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/telescope-processor
-    newTag: "20261019-194828"
+    newTag: "20261020-142759"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: telescope-processor-config
@@ -20,6 +20,8 @@ configMapGenerator:
       - TELESCOPE_URL=http://telescope:8080
       # The ASIAIR's clock: final ids and the automatic jobs' hours.
       - ASIAIR_TZ=Europe/Helsinki
+      # The filter in the train from a night on (src/filters.py); the same value as the service's.
+      - FILTERS=2026-02-13=Baader UHC-L
       # Automatic finals: between these hours, with no session active and the newest frame at
       # least AUTO_QUIET_H old, for every target with new accepted frames. AUTO=off disables.
       - AUTO=on

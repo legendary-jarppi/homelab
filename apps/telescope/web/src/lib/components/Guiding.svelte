@@ -185,7 +185,6 @@
 							{to}
 							height={74}
 							yMin={0}
-							yFormat={(v) => v.toFixed(0)}
 							series={[
 								{ points: windPoints.map((w) => [w.time, w.wind]), color: 'var(--line3)', kind: 'step' },
 								{ points: windPoints.map((w) => [w.time, w.gusts]), color: 'var(--line3)', kind: 'step', dash: '4 3', width: 1 }

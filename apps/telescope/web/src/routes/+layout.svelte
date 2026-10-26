@@ -13,7 +13,8 @@
 		{ href: '/sessions', label: 'Sessions' },
 		{ href: '/library', label: 'Library' },
 		{ href: '/finals', label: 'Finals' },
-		{ href: '/gallery', label: 'Gallery' }
+		{ href: '/gallery', label: 'Gallery' },
+		{ href: '/stats', label: 'Stats' }
 	];
 	// The public host (PUBLIC_HOST) has the gallery only.
 	const tabs = $derived(data.public ? TABS.filter((t) => t.href === '/gallery') : TABS);
@@ -138,12 +139,12 @@
 			padding-left: max(12px, env(safe-area-inset-left));
 			padding-right: max(12px, env(safe-area-inset-right));
 		}
-		/* Eight pages: two rows of four on a phone. */
+		/* Nine pages: three rows of three on a phone. */
 		.tabs:not(.single) {
 			order: 3;
 			flex-basis: 100%;
 			display: grid;
-			grid-template-columns: repeat(4, 1fr);
+			grid-template-columns: repeat(3, 1fr);
 			gap: 2px;
 			border-radius: 16px;
 		}

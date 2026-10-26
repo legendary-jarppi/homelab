@@ -1,7 +1,10 @@
-# Telescope web app at http://telescope.lab.internal: live stack, conditions, planner, goals, observing log,
-# calibration library, final stacks (no login; home network and VPN only). In the telescope namespace beside
-# the service and processor it reads (apps/telescope,
-# which owns the namespace: apply that first). No secrets. Build + apply: apps/telescope/web/deploy.sh (sets newTag below).
+# Telescope web app at http://telescope.lab.internal and https://telescope.shillyshally.org (Cloudflare
+# Access, policy Family): live stack, conditions, planner, goals, observing log, calibration library, final
+# stacks, gallery (no login of its own). The published pictures only, open to anyone, at
+# https://astro.shillyshally.org (PUBLIC_HOST). In the telescope namespace beside the service and processor it
+# reads (apps/telescope, which owns the namespace: apply that first). One optional secret, telescope-web-notify
+# (NOTIFY_TOKEN for the digests; web/README.md, Notifications). Build + apply:
+# apps/telescope/web/deploy.sh (sets newTag below).
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: telescope
@@ -10,7 +13,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/telescope-web
-    newTag: "20261019-194844"
+    newTag: "20261020-143224"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: telescope-web-config
@@ -21,10 +24,23 @@ configMapGenerator:
       - TELESCOPE_URL=http://telescope:8080
       # apps/telescope/processor: calibration library, final stacks, downloads.
       - PROCESSOR_URL=http://telescope-processor:8080
+      # kube-prometheus-stack (namespace monitoring): the cabin's outdoor RuuviTag temperature on the Focus card.
+      - PROMETHEUS_URL=http://kube-prometheus-stack-prometheus.monitoring.svc:9090
       # name:latitude:longitude, as the ASIAIR reports it: conditions, wind, automatic red mode.
       - TELESCOPE_SITE=Ristiina:61.496:27.576
-      # Requests for this host (cloudflared, behind Cloudflare Access, policy Family) get the published gallery
-      # only, read-only; everything else answers 404 (src/lib/server/public.ts).
-      - PUBLIC_HOST=telescope.shillyshally.org
+      # The share host (cloudflared, Access bypass: open to anyone): the published gallery only, read-only;
+      # everything else answers 404 (src/lib/server/public.ts).
+      - PUBLIC_HOST=astro.shillyshally.org
       # Own processed images up to 300 MB (adapter-node's default is 512 kB); streamed through, not buffered.
       - BODY_SIZE_LIMIT=310M
+      # R6 digests on apps/notify's topic telescope-digest (src/lib/server/digest.ts); the token comes from the
+      # optional secret telescope-web-notify. Local times (Europe/Helsinki).
+      - NOTIFY_URL=http://web.notify.svc:3000
+      - DIGEST_PICK_AT=15:00
+      - DIGEST_REPORT_AT=08:00
+      # Minutes after a digest's time in which a failed attempt is tried again (every 5 min); then it is dropped.
+      - DIGEST_WINDOW_MIN=120
+      # Clear hours in darkness (skill-weighted model vote) a night needs for tonight's pick.
+      - PICK_MIN_CLEAR_H=3
+      # Links in the notifications: the whole app behind Cloudflare Access (works at home and away).
+      - DIGEST_LINK=https://telescope.shillyshally.org

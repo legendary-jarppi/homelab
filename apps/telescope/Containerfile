@@ -2,9 +2,32 @@
 # pillow, tifffile and imagecodecs for previews and uploaded images, smbprotocol for the ASIAIR's
 # SMB shares); wheels only, no compiler in the image. glibc (slim, not alpine): scipy and
 # imagecodecs publish manylinux wheels.
+#
+# ASTAP (plate solving, MPL-2.0, www.hnsky.org): the command-line solver astap_cli (a static x86-64
+# binary, 0.9 MB) and the D05 star database (Gaia-based, 500 stars per square degree, for fields of
+# 0.6° and more; 109 MB unpacked), both pinned by checksum. Upstream replaces the CLI zip in place
+# on a new release and moves the old one to linux_installer/older/ as "…_Linux_amd64 v<version>.zip":
+# when the current zip no longer matches the checksum, the pinned version is fetched from there.
+# To move to a new version: update ASTAP_VERSION and ASTAP_SHA256.
+FROM docker.io/library/python:3.13-slim AS astap
+ARG ASTAP_VERSION=2026.09.01
+ARG ASTAP_SHA256=5e7dca28e0e52ad98d4186a01056189e403ba2729bfea9b30f12354436641fe7
+ARG D05_SHA256=39d59b73cb960fa0956c35162e70b09a8af10ef20a1e8f5cae7b77d48be5ce31
+WORKDIR /tmp
+RUN python -c "import urllib.request as u; u.urlretrieve('https://sourceforge.net/projects/astap-program/files/linux_installer/astap_command-line_version_Linux_amd64.zip/download', 'cli.zip'); u.urlretrieve('https://sourceforge.net/projects/astap-program/files/star_databases/d05_star_database.zip/download', 'd05.zip')" \
+    && { echo "${ASTAP_SHA256}  cli.zip" | sha256sum -c - \
+         || python -c "import urllib.request as u; u.urlretrieve('https://sourceforge.net/projects/astap-program/files/linux_installer/older/astap_command-line_version_Linux_amd64%20v${ASTAP_VERSION}.zip/download', 'cli.zip')" \
+            && echo "${ASTAP_SHA256}  cli.zip" | sha256sum -c -; } \
+    && echo "${D05_SHA256}  d05.zip" | sha256sum -c - \
+    && python -c "import zipfile; [zipfile.ZipFile(z).extractall('/opt/astap') for z in ('cli.zip', 'd05.zip')]" \
+    && chmod 755 /opt/astap/astap_cli \
+    && /opt/astap/astap_cli -h | grep -q "version CLI-${ASTAP_VERSION}" \
+    && rm cli.zip d05.zip
+
 FROM docker.io/library/python:3.13-slim
 WORKDIR /app
-ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080
+COPY --from=astap /opt/astap /opt/astap
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PORT=8080 ASTAP=/opt/astap/astap_cli ASTAP_DATABASE=/opt/astap
 COPY requirements.txt ./
 RUN pip install --no-cache-dir --only-binary=:all: --root-user-action=ignore -r requirements.txt
 COPY src ./src

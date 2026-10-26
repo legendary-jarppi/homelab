@@ -22,7 +22,9 @@ BACKGROUND_MAX_RATIO = 1.5
 # ELONGATION_MARGIN: trailing (wind, a mount hiccup, guiding lost).
 ELONGATION_MAX = 0.35
 ELONGATION_MARGIN = 0.15
-# Guiding RMS during the exposure above the larger of this and GUIDING_RMS_RATIO × session median.
+# Guiding RMS during the exposure above the larger of this and GUIDING_RMS_RATIO × session median,
+# judged only once the session has statistics: guiding is a cause, the stars are the effect, and an
+# absolute limit alone rejected good first frames on a night of steady 1.5″ guiding (2026-10-19).
 GUIDING_RMS_MIN_ARCSEC = 1.5
 GUIDING_RMS_RATIO = 2.0
 
@@ -58,7 +60,7 @@ def judge(frames: list[dict]) -> list[tuple[bool, str | None]]:
         if elong is not None and elong > elong_limit:
             session = f" (session {elong_m:.2f})" if elong_m is not None else ""
             reasons.append(f"stars elongated {elong:.2f}{session}: trailing or wind")
-        if guide is not None and guide > GUIDING_RMS_MIN_ARCSEC and (guide_m is None or guide > GUIDING_RMS_RATIO * guide_m):
+        if guide is not None and guide_m is not None and guide > max(GUIDING_RMS_MIN_ARCSEC, GUIDING_RMS_RATIO * guide_m):
             session = f" (session {guide_m:.1f}″)" if guide_m is not None else ""
             reasons.append(f"guiding RMS {guide:.1f}″{session}")
         if f.get("alignError"):

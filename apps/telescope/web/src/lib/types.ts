@@ -128,6 +128,39 @@ export interface SessionSummary {
 	dec?: number | null;
 	exposureS?: number | null;
 	gain?: number | null;
+	/** The filter in the train that night (the header's FILTER, else the service's FILTERS history); null: none. */
+	filter?: string | null;
+	/** D6 (newer services): rejected exposure, medians of the accepted frames, guiding RMS during the exposures (quadratic mean), rejections by first reason. */
+	rejectedS?: number;
+	hfr?: number | null;
+	fwhmPx?: number | null;
+	stars?: number | null;
+	backgroundAdu?: number | null;
+	guidingRmsArcsec?: number | null;
+	rejectReasons?: Partial<Record<RejectKind, number>>;
+	/** R6 (newer services): medians of the accepted frames' sky brightness (mag/arcsec²), zero point (mag for 1 e-/s) and sky (e-/s per camera pixel), and the sensor's read noise (e-); null until measured. */
+	skyMag?: number | null;
+	zeroPoint?: number | null;
+	skyEps?: number | null;
+	readNoiseE?: number | null;
+}
+
+/** R6: the session report's exposure advice from the measured sky and read noise (service `skyq.advice`). */
+export interface ExposureAdvice {
+	readNoiseE: number;
+	darkCurrentEps: number | null;
+	/** Median sky of the accepted frames, e-/s per camera pixel (green). */
+	skyEps: number;
+	/** Rounded up to a usual length, at most the service's cap (600 s). */
+	recommendedSubS: number;
+	/** Where read noise adds exactly 5 % to the noise, s. */
+	neededSubS: number;
+	currentSubS: number | null;
+	/** Read noise's fraction of a current sub's noise variance. */
+	readNoiseShare: number | null;
+	/** How much read noise adds to the noise of sky and dark current alone at the current sub, %. */
+	noiseAddedPct: number | null;
+	text: string;
 }
 
 export interface Frame {
@@ -152,6 +185,13 @@ export interface Frame {
 	archivePath?: string | null;
 	/** Camera angle (FITS ROTATOR), degrees. */
 	rotatorDeg?: number | null;
+	/** Focuser (EAF) position from FITS FOCUSPOS (A5; null when unknown). */
+	focusPos?: number | null;
+	/** A7: satellite, plane and meteor trails marked in the frame; null until scanned (newer services). */
+	trails?: Trail[] | null;
+	/** R6: sky brightness (mag/arcsec², the green pixels calibrated against Gaia BP) and zero point (mag for 1 e-/s); null until measured or when it cannot be. */
+	skyMag?: number | null;
+	zeroPoint?: number | null;
 }
 
 export type GuideEventKind = 'dither' | 'settle' | 'lost' | 'start' | 'stop';
@@ -197,6 +237,12 @@ export interface SessionDetail extends Omit<SessionSummary, 'frames'> {
 	pending?: number;
 	/** This session's stack (newer services), the shape of status.stack. */
 	stack?: Stack | null;
+	/** A5: the auto focus runs in the session's window (newer services). */
+	autofocus?: AutofocusRun[];
+	/** A7: trails over the session's frames (newer services). */
+	trails?: TrailCounts;
+	/** R6: sub length advice; null before the sky or the read noise is measured (newer services). */
+	exposure?: ExposureAdvice | null;
 }
 
 /** A target's goal and wishlist mark (GET /api/targets; key: a catalog id like "NGC 7000", or a session's target name). */
@@ -228,6 +274,8 @@ export interface CalibrationSet {
 	binning: number | null;
 	rotatorDeg: number | null;
 	camera: string | null;
+	/** The filter the frames were taken through (header, else the processor's FILTERS history); null: none. */
+	filter?: string | null;
 	firstAt: number;
 	lastAt: number;
 }
@@ -243,6 +291,7 @@ export interface Master {
 	offset: number | null;
 	tempC: number | null;
 	rotatorDeg: number | null;
+	filter?: string | null;
 	night: string;
 	median: number | null;
 	noise: number | null;
@@ -252,6 +301,8 @@ export interface Master {
 export interface Library {
 	sets: CalibrationSet[];
 	masters: Master[];
+	/** Masters that could not be built (not retried until their set changes). */
+	failed?: { set: string; id: string; error: string; at: number }[];
 	updatedAt: number | null;
 }
 
@@ -264,9 +315,23 @@ export interface CalibrationChoice {
 	warnings: string[];
 }
 
+/** One calibration group of a target's lights (night, exposure, gain, offset, temperature, camera angle modulo 180°) and what the processor chose for it. */
+export interface CalibrationGroup extends CalibrationChoice {
+	night: string;
+	frames: number;
+	exposureS: number | null;
+	gain: number | null;
+	offset: number | null;
+	tempC: number | null;
+	rotatorDeg: number | null;
+	/** The dark is of another exposure, scaled by the exposure ratio. */
+	darkScaled: boolean;
+	lightsBias: string | null;
+}
+
 /** GET /api/library/match?target=. */
 export interface LibraryMatch extends CalibrationChoice {
-	nights?: ({ night: string } & CalibrationChoice)[];
+	nights?: CalibrationGroup[];
 }
 
 export type FinalStatus = 'queued' | 'running' | 'done' | 'failed';
@@ -462,4 +527,409 @@ export interface Conditions {
 	verdict: string;
 	auroraLine: string;
 	updatedAt: number;
+}
+
+/** D6: a rejected frame's first reason, as the service counts them (`rejectReasons`). */
+export type RejectKind = 'stars' | 'hfr' | 'background' | 'elongation' | 'guiding' | 'alignment' | 'manual' | 'unreadable' | 'other';
+
+/** D6: one night's ERA5 cloud during its darkness (astronomical, else nautical). */
+export interface ClearNight {
+	night: string;
+	/** Hours of darkness; 0 in the light summer nights. */
+	darkHours: number;
+	/** Dark hours with ERA5 cloud ≤ CLEAR_PCT; null when ERA5 does not reach the night yet. */
+	clearHours: number | null;
+	/** At least CLEAR_NIGHT_HOURS clear dark hours (half the dark hours when the darkness is shorter); null unknown (no darkness or no ERA5 yet). */
+	clear: boolean | null;
+	imaged: boolean;
+}
+
+/** D6: clear nights per month (YYYY-MM). */
+export interface ClearMonth {
+	month: string;
+	/** Nights with darkness. */
+	darkNights: number;
+	/** Dark nights ERA5 already covers. */
+	known: number;
+	clear: number;
+	clearImaged: number;
+	clearMissed: number;
+	/** Imaged although ERA5 had fewer clear dark hours (gaps, thin cloud, ERA5's 28 km grid). */
+	imagedNotClear: number;
+	imaged: number;
+}
+
+/** C4: which forecast is compared: the run current 24 h before the hour, or the latest run before it. */
+export type ForecastLead = 'dayAhead' | 'latest';
+
+export interface ModelScore {
+	id: string;
+	label: string;
+	/** Hours with both a forecast and frames to judge it by. */
+	hours: number;
+	/** Hours where the clear/cloudy call (cloud ≤ CLEAR_PCT) matched the frames. */
+	hits: number;
+	hitRate: number | null;
+	/** Mean absolute error and mean (forecast − observed), percentage points. */
+	mae: number | null;
+	bias: number | null;
+}
+
+/** C4: one model's forecast for an hour (%). */
+export interface ModelHour {
+	dayAhead: number | null;
+	latest: number | null;
+	low: number | null;
+	mid: number | null;
+	high: number | null;
+}
+
+/** C4: an hour of a session (Open-Meteo's hour mark, unix s; frames whose middle lies within ±30 min). */
+export interface ForecastHour {
+	time: number;
+	/** Cloud seen in the frames, % (null: too little exposure to judge in darkness above the trees). */
+	observed: number | null;
+	/** Judged exposure and frames in the hour, and how many of them counted as cloudy. */
+	exposureS: number;
+	frames: number;
+	cloudyFrames: number;
+	models: Record<string, ModelHour>;
+}
+
+export interface ForecastSession {
+	id: string;
+	night: string;
+	target: string;
+	mode: string;
+	firstFrameAt: number;
+	lastFrameAt: number;
+	/** The clear reference: the 90th percentile of the stars in the judged frames. */
+	referenceStars: number | null;
+	judgedFrames: number;
+	hours: ForecastHour[];
+	scores: Record<ForecastLead, ModelScore[]>;
+	/** Why the session has no truth (Live stacking, too few frames in darkness …), else null. */
+	excluded: string | null;
+	/** The forecasts could not be fetched. */
+	forecastError: string | null;
+}
+
+/** C4: the data of /stats/forecasts. */
+export interface ForecastReport {
+	clearPct: number;
+	models: { id: string; label: string }[];
+	sessions: ForecastSession[];
+	leaderboard: Record<ForecastLead, ModelScore[]>;
+}
+
+/** A5: an auto focus run from an archived Autorun log (GET /api/focus; session detail `autofocus`). */
+export interface AutofocusRun {
+	at: number;
+	endedAt: number | null;
+	night: string | null;
+	target: string | null;
+	/** What follows "Run AF" in the log: "before Autorun start", "1 hours later", "after Auto Meridian filpped" … */
+	reason: string | null;
+	exposureS: number | null;
+	/** The focuser's temperature, whole °C. */
+	temperatureC: number | null;
+	success: boolean | null;
+	position: number | null;
+	/** [EAF position, star size, step: 0 find focus star, 1 V-curve, 2 focus point], in order. */
+	points: [number, number, number][];
+	bestSize: number | null;
+	failure: string | null;
+	/** Session detail: 'live' while the run's log is not archived yet (then only when it ran). */
+	source?: 'log' | 'live';
+}
+
+/** A5: GET /api/focus. */
+export interface FocusReport {
+	runs: AutofocusRun[];
+	updatedAt: number | null;
+}
+
+/** R6: focus advice from the V-curves and the temperature coefficient (src/lib/focus.ts focusAdvice). */
+export interface FocusAdvice {
+	stepsPerDegC: number;
+	stepsPerDegCErr: number;
+	/** Steps from best focus where stars grow TOLERANCE_PCT, and that in °C at stepsPerDegC. */
+	toleranceSteps: number;
+	toleranceDegC: number;
+	/** The ASIAIR's temperature trigger as its runs show it; null when none is seen (or it no longer fires). */
+	asiairTriggerDegC: number | null;
+	summary: string;
+}
+
+/** R6: a calibration reminder (src/lib/calibration.ts). */
+export interface CalibrationItem {
+	level: 'info' | 'warn';
+	kind: 'flat' | 'dark' | 'bias' | 'other';
+	text: string;
+	/** The ASIAIR target name the item is about; absent when it is about the camera or every target. */
+	target?: string;
+}
+
+/** R6: src/lib/server/advice.ts adviceReport(). */
+export interface AdviceReport {
+	focus: FocusAdvice | null;
+	calibration: CalibrationItem[];
+	generatedAt: number;
+}
+
+/** A5: temperatures over a session window (GET /api/temperature), [unix s, °C]. */
+export interface SessionTemperatures {
+	/** The cabin's outdoor RuuviTag from Prometheus. */
+	ruuvi: Sourced<Series>;
+	/** Open-Meteo's hourly 2 m temperature at the site. */
+	openMeteo: Sourced<Series>;
+}
+
+/** D7: RMS in arcseconds. */
+export interface GuideRms {
+	ra: number | null;
+	dec: number | null;
+	total: number | null;
+}
+
+/** D7: GET /api/guidelogs, newest first. */
+export interface GuideLogSummary {
+	/** The file's stem, PHD2_GuideLog_<date>_<time>. */
+	id: string;
+	night: string | null;
+	startedAt: number | null;
+	endedAt: number | null;
+	sections: number;
+	guidingS: number;
+	rmsArcsec: GuideRms;
+	/** Per section: [startedAt, durationS, total RMS ″ or null]. */
+	sectionRms: [number, number, number | null][];
+}
+
+export interface PePeriod {
+	periodS: number;
+	amplitudeArcsec: number;
+}
+
+export interface GuideCorrections {
+	steps: number;
+	pulses: number;
+	share: number | null;
+	meanMs: number | null;
+	maxMs: number | null;
+	/** Pulses for a positive guide distance (W in RA) and a negative one. */
+	positive: number;
+	negative: number;
+}
+
+export interface GuideSection {
+	index: number;
+	startedAt: number;
+	endedAt: number;
+	durationS: number;
+	pierSide: string | null;
+	decDeg: number | null;
+	hourAngleH: number | null;
+	pixelScaleArcsec: number | null;
+	exposureS: number | null;
+	steps: number;
+	lost: number;
+	outliers: number;
+	settling: number;
+	dithered: number;
+	dithers: number;
+	rmsArcsec: GuideRms;
+	peakArcsec: { ra: number | null; dec: number | null };
+	corrections: { ra: GuideCorrections; dec: GuideCorrections };
+	decDrift: { arcsecPerMin: number | null; polarErrorArcmin: number | null } | null;
+	pe: { periods: PePeriod[]; peakToPeakArcsec: number | null; peakToPeakAxisArcsec: number | null; unguidedRmsArcsec: number | null; raDriftArcsecPerMin: number | null } | null;
+}
+
+/** D7: GET /api/guidelogs/<id>. */
+export interface GuideLogDetail extends GuideLogSummary {
+	mount: string | null;
+	pixelScaleArcsec: number | null;
+	guidingSections: GuideSection[];
+	pe: {
+		sections: number;
+		minSectionS: number;
+		periodRangeS: [number, number];
+		periods: PePeriod[];
+		peakToPeakArcsec: number | null;
+		peakToPeakAxisArcsec: number | null;
+		/** [period s, amplitude ″], the duration-weighted mean over the analysed sections. */
+		periodogram: [number, number][];
+		/** [t, drift-free RA position ″, its 30 s running mean or null]. */
+		curve: [number, number, number | null][];
+	} | null;
+	decDrift: { sections: number; maxArcsecPerMin: number | null; polarErrorArcmin: number | null } | null;
+	backlash: {
+		reversals: number;
+		measured: number;
+		unanswered: number;
+		sameWay: number;
+		reversalMs: number | null;
+		reversalPulses: number | null;
+		sameWayMs: number | null;
+		sameWayPulses: number | null;
+		estimateMs: number | null;
+		estimateArcsec: number | null;
+	} | null;
+	corrections: { ra: GuideCorrections; dec: GuideCorrections };
+	/** [t, RA ″, Dec ″, settling], every measured step (downsampled to 3000). */
+	series: [number, number, number, boolean][];
+}
+
+/** B4: one picture of a session timelapse. Frames: every analysed frame; stack: the stack after `frames` accepted frames. */
+export interface TimelapseStep {
+	step: number;
+	frameId: string;
+	number: number;
+	at: number;
+	accepted: boolean;
+	rejectReason: string | null;
+	/** Frames only: aligned by its stars, or (not aligned) placed by its plate solve or like its nearest aligned neighbour. */
+	placement?: 'aligned' | 'plateSolve' | 'neighbour';
+	/** Stack only: frames and seconds in the stack so far. */
+	frames?: number;
+	integrationS?: number;
+	url: string;
+}
+
+export interface TimelapseSequence {
+	steps: TimelapseStep[];
+	webpUrl: string | null;
+	webpBytes: number | null;
+}
+
+/** B4: GET /api/sessions/<id>/timelapse. */
+export interface Timelapse {
+	sessionId: string;
+	target: string;
+	state: 'ready' | 'building' | 'queued' | 'waiting' | 'failed' | 'unavailable';
+	/** The sequences shown are older than the session's frames and decisions (a build is due or running). */
+	stale: boolean;
+	progress: { kind: 'frames' | 'stack' | 'webp'; done: number; total: number } | null;
+	error: string | null;
+	nextBuildAt: number | null;
+	builtAt: number | null;
+	width: number | null;
+	height: number | null;
+	bytes: number | null;
+	/** The WebP's step length. */
+	frameMs: number;
+	frames: TimelapseSequence | null;
+	stack: TimelapseSequence | null;
+}
+
+/** A7: a straight trail on the frame's preview grid (superpixels: x right, y down, pixel centres at integers, 1504² for the ASI533MC). */
+export interface Trail {
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+	/** FWHM across it, preview pixels. */
+	widthPx: number;
+}
+
+export interface TrailCounts {
+	/** Frames scanned so far (older ones by a backfill). */
+	scanned: number;
+	/** Frames with at least one trail. */
+	frames: number;
+	count: number;
+}
+
+/** A6: a cell of the sensor's 3×3 grid (bounds in camera pixels; numbers null with fewer than 5 measured stars). */
+export interface TiltCell {
+	row: number;
+	col: number;
+	x0: number;
+	y0: number;
+	x1: number;
+	y1: number;
+	stars: number;
+	/** Median star FWHM, camera pixels (Gaussian-equivalent, adaptive moments). */
+	fwhmPx: number | null;
+	fwhmArcsec: number | null;
+	hfrPx: number | null;
+	/** 1 − minor/major, 0 = round. */
+	elongation: number | null;
+	/** The stars' dominant long axis, degrees clockwise from +x on the screen (0–180). */
+	angleDeg: number | null;
+}
+
+export type TiltLevel = 'ok' | 'minor' | 'check';
+
+export interface TiltSummary {
+	centerFwhmPx: number | null;
+	cornersFwhmPx: number | null;
+	/** Largest minus smallest corner FWHM, % of the corners' mean. */
+	tiltPct: number | null;
+	worstCorner: string | null;
+	bestCorner: string | null;
+	/** Left column against right column, % (positive: left larger). */
+	leftRightPct: number | null;
+	/** Top row against bottom row, % (positive: top larger). */
+	topBottomPct: number | null;
+	/** Corners against the centre, % (positive: corners larger). */
+	curvaturePct: number | null;
+	cornerElongation: 'radial' | 'tangential' | 'mixed' | null;
+	/** Elongated the same way across the field: tracking, not optics. */
+	sameDirection: boolean;
+	level: TiltLevel | null;
+	verdict: string;
+}
+
+/** A6: GET /api/sessions/<id>/frames/<frameId>/inspect. */
+export interface FrameInspection {
+	sessionId: string;
+	frameId: string;
+	number: number | null;
+	at: number;
+	/** Camera pixels. */
+	width: number;
+	height: number;
+	/** Per camera pixel. */
+	pixelScaleArcsec: number | null;
+	cells: TiltCell[];
+	summary: TiltSummary;
+	/** The nine crops (cropPx camera pixels each, gapPx between) in one JPEG. */
+	mosaicUrl: string;
+	cropPx: number;
+	gapPx: number;
+	crops: { row: number; col: number; x: number; y: number }[];
+}
+
+/** A6: GET /api/sessions/<id>/inspect: the cells of the session's best accepted frames, median per cell. */
+export interface SessionInspection {
+	sessionId: string;
+	frames: { id: string; number: number | null }[];
+	cells: TiltCell[] | null;
+	summary: TiltSummary | null;
+	pixelScaleArcsec: number | null;
+	width: number | null;
+	height: number | null;
+	computedAt: number | null;
+}
+
+/** R6: tonight's pick or a night's morning report as the scheduler would send it (GET /api/digest/preview). */
+export interface Digest {
+	kind: 'pick' | 'report';
+	/** The night, YYYY-MM-DD (the evening it starts). */
+	night: string;
+	/** Worth sending (a usable night, frames to report); else `reason` says why not. */
+	send: boolean;
+	reason: string | null;
+	title: string;
+	/** Lines separated by "\n". */
+	body: string;
+	url: string;
+	/** When it is due, unix s; null while the night's imaging is still running. */
+	dueAt: number | null;
+	/** From the service's sent markers: when it went out, unix s; null when not (or unknown). */
+	sentAt: number | null;
+	/** A notify token is configured (else nothing is ever sent). */
+	notifyConfigured: boolean;
+	generatedAt: number;
 }

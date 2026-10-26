@@ -6,7 +6,8 @@ frame and log to the worker in sessions.py (archive at home, previews, frame num
 rejection, registration, live stack). Follows the ASIAIR's own control ports read only (live.py) for
 what it is doing right now and records it (journal.py). Sends push notifications (imaging started,
 finished, stopped here; clouds, dew, guiding, meridian flip, storage, cooling, power in alerts.py).
-Keeps the integration goals per target (targets.py). Never changes anything on the ASIAIR.
+Keeps the integration goals per target (targets.py) and the web app's digest sent markers (notices.py).
+Never changes anything on the ASIAIR.
 Cluster-internal:
     GET  /api/status                               JSON (session, plan, live, stack, recent frames)
     GET  /api/sessions, /api/sessions/<id>         observing log: sessions, one session's report
@@ -14,15 +15,23 @@ Cluster-internal:
     POST /api/sessions/<id>/reprocess              analyse, align and stack again from the archive
     GET  /api/targets                              integration goals and wishlist per target
     PUT  /api/targets/<key>                        {"goalHours"?, "wishlist"?, "note"?}
+    GET  /api/notices/<key>                        sent marker of a web app digest: {key, sentAt} or 404
+    PUT  /api/notices/<key>                        {"sentAt": unix s}
     GET  /frames/<id>.jpg, /frames/<id>-small.jpg  frame previews (~1504 px, ~300 px)
     GET  /stacks/<id>.jpg, -small.jpg, .fits       the session's stack (the .jpg at full resolution)
     GET  /api/images/stack|upload/<id>             image metadata: full-resolution URL, plate solve, histogram
     GET  /api/images/stack|upload/<id>/star?x=&y=  the star nearest a click, measured on the linear data
     GET  /api/uploads, /api/uploads/<id>           the owner's own processed images (gallery)
-    POST /api/uploads                              multipart: file, target, title?, note?, takenAt?
+    POST /api/uploads                              multipart: file, target, title?, note?, takenAt?, raHint?, decHint?
     PUT  /api/uploads/<id>                         {"target"?, "title"?, "note"?, "published"?, "takenAt"?}
     DELETE /api/uploads/<id>
     GET  /uploads/<id>.jpg, -small.jpg, /<id>/original   an upload: display JPEG, 600 px, the file as uploaded
+    GET  /api/focus                                every archived auto focus run (V-curve, temperature, result)
+    GET  /api/guidelogs, /api/guidelogs/<id>       PHD2 guide logs: RMS; sections, periodic error, Dec drift, backlash
+    GET  /api/sessions/<id>/timelapse              B4: timelapse index and build state (asks for a build)
+    GET  /timelapse/<id>/frames|stack/<key>.jpg    a timelapse step; .../frames|stack.webp the animation
+    GET  /api/sessions/<id>[/frames/<frame id>]/inspect   A6: tilt and backfocus (3×3 grid), session or frame
+    GET  /frames/<id>-inspect.jpg                  A6: the frame's nine 1:1 corner/edge/centre crops
     GET  /metrics                                  Prometheus
     GET  /healthz
 """
@@ -48,11 +57,15 @@ import autorun
 from alerts import WEATHER_URL, Alerts, Weather
 from archive import Archive
 from asiair import Asiair, FrameFile
+from guidelog import ID as GUIDELOG_ID, GuideLogs
 from journal import Journal, Recorder
 from live import Live
 from notify import Notifier
 from sessions import Store
 from targets import KEY as TARGET_KEY, Targets
+from notices import KEY as NOTICE_KEY, Notices
+from tilt import Inspector
+from timelapse import Timelapse
 from uploads import ID as UPLOAD_ID, MAX_BYTES as UPLOAD_MAX_BYTES, UploadError, Uploads, parse_fields
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s", datefmt="%Y-%m-%dT%H:%M:%S")
@@ -110,6 +123,13 @@ TARGET = re.compile(r"^/api/targets/([^/?]{1,256})$")
 IMAGE = re.compile(r"^/api/images/(stack|upload)/([a-z0-9-]{1,128})(/star)?$")
 UPLOAD = re.compile(r"^/api/uploads/([0-9a-f]{16})$")
 UPLOAD_FILE = re.compile(r"^/uploads/([0-9a-f]{16})(?:(-small)?\.jpg|/(original))$")
+GUIDELOG = re.compile(r"^/api/guidelogs/([A-Za-z0-9_-]{1,64})$")
+TIMELAPSE = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})/timelapse$")
+TIMELAPSE_STEP = re.compile(r"^/timelapse/([a-z0-9-]{1,128})/(frames|stack)/([0-9a-f]{12})\.jpg$")
+TIMELAPSE_WEBP = re.compile(r"^/timelapse/([a-z0-9-]{1,128})/(frames|stack)\.webp$")
+INSPECT = re.compile(r"^/api/sessions/([a-z0-9-]{1,128})(?:/frames/([0-9a-f]{16}))?/inspect$")
+INSPECT_JPG = re.compile(r"^/frames/([0-9a-f]{16})-inspect\.jpg$")
+NOTICE = re.compile(r"^/api/notices/([^/?]{1,80})$")
 
 
 class Telescope:
@@ -226,7 +246,11 @@ class Telescope:
             "lastFrameAt": run[-1].saved_at,
             "exposureS": exposure,
         }
-        session["active"] = not self.ended(session, now, live) and (
+        live_plan = (live or {}).get("plan")
+        # The ASIAIR busy with a plan for another target: this run is over even before its log appears
+        # (seen 2026-10-19: a Live-mode run stayed "active" while the next plan's first frame exposed).
+        other_target = bool(live_plan and live_plan.get("target") and live_plan["target"] != session["target"])
+        session["active"] = not self.ended(session, now, live) and not other_target and (
             live["activity"] != "Idle" if live else now - run[-1].saved_at <= exposure + 2 * STALL_S
         )
         return session
@@ -471,6 +495,12 @@ def read_file(path: str) -> bytes | None:
 
 
 def serve(telescope: Telescope, store: Store, targets: Targets, uploads: Uploads) -> ThreadingHTTPServer:
+    notices = Notices(DATA_DIR)
+    guidelogs = GuideLogs(store.archive, store.tz, os.path.join(store.cache, "guidelogs"))
+    timelapse = Timelapse(store, lambda: telescope.active_id()[0])
+    timelapse.start()
+    inspector = Inspector(store)
+
     class Handler(BaseHTTPRequestHandler):
         def send(self, status: int, kind: str, body: bytes, cache: str = "no-store") -> None:
             self.send_response(status)
@@ -523,6 +553,16 @@ def serve(telescope: Telescope, store: Store, targets: Targets, uploads: Uploads
             result = store.stack_star(ident, x, y) if kind == "stack" else uploads.star(ident, x, y)
             return self.json(200, result) if result else self.not_found()
 
+        def inspected(self, sid: str, fid: str | None) -> None:
+            """A6: a frame's or a session's tilt inspection, measured on this request's thread when
+            not cached (~0.7 s a frame)."""
+            try:
+                result = inspector.frame(sid, fid) if fid else inspector.session(sid)
+            except Exception as e:  # noqa: BLE001 - an unreadable file must not drop the request
+                log.exception("inspect %s %s", sid, fid)
+                return self.text(500, f"inspection failed: {type(e).__name__}: {e}")
+            return self.json(200, result) if result else self.not_found()
+
         def do_GET(self) -> None:  # noqa: N802 - http.server's naming
             path, _, query = self.path.partition("?")
             if path == "/api/status":
@@ -531,6 +571,9 @@ def serve(telescope: Telescope, store: Store, targets: Targets, uploads: Uploads
                 return self.json(200, telescope.sessions())
             if path == "/api/targets":
                 return self.json(200, targets.all())
+            if m := NOTICE.match(path):
+                entry = notices.get(m[1]) if NOTICE_KEY.match(m[1]) else None
+                return self.json(200, entry) if entry else self.not_found()
             if m := SESSION.match(path):
                 detail = telescope.session_detail(m[1])
                 return self.json(200, detail) if detail else self.not_found()
@@ -539,6 +582,16 @@ def serve(telescope: Telescope, store: Store, targets: Targets, uploads: Uploads
                 if image is None:
                     return self.not_found()
                 return self.send(200, "image/jpeg", image, "public, max-age=31536000, immutable")
+            if m := INSPECT.match(path):
+                return self.inspected(m[1], m[2])
+            if m := INSPECT_JPG.match(path):
+                try:
+                    mosaic = inspector.mosaic_path(m[1])
+                except Exception as e:  # noqa: BLE001
+                    log.exception("inspect %s", m[1])
+                    return self.text(500, f"inspection failed: {type(e).__name__}: {e}")
+                # Frame ids change with the file: cacheable forever.
+                return self.send_path(mosaic, "image/jpeg", "public, max-age=31536000, immutable")
             if m := STACK.match(path):
                 if m[3] == "fits" and m[2]:
                     return self.not_found()
@@ -570,6 +623,27 @@ def serve(telescope: Telescope, store: Store, targets: Targets, uploads: Uploads
                 # An upload's image never changes (a new version is a new upload): cacheable forever.
                 return self.send_path(uploads.path(m[1], "small.jpg" if m[2] else "display.jpg"), "image/jpeg",
                                       "public, max-age=31536000, immutable")
+            if path == "/api/focus":
+                return self.json(200, store.focus.json())
+            if path == "/api/guidelogs":
+                return self.json(200, guidelogs.list())
+            if m := GUIDELOG.match(path):
+                entry = guidelogs.get(m[1]) if GUIDELOG_ID.match(m[1]) else None
+                return self.json(200, entry) if entry else self.not_found()
+            if m := TIMELAPSE.match(path):
+                result = timelapse.status(m[1])
+                return self.json(200, result) if result else self.not_found()
+            if m := TIMELAPSE_STEP.match(path):
+                # Named by the hash of everything in the picture: cacheable forever.
+                return self.send_path(timelapse.image_path(m[1], m[2], m[3]), "image/jpeg",
+                                      "public, max-age=31536000, immutable")
+            if m := TIMELAPSE_WEBP.match(path):
+                # ?v=<key> names one version (the index's webpUrl): cacheable forever; without it, the current one.
+                version = urllib.parse.parse_qs(query).get("v", [None])[0]
+                found = timelapse.webp(m[1], m[2], version)
+                return self.send_path(found[0] if found else None, "image/webp",
+                                      "public, max-age=31536000, immutable" if version else "no-cache",
+                                      f'attachment; filename="{found[1]}"' if found else None)
             if path == "/metrics":
                 return self.send(200, "text/plain; version=0.0.4", telescope.metrics().encode())
             if path == "/healthz":
@@ -632,6 +706,15 @@ def serve(telescope: Telescope, store: Store, targets: Targets, uploads: Uploads
             self.not_found()
 
         def do_PUT(self) -> None:  # noqa: N802
+            if m := NOTICE.match(self.path):
+                if not NOTICE_KEY.match(m[1]):
+                    return self.text(400, "notice key: up to 80 of a-z 0-9 : -")
+                sent = notices.parse(self.body())
+                if isinstance(sent, str):
+                    return self.text(400, sent)
+                entry = notices.put(m[1], sent)
+                log.info("notice %s sent at %s", m[1], datetime.fromtimestamp(sent, store.tz).isoformat(timespec="seconds"))
+                return self.json(200, entry)
             if m := UPLOAD.match(self.path):
                 fields = parse_fields(self.body(16384), partial=True)
                 if isinstance(fields, str):
@@ -691,13 +774,15 @@ def main() -> None:
     store.online = telescope.is_online
     if live:
         Recorder(journal, live.snapshot)
-    serve(telescope, store, Targets(DATA_DIR), Uploads(DATA_DIR))
+    uploads = Uploads(DATA_DIR, store.scratch)
+    serve(telescope, store, Targets(DATA_DIR), uploads)
     Alerts(telescope, notifier, Weather(os.environ.get("WEATHER_URL", WEATHER_URL))).start()
     files, size = archive.totals()
     log.info("telescope: ASIAIR %s, roots %s, live %s, notifications %s, archive %d files (%.1f GB), listening on :%d",
              HOST, ", ".join(f"{s}\\{r}".rstrip("\\") for s, r in ROOTS), "on" if LIVE else "off",
              "on" if notifier.token else "off", files, size / 1e9, PORT)
     store.start()
+    uploads.start()
     while True:
         started = time.time()
         telescope.poll()

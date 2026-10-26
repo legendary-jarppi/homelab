@@ -1,6 +1,8 @@
 <script lang="ts">
 	import Framing from './Framing.svelte';
+	import FramingDialog from './FramingDialog.svelte';
 	import { formatDuration, nightLabel } from '$lib/format';
+	import { FAINT_SB, SB_GROUPS, SNR_TARGET, meanSurfaceBrightness, roughDuration, targetEstimate, type TargetEstimate } from '$lib/exposure';
 	import type { TargetProgress } from '$lib/goals';
 	import { DEFAULT_MIN_ALTITUDE, placement, planTarget, type NightPlan } from '$lib/planner';
 	import type { TargetStore } from '$lib/targets.svelte';
@@ -18,6 +20,12 @@
 	const tonight = $derived(night && row.ra !== null && row.dec !== null ? placement(planTarget({ ra: row.ra, dec: row.dec }, night, DEFAULT_MIN_ALTITUDE), night.sky.moon.illumination) : null);
 	const final = $derived(finals.find((f) => row.targetNames.includes(f.target)));
 	const wished = $derived(row.goal?.wishlist ?? false);
+	/** R6: the integration for SNR 10 per pixel at faint nebulosity and at the catalog's mean surface brightness, from the target's measured sessions. */
+	const faint = $derived(targetEstimate(row.sessions, FAINT_SB));
+	const catalogSb = $derived(row.dso && SB_GROUPS[row.dso.group] ? meanSurfaceBrightness(row.dso.mag, row.dso.maj, row.dso.min) : null);
+	const own = $derived(catalogSb !== null ? targetEstimate(row.sessions, catalogSb) : null);
+	/** B3: the framing on the survey, open. */
+	let survey = $state(false);
 
 	function setGoal(text: string) {
 		const value = text.trim() === '' ? null : Number(text);
@@ -26,9 +34,16 @@
 	}
 </script>
 
+{#snippet needed(e: TargetEstimate, sb: number, what: string)}
+	<span
+		>SNR {SNR_TARGET} per pixel at {sb.toFixed(1)} mag/″² ({what}): {roughDuration(e.totalS)} in all at the last sky ({e.sky.skyMag.toFixed(1)} mag/″², {e.sky.subS} s subs); has
+		{formatDuration(row.integrationS - e.unmeasuredS)} (SNR {e.snrNow.toFixed(1)}){#if e.moreS > 0}, <span class="muted">{roughDuration(e.moreS)} more</span>{:else}, <span class="ok">reached</span>{/if}</span
+	>
+{/snippet}
+
 <article class="goal" class:compact id={compact ? undefined : `target-${row.key}`}>
 	<div class="head">
-		{#if row.dso}<Framing maj={row.dso.maj} min={row.dso.min} size={40} />{/if}
+		{#if row.dso}<button class="hint" onclick={() => (survey = true)} aria-label="Framing of {row.dso.id} on a survey image" title="Framing on a survey image"><Framing maj={row.dso.maj} min={row.dso.min} size={40} /></button>{/if}
 		<div class="name">
 			<strong>{row.key}</strong>{#if row.dso?.names[0]}<span class="muted"> {row.dso.names[0]}</span>{/if}
 			{#if row.targetNames.length && !(row.targetNames.length === 1 && row.targetNames[0] === row.key)}
@@ -57,6 +72,13 @@
 			<span>Final: <a href="/finals#final-{final.id}"><span class="tag" class:ok={final.status === 'done'} class:bad={final.status === 'failed'} class:accent={final.status === 'running'}>{final.status}</span></a>
 				{final.nights.length} {final.nights.length === 1 ? 'night' : 'nights'}, {formatDuration(final.integrationS)}{final.status === 'running' && final.progress ? ` · ${final.progress}` : ''}</span>
 		{/if}
+		{#if faint}
+			{@render needed(faint, FAINT_SB, 'faint nebulosity')}
+			{#if own && catalogSb !== null}{@render needed(own, catalogSb, 'its catalog mean')}{/if}
+			{#if faint.unmeasuredS > 0}<span class="faint">{formatDuration(faint.unmeasuredS)} from sessions without a measured sky not counted</span>{/if}
+		{:else if row.sessions.length}
+			<span class="faint">Integration needed: no measured sky in its sessions yet (measured in plate-solved frames after the bias frames are read)</span>
+		{/if}
 	</div>
 
 	<div class="links">
@@ -64,10 +86,12 @@
 			{#each row.sessions.slice(-4).reverse() as s (s.id)}<a class="btn" href="/sessions/{s.id}">{nightLabel(s.night, false)}</a>{/each}
 			{#if row.sessions.length > 4}<span class="small faint">+{row.sessions.length - 4}</span>{/if}
 		{/if}
-		{#if row.dso}<a class="btn" href="/planner?q={encodeURIComponent(row.dso.id)}">Plan</a>{/if}
+		{#if row.dso}<a class="btn" href="/planner?q={encodeURIComponent(row.dso.id)}">Plan</a>{#if !compact}<button class="btn" onclick={() => (survey = true)}>Framing</button>{/if}{/if}
 		{#if row.targetNames[0] && !compact}<a class="btn" href="/finals?target={encodeURIComponent(row.targetNames[0])}">Final stack</a>{/if}
 	</div>
 </article>
+
+{#if survey && row.dso}<FramingDialog dso={row.dso} onclose={() => (survey = false)} />{/if}
 
 <style>
 	.goal {
@@ -93,6 +117,13 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
+	}
+	.hint {
+		flex: none;
+		padding: 0;
+		border: 0;
+		background: none;
+		cursor: zoom-in;
 	}
 	.name {
 		flex: 1;

@@ -18,7 +18,7 @@ export const GUSTY_MS = 8;
 export const AURORA_PCT = 10;
 
 /** Cloud models side by side; Open-Meteo answers null where a model does not reach (MET Nordic: Nordics, ~2.5 days). */
-const MODELS = [
+export const MODELS = [
 	{ id: 'ecmwf_ifs025', label: 'ECMWF' },
 	{ id: 'icon_seamless', label: 'ICON (DWD)' },
 	{ id: 'gfs_seamless', label: 'GFS (NOAA)' },
@@ -81,7 +81,7 @@ export function wind(site: Site, fromS: number, toS: number): Promise<Sourced<Wi
 }
 
 /** Low, mid and high cloud from each model, three days ahead, cached 30 min. */
-function models(site: Site): Promise<Sourced<{ time: number[]; models: ModelClouds[] }>> {
+export function models(site: Site): Promise<Sourced<{ time: number[]; models: ModelClouds[] }>> {
 	return cached(`open-meteo models ${site.lat},${site.lon}`, 30 * MIN, 3 * HOUR, async () => {
 		const url = new URL('https://api.open-meteo.com/v1/forecast');
 		url.search = new URLSearchParams({

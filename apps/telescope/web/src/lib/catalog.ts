@@ -119,18 +119,21 @@ export function separation(ra1: number, dec1: number, ra2: number, dec2: number)
 /** The camera's field: ASI533 (11.3 mm × 11.3 mm) at 670 mm, 0.966° on each side. */
 export const FIELD_ARCMIN = (2 * Math.atan(11.31 / 2 / 670) * 180 * 60) / Math.PI;
 
-/** How the object sits in the field: "fits", "fills the field", "small", or a mosaic ("2×2 mosaic"); 15 % panel overlap. */
-export function framing(o: Pick<Dso, 'maj' | 'min'>): { label: string; kind: 'small' | 'fits' | 'fills' | 'mosaic' | 'unknown' } {
-	if (o.maj === null) return { label: 'size unknown', kind: 'unknown' };
+/**
+ * How the object sits in the field: "fits", "fills the field", "small", or a mosaic ("2×2 mosaic"); 15 % panel overlap.
+ * `panels`: along the major axis × across it (1 × 1 when it is not a mosaic).
+ */
+export function framing(o: Pick<Dso, 'maj' | 'min'>): { label: string; kind: 'small' | 'fits' | 'fills' | 'mosaic' | 'unknown'; panels: [number, number] } {
+	if (o.maj === null) return { label: 'size unknown', kind: 'unknown', panels: [1, 1] };
 	const major = o.maj;
 	const minor = o.min ?? o.maj;
-	if (major <= FIELD_ARCMIN / 8) return { label: 'small in the field', kind: 'small' };
-	if (major <= FIELD_ARCMIN * 0.8) return { label: 'fits', kind: 'fits' };
-	if (major <= FIELD_ARCMIN * 1.05 && minor <= FIELD_ARCMIN) return { label: 'fills the field', kind: 'fills' };
+	if (major <= FIELD_ARCMIN / 8) return { label: 'small in the field', kind: 'small', panels: [1, 1] };
+	if (major <= FIELD_ARCMIN * 0.8) return { label: 'fits', kind: 'fits', panels: [1, 1] };
+	if (major <= FIELD_ARCMIN * 1.05 && minor <= FIELD_ARCMIN) return { label: 'fills the field', kind: 'fills', panels: [1, 1] };
 	const panel = FIELD_ARCMIN * 0.85;
 	const a = Math.ceil(major / panel);
 	const b = Math.max(1, Math.ceil(minor / panel));
-	return { label: `${a}×${b} mosaic`, kind: 'mosaic' };
+	return { label: `${a}×${b} mosaic`, kind: 'mosaic', panels: [a, b] };
 }
 
 const GROUP_APPEAL: Record<DsoGroup, number> = { nebula: 1, galaxy: 1, planetary: 0.9, dark: 0.9, globular: 0.85, cluster: 0.7 };

@@ -55,6 +55,13 @@ class RejectionTest(unittest.TestCase):
         frames = [good(elongation=0.4) for _ in range(8)]
         self.assertTrue(all(accepted for accepted, _ in rejection.judge(frames)))
 
+    def test_steady_mediocre_guiding_is_not_a_reason(self):
+        # 2026-10-19: the first frame of a night with steady 1.5″ guiding was rejected on the absolute
+        # limit alone, with round, sharp stars. Guiding counts only against the session's own median.
+        self.assertTrue(rejection.judge([good(guidingRmsArcsec=1.6)])[0][0])
+        frames = [good(guidingRmsArcsec=1.5 + i * 0.02) for i in range(8)]
+        self.assertTrue(all(accepted for accepted, _ in rejection.judge(frames)))
+
 
 if __name__ == "__main__":
     unittest.main()

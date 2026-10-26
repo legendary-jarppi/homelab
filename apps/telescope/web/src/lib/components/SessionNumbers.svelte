@@ -30,7 +30,7 @@
 		{#if session.ra !== null && session.dec !== null}
 			<div class="wide"><dt>Target RA / Dec</dt><dd class="num">{formatRa(session.ra)} · {formatDec(session.dec)}</dd></div>
 		{/if}
-		{#if session.camera}<div class="wide"><dt>Camera</dt><dd>{session.camera}{session.focalLengthMm ? ` · ${session.focalLengthMm} mm` : ''}</dd></div>{/if}
+		{#if session.camera}<div class="wide"><dt>Camera</dt><dd>{session.camera}{session.focalLengthMm ? ` · ${session.focalLengthMm} mm` : ''} · {session.filter ?? 'no filter'}</dd></div>{/if}
 		{#if session.archive}<div class="wide"><dt>Archived at home</dt><dd class="num">{session.archive.frames} files · {formatBytes(session.archive.bytes)}</dd></div>{/if}
 	</dl>
 	{#if rejected.length}

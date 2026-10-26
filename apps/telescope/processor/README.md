@@ -29,9 +29,11 @@ Siril runs as `siril-cli -s <script>` (console mode, scripts of Siril commands),
 
 ## Calibration library (D2)
 
-`src/library.py`. Every `<YYYY>/<night>/Bias|Dark|Flat/**.fit` in the archive is indexed by header (read once per file, 2880-byte blocks; `library/index.json`): `IMAGETYP`, `EXPTIME`, `GAIN`, `OFFSET`, `CCD-TEMP`, `SET-TEMP`, `XBINNING`, `ROTATOR`, `INSTRUME`, size, `DATE-OBS`. Rescanned every `LIBRARY_SCAN_MIN` (10).
+`src/library.py`. Every `<YYYY>/<night>/Bias|Dark|Flat/**.fit` in the archive is indexed by header (read once per file, 2880-byte blocks; `library/index.json`): `IMAGETYP`, `EXPTIME`, `GAIN`, `OFFSET`, `CCD-TEMP`, `SET-TEMP`, `XBINNING`, `ROTATOR`, `INSTRUME`, `FILTER`, size, `DATE-OBS`. Rescanned every `LIBRARY_SCAN_MIN` (10).
 
-**Sets**: one night, one type, camera and size, gain, offset, binning, the same exposure (bias, darks) or camera angle (flats), sensor temperatures within ±2 °C of each other. Id like `dark-20261017-300s-g100-o70-b1-m20c`, `flat-20261018-g100-o70-b1-m20c-300deg`.
+**Filter**: the ASIAIR writes no `FILTER` keyword for the filter screwed into the train, so the night's filter comes from `FILTERS` (`deploy/kustomization.yaml`, the same value as the service's; `src/filters.py`, an identical copy of the service's file): `2026-02-13=Baader UHC-L`, each entry from that night on. A header's `FILTER` wins. Only flats and lights carry it (bias and darks are taken with the telescope capped). Masters built before the filter was tracked get their night's filter from the history.
+
+**Sets**: one night, one type, camera and size, gain, offset, binning, the same exposure (bias, darks) or camera angle and filter (flats), sensor temperatures within ±2 °C of each other. Id like `dark-20261017-300s-g100-o70-b1-m20c`, `flat-20261018-g100-o70-b1-m20c-300deg`.
 
 **Masters**, one per set of at least 3 frames, once no new frame arrived for `SETTLE_MIN` (10), with Siril:
 
@@ -42,7 +44,7 @@ Siril runs as `siril-cli -s <script>` (console mode, scripts of Siril commands),
 
 Masters are 32-bit float FITS (`masters/<id>.fits`, 36 MB; Siril's 0…1 for 0…65535 ADU). The id carries a digest of the set's files (and of the flat's bias or dark-flat): more frames or a better bias make a new master, and the old one is removed once the new one exists. `median` and `noise` (pixel-to-pixel, from differences of same-colour neighbours) are in 16-bit ADU. A master that fails is listed under `failed` and not retried until its set changes.
 
-**Matching** a target's accepted lights (`match_group`), per calibration group (night, exposure, gain, offset, binning, temperature ±2 °C, camera angle modulo 180°):
+**Matching** a target's accepted lights (`match_group`), per calibration group (night, exposure, gain, offset, binning, filter, temperature ±2 °C, camera angle modulo 180°):
 
 | | Choice | Warning |
 |---|---|---|
@@ -51,7 +53,8 @@ Masters are 32-bit float FITS (`masters/<id>.fits`, 36 MB; Siril's 0…1 for 0�
 | | Another exposure (> 30 s, at least half the lights') at the temperature, with a bias: scaled by Siril by the exposure ratio (the shortest longer one first) | `No dark for 180 s, gain 100, -20 °C: using the 300 s dark, scaled` |
 | | None: hot and cold pixels found in the lights themselves | `No dark for 300 s, gain 100, -20 °C: hot pixels are taken out of the lights themselves` |
 | | Older than 180 days | `Dark is 200 days older than the lights (hot pixels change)` |
-| Flat | Same camera angle modulo 180°, nearest in time | — |
+| Flat | Same filter, same camera angle modulo 180°, nearest in time (the filter first: one taken without the lights' filter has other vignetting and dust) | — |
+| | Only another filter or none | `Flat taken without a filter, lights with the Baader UHC-L (vignetting and dust spots differ)` |
 | | Only other angles | `Flat taken at camera angle 120°, lights at 93° (dust spots may not match)` |
 | | More than `FLAT_MAX_DAYS` (7) from the lights | `Flat is 41 days older than the lights` (or newer) |
 | | None | `No flat: vignetting and dust spots stay in the image` |
@@ -149,8 +152,8 @@ JSON, times in unix seconds.
 | Path | |
 |---|---|
 | `GET /api/library` | `{ sets: [{ id, type, night, count, exposureS, gain, offset, sensorTempC (median), setTempC, binning, rotatorDeg (flats), camera, firstAt, lastAt }], masters: [{ id, type, builtAt, sets, frames, exposureS, gain, offset, tempC, rotatorDeg, night, median, noise, fitsUrl, binning, camera, calibratedWith ({bias} or {darkFlat}, flats), warnings }], pending: [master id], failed: [{ set, id, error, at }], updatedAt }` |
-| `GET /api/library/match?target=<ASIAIR target>` | `{ bias, dark, flat, darkFlat, warnings, nights: [{ night, frames, exposureS, gain, offset, tempC, rotatorDeg, bias, dark, flat, darkFlat, darkScaled, lightsBias, warnings }] }`: master ids for the largest group at the top, one `nights` entry per calibration group (usually one per night), warnings of all groups (prefixed with the night when there are several). `bias` is the bias the lights use, else the one the flat was calibrated with; `lightsBias` only the former |
-| `GET /api/finals` | `[{ id, target, nights, sessions, frames, integrationS, status (queued, running, done, failed), progress ("registering 34/80"), createdAt, startedAt, finishedAt, error, automatic, calibration (the match as above), outputs { linearFits, processedTiff, previewJpg, previewSmallJpg, fullJpg } (URLs or null; an older unpublished version keeps only the JPEGs), stacking { method, frames, registered, intermediate, timingsS }, colour, siril, durationS, peakMemoryBytes, published, title, note, equipment { camera, focalMm, pixelUm, pixelScaleArcsec } (null before done) }]`, newest first |
+| `GET /api/library/match?target=<ASIAIR target>` | `{ bias, dark, flat, darkFlat, warnings, nights: [{ night, frames, exposureS, gain, offset, tempC, rotatorDeg, filter, bias, dark, flat, darkFlat, darkScaled, lightsBias, warnings }] }`: master ids for the largest group at the top, one `nights` entry per calibration group (usually one per night), warnings of all groups (prefixed with the night when there are several). `bias` is the bias the lights use, else the one the flat was calibrated with; `lightsBias` only the former; `filter` the lights' filter (null: none). Sets and masters in `/api/library` carry `filter` too (flats only) |
+| `GET /api/finals` | `[{ id, target, nights, sessions, frames, integrationS, status (queued, running, done, failed), progress ("registering 34/80"), createdAt, startedAt, finishedAt, error, automatic, calibration (the match as above), outputs { linearFits, processedTiff, previewJpg, previewSmallJpg, fullJpg } (URLs or null; an older unpublished version keeps only the JPEGs), stacking { method, frames, registered, intermediate, timingsS }, colour, siril, durationS, peakMemoryBytes, published, title, note, equipment { camera, focalMm, pixelUm, filter, pixelScaleArcsec } (null before done; `filter` the lights' filter or filters, null for none; finals built before it was tracked have no `filter`) }]`, newest first |
 | `GET /api/finals/<id>` | The same and `log` (the last 200 lines: the groups and their masters and warnings, Siril's messages, timings) |
 | `POST /api/finals` | `{ "target": "<ASIAIR target>", "nights"?: ["YYYY-MM-DD", …] }` → 202 with the queued final; 404 for a target or night without sessions, 502 when the service does not answer |
 | `PUT /api/finals/<id>` | `{ "published"?: bool, "title"?: string\|null, "note"?: string\|null }` (title ≤ 200, note ≤ 4000 characters, trimmed, empty = null) → the final; 400 for a bad value, 404 unknown, 409 to publish one that is not done |

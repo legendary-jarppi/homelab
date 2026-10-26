@@ -13,7 +13,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/telescope
-    newTag: "20261019-195240"
+    newTag: "20261020-142616"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: telescope-config
@@ -24,6 +24,9 @@ configMapGenerator:
       - ROOTS=EMMC Images:,Udisk Images:ASIAIR
       # The ASIAIR's clock (file names, Autorun log); it takes the phone's time.
       - ASIAIR_TZ=Europe/Helsinki
+      # The filter in the train from a night on (the ASIAIR writes no FILTER keyword): Baader UHC-L,
+      # first seen 2026-02-13 (the zero point fell 1.6 mag after 2025-12-30). Same value in the processor.
+      - FILTERS=2026-02-13=Baader UHC-L
       - POLL_S=30
       # No frame for one exposure plus this while a plan runs: "No new frames" notification.
       - STALL_MIN=15

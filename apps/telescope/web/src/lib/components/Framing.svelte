@@ -9,10 +9,7 @@
 
 	const PANEL = FIELD_ARCMIN * 0.85;
 	const fit = $derived(framing({ maj, min }));
-	const grid = $derived.by(() => {
-		const m = /^(\d+)×(\d+)/.exec(fit.label);
-		return m ? { a: Number(m[1]), b: Number(m[2]) } : { a: 1, b: 1 };
-	});
+	const grid = $derived({ a: fit.panels[0], b: fit.panels[1] });
 	/** Arcmin across the drawing. */
 	const span = $derived(Math.max(FIELD_ARCMIN * 1.15, (maj ?? 0) * 1.1, panels ? (Math.max(grid.a, grid.b) - 1) * PANEL + FIELD_ARCMIN * 1.1 : 0));
 	const k = $derived(size / span);

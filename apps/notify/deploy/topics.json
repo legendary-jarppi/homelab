@@ -10,5 +10,11 @@
 		"name": "Telescope",
 		"description": "The cabin telescope (ASIAIR): imaging started, plan finished, or frames stopped coming.",
 		"default": false
+	},
+	{
+		"id": "telescope-digest",
+		"name": "Telescope digest",
+		"description": "Telescope: tonight's pick and the morning report",
+		"default": false
 	}
 ]

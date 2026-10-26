@@ -106,6 +106,23 @@ class MatchTest(unittest.TestCase):
         m = self.one(lights(), [self.bias, self.dark])
         self.assertEqual(m["warnings"], ["No flat: vignetting and dust spots stay in the image"])
 
+    def test_flat_filter_prefers_same_filter(self):
+        uhc = "Baader UHC-L"
+        filtered = [{**f, "filter": uhc} for f in lights()]
+        with_filter = {**master("flat", "2026-10-12", 1.2, angle=93.0, at=T0 - 5 * DAY), "filter": uhc}
+        without = {**master("flat", "2026-10-17", 1.2, angle=93.0), "filter": None}
+        m = self.one(filtered, [self.bias, self.dark, with_filter, without])
+        self.assertEqual(m["flat"], with_filter["id"])  # the filter first, then the nearest night
+        self.assertEqual((m["filter"], m["warnings"]), (uhc, []))
+        m = self.one(filtered, [self.bias, self.dark, without])
+        self.assertEqual(m["warnings"], ["Flat taken without a filter, lights with the Baader UHC-L (vignetting and dust spots differ)"])
+
+    def test_sets_split_by_filter(self):
+        frames = [frame("flat", exposure=1.2, angle=93, n=i) for i in range(4)] + \
+                 [{**frame("flat", exposure=1.2, angle=93, n=10 + i), "filter": "Baader UHC-L"} for i in range(4)]
+        sets = library.group_sets(frames)
+        self.assertEqual(sorted((s["filter"] or "", s["count"]) for s in sets), [("", 4), ("Baader UHC-L", 4)])
+
     def test_groups_by_night_and_exposure(self):
         result, groups = library.match(lights() + lights("2026-10-18", 180.0, at=T0 + DAY), [self.bias, self.dark, self.flat])
         self.assertEqual([m["night"] for m in result["nights"]], ["2026-10-17", "2026-10-18"])

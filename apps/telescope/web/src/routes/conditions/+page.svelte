@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from '$app/navigation';
 	import Card from '$lib/components/Card.svelte';
+	import DigestCard from '$lib/components/DigestCard.svelte';
 	import TimeChart from '$lib/components/TimeChart.svelte';
 	import { clock, fixed } from '$lib/format';
 	import type { KpPoint, SeeingPoint } from '$lib/types';
@@ -93,6 +94,8 @@
 				</dl>
 			</Card>
 		</div>
+
+		<div class="pick"><DigestCard kind="pick" /></div>
 
 		<div class="clouds">
 			<Card title="Cloud by height">
@@ -246,11 +249,14 @@
 	@media (min-width: 1000px) {
 		.grid {
 			grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-			grid-template-areas: 'verdict aurora' 'clouds weather' 'clouds seeing';
+			grid-template-areas: 'verdict aurora' 'pick pick' 'clouds weather' 'clouds seeing';
 			align-items: stretch;
 		}
 		.verdict {
 			grid-area: verdict;
+		}
+		.pick {
+			grid-area: pick;
 		}
 		.clouds {
 			grid-area: clouds;

@@ -9,8 +9,9 @@ export const GET: RequestHandler = () => proxyJson('/api/uploads');
 const MAX_BYTES = 300 * 1024 * 1024 + 1024 * 1024;
 
 /**
- * Upload an own processed image: multipart `file`, `target`, `title`, `note`, `takenAt?` (JPEG, PNG, TIFF or
- * FITS, at most 300 MB), streamed through to the service as it comes (no buffering here), which converts it.
+ * Upload an own processed image: multipart `file`, `target`, `title`, `note`, `takenAt?`, `raHint?`, `decHint?`
+ * (the target's catalog position in degrees, for the plate solve) (JPEG, PNG, TIFF or FITS, at most 300 MB),
+ * streamed through to the service as it comes (no buffering here), which converts it.
  * A cross-site form cannot post here: SvelteKit refuses form posts from another origin.
  */
 export const POST: RequestHandler = ({ request }) => {

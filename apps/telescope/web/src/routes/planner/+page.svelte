@@ -3,6 +3,7 @@
 	import { page } from '$app/state';
 	import Card from '$lib/components/Card.svelte';
 	import Framing from '$lib/components/Framing.svelte';
+	import FramingDialog from '$lib/components/FramingDialog.svelte';
 	import TimeChart, { type ChartMark } from '$lib/components/TimeChart.svelte';
 	import { appeal, CATALOG_SOURCES, catalog, FIELD_ARCMIN, findDso, formatSize, framing, GROUP_LABELS, searchCatalog, typeLabel, type Dso, type DsoGroup } from '$lib/catalog';
 	import { clock, formatDuration, nightLabel } from '$lib/format';
@@ -10,6 +11,7 @@
 	import { altitudeCurve, DEFAULT_MIN_ALTITUDE, nightDate, placement, planNight, planTarget, type TargetPlan } from '$lib/planner';
 	import { nightNoon } from '$lib/sky';
 	import { TargetStore } from '$lib/targets.svelte';
+	import { SURVEY_CREDIT } from '$lib/survey';
 
 	/**
 	 * C1: which catalog objects are well placed on a night at the site: hours above the minimum altitude in
@@ -36,6 +38,8 @@
 	let limit = $state(40);
 	/** The expanded object: the one asked for with ?q=, if it names one. */
 	let open = $state<string | null>(untrack(() => findDso(page.url.searchParams.get('q') ?? '')?.id ?? null));
+	/** B3: the object whose framing is shown on the survey. */
+	let surveyOf = $state<Dso | null>(null);
 
 	const SORTS: [SortKey, string][] = [
 		['best', 'Best'],
@@ -189,7 +193,10 @@
 									<TimeChart from={c.from} to={c.to} height={130} yMin={0} yMax={90} yFormat={(v) => `${Math.round(v)}°`} series={c.series} bands={c.bands} marks={c.marks} hlines={[{ y: minAltitude, color: 'var(--warn)', dash: true }]} label="Altitude of {o.id}" />
 								{/if}
 								<div class="facts">
-									<Framing maj={o.maj} min={o.min} pa={null} size={120} panels />
+									<button class="hint" onclick={() => (surveyOf = o)} aria-label="Framing of {o.id} on a survey image">
+										<Framing maj={o.maj} min={o.min} pa={null} size={120} panels />
+										<span class="small muted">Survey view</span>
+									</button>
 									<dl>
 										<div><dt>Best window</dt><dd class="num">{p.best ? `${clock(p.best.start)}–${clock(p.best.end)}` : `not above ${minAltitude}°`}</dd></div>
 										<div><dt>Transit</dt><dd class="num">{clock(p.transit)} at {p.transitAltitude.toFixed(0)}°</dd></div>
@@ -209,7 +216,9 @@
 		<p class="credit faint small">
 			Catalog:
 			{#each CATALOG_SOURCES as source, i (source.url)}{i ? '; ' : ''}<a href={source.url}>{source.name}</a> ({source.attribution}), <a href={source.licenseUrl}>{source.license}</a>{/each}.
+			Survey images: <a href={SURVEY_CREDIT.surveyUrl}>{SURVEY_CREDIT.survey}</a> ({SURVEY_CREDIT.text}) via <a href={SURVEY_CREDIT.serviceUrl}>{SURVEY_CREDIT.service}</a>, {SURVEY_CREDIT.serviceText}.
 		</p>
+		{#if surveyOf}<FramingDialog dso={surveyOf} onclose={() => (surveyOf = null)} />{/if}
 	</main>
 {/if}
 
@@ -397,5 +406,16 @@
 		.facts dl {
 			width: 100%;
 		}
+	}
+	.hint {
+		flex: none;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+		padding: 0;
+		border: 0;
+		background: none;
+		cursor: zoom-in;
 	}
 </style>

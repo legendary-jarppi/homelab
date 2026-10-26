@@ -1,14 +1,20 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import Card from '$lib/components/Card.svelte';
+	import DigestCard from '$lib/components/DigestCard.svelte';
+	import ExposureCard from '$lib/components/ExposureCard.svelte';
 	import FrameList from '$lib/components/FrameList.svelte';
+	import FocusCard from '$lib/components/FocusCard.svelte';
 	import Guiding from '$lib/components/Guiding.svelte';
 	import Quality from '$lib/components/Quality.svelte';
 	import SessionNumbers from '$lib/components/SessionNumbers.svelte';
+	import SessionFraming from '$lib/components/SessionFraming.svelte';
 	import SessionTarget from '$lib/components/SessionTarget.svelte';
 	import StackView from '$lib/components/StackView.svelte';
 	import Telemetry from '$lib/components/Telemetry.svelte';
 	import Timeline from '$lib/components/Timeline.svelte';
+	import Timelapse from '$lib/components/Timelapse.svelte';
+	import TiltCard from '$lib/components/TiltCard.svelte';
 	import { formatDuration, nightLabel } from '$lib/format';
 	import { now } from '$lib/now.svelte';
 	import { SessionData, stackUrl } from '$lib/session.svelte';
@@ -52,10 +58,16 @@
 	</div>
 	<div class="right">
 		<SessionNumbers session={d} />
+		<DigestCard kind="report" night={d.night} />
 		<SessionTarget session={d} site={data.site} nowMs={now.ms} />
+		<SessionFraming session={d} />
 		<Timeline session={d} site={data.site} nowS={now.ms / 1000} />
 		<Guiding guiding={d.guiding} frames={d.frames} wind={session.wind} windError={session.windError} />
 		<Quality frames={d.frames} />
+		<ExposureCard session={d} />
+		<FocusCard session={d} />
+		<TiltCard sessionId={d.id} accepted={d.accepted} />
+		<Timelapse sessionId={d.id} version="{d.lastFrameAt}-{d.accepted}-{d.rejected}-{d.stack?.imageId ?? ''}" />
 		<Telemetry telemetry={d.telemetry} />
 	</div>
 </main>

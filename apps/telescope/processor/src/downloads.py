@@ -168,6 +168,7 @@ def readme_text(target: str, sessions: list[dict], frames: list[dict], accepted:
     out += ["Calibration match", "-----------------"]
     for m in match["nights"]:
         angle = f", camera angle {m['rotatorDeg']:.0f}°" if m["rotatorDeg"] is not None else ""
+        angle += f", {m['filter']}" if m.get("filter") else ", no filter"
         out.append(f"{m['night']}: {m['frames']} × {lib.fmt_exposure(m['exposureS'] or 0)}, gain {m['gain']:g}, "
                    f"{lib.fmt_temp(m['tempC'])}{angle}" if m["gain"] is not None else
                    f"{m['night']}: {m['frames']} × {lib.fmt_exposure(m['exposureS'] or 0)}{angle}")

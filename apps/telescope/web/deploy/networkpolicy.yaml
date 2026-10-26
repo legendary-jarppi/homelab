@@ -2,9 +2,11 @@
 #   telescope-web <- Traefik (telescope.lab.internal), cloudflared (telescope.shillyshally.org: the public
 #                    gallery, once the tunnel routes it; the app answers that host with published items only)
 #   telescope-web -> the telescope service (API, previews, frame overrides, goals), the processor (calibration
-#                    library, final stacks, downloads), DNS, and the internet on 443 (Open-Meteo, 7Timer,
-#                    NOAA SWPC), not the LAN.
-# The service's and the processor's own policies (apps/telescope/deploy, apps/telescope/processor/deploy) admit telescope-web.
+#                    library, final stacks, downloads), Prometheus (the cabin's RuuviTag temperature), apps/notify
+#                    (the digests, POST /api/send), DNS, and the internet on 443 (Open-Meteo, 7Timer, NOAA SWPC),
+#                    not the LAN.
+# The service's, the processor's and notify's own policies (apps/telescope/deploy, apps/telescope/processor/deploy,
+# apps/notify/deploy) admit telescope-web.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -37,6 +39,27 @@ spec:
               app.kubernetes.io/name: telescope-processor
       ports:
         - port: 8080
+    # kube-prometheus-stack's Prometheus StatefulSet pod (the monitoring namespace has no policies of its own).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+              operator.prometheus.io/name: kube-prometheus-stack-prometheus
+      ports:
+        - port: 9090
+    # apps/notify's web pod: tonight's pick and the morning report (src/lib/server/notify.ts).
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: notify
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: web
+      ports:
+        - port: 3000
     - to:
         - namespaceSelector:
             matchLabels:

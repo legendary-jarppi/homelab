@@ -169,7 +169,7 @@ export async function loadGalleryTarget(param: string, publicMode: boolean): Pro
 	const sessions = s.sessions.filter((x) => sessionKey(x) === key);
 	// Equipment from the newest sessions' reports (camera and focal length are not in the list).
 	const details = (await Promise.all(sessions.slice(0, 20).map((x) => upstreamJson<SessionDetail>(`/api/sessions/${encodeURIComponent(x.id)}`, 'telescope')))).filter((d): d is SessionDetail => d !== null);
-	const equipment = [...new Set(details.map((d) => [d.camera, d.focalLengthMm ? `${Math.round(d.focalLengthMm)} mm` : null].filter(Boolean).join(' · ')).filter(Boolean))];
+	const equipment = [...new Set(details.map((d) => [d.camera, d.focalLengthMm ? `${Math.round(d.focalLengthMm)} mm` : null, d.filter ?? null].filter(Boolean).join(' · ')).filter(Boolean))];
 	const exposures = [...new Set(sessions.filter((x) => x.exposureS).map((x) => `${x.exposureS} s${x.gain !== null && x.gain !== undefined ? ` at gain ${x.gain}` : ''}`))];
 	return {
 		target: { ...t, equipment, exposures, sessionLinks: publicMode ? null : sessions.map((x) => ({ id: x.id, night: x.night, integrationS: x.integrationS })) },

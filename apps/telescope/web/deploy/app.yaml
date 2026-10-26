@@ -29,6 +29,10 @@ spec:
           envFrom:
             - configMapRef:
                 name: telescope-web-config
+            # NOTIFY_TOKEN of the sender telescope-web for apps/notify (optional: without it no digest is sent).
+            - secretRef:
+                name: telescope-web-notify
+                optional: true
           ports:
             - name: http
               containerPort: 3000

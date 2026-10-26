@@ -33,7 +33,7 @@
 		height = 90,
 		yMin,
 		yMax,
-		yFormat = (v: number) => String(Math.round(v)),
+		yFormat,
 		symmetric = false,
 		marks = [],
 		bands = [],
@@ -87,6 +87,13 @@
 	});
 	const x = (t: number) => LEFT + ((t - from) / Math.max(1, to - from)) * (width - LEFT);
 	const y = (v: number) => 4 + (1 - (v - range.lo) / (range.hi - range.lo)) * (plotH - 8);
+	/** Labels with enough decimals to tell the ticks apart (a flat −20 °C sensor read "-20, -20, -20"). */
+	const format = $derived.by(() => {
+		if (yFormat) return yFormat;
+		const span = range.hi - range.lo;
+		const decimals = span >= 10 ? 0 : span >= 1 ? 1 : 2;
+		return (v: number) => (Object.is(Math.round(v * 10 ** decimals), -0) ? 0 : v).toFixed(decimals);
+	});
 
 	function path(s: ChartSeries): string {
 		let d = '';
@@ -145,7 +152,7 @@
 			{/each}
 			{#each yTicks as v, i (i)}
 				<line class="grid" x1={LEFT} x2={width} y1={y(v)} y2={y(v)} />
-				<text class="ylab" x={LEFT - 5} y={y(v)} dy="0.35em" text-anchor="end">{yFormat(v)}</text>
+				<text class="ylab" x={LEFT - 5} y={y(v)} dy="0.35em" text-anchor="end">{format(v)}</text>
 			{/each}
 			{#each hlines as h, i (i)}
 				<line x1={LEFT} x2={width} y1={y(h.y)} y2={y(h.y)} stroke={h.color ?? 'var(--muted)'} stroke-dasharray={h.dash ? '4 4' : undefined} stroke-width="1" />

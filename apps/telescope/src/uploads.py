@@ -2,7 +2,8 @@
 backed-up data volume: <data>/uploads/<id>/
 
     meta.json     target, title, note, dates, publish flag, the original's name/size/type, the
-                  image's size, bit depth, plate solve (FITS), histogram and statistics
+                  image's size, bit depth, plate solve (the FITS's, or ASTAP's after the upload,
+                  with its `solve` record), histogram and statistics
     original      the uploaded file byte for byte (JPEG, PNG, TIFF 8/16/32-bit, FITS)
     pixels.npy    the decoded pixels in their own type ((height, width) or (height, width, 3)),
                   memory-mapped for star measurements; about the uncompressed image size
@@ -25,6 +26,7 @@ import json
 import logging
 import math
 import os
+import queue
 import re
 import secrets
 import shutil
@@ -40,6 +42,7 @@ from PIL import Image, ImageOps
 import fits
 import images
 import measure
+import solve
 from targets import KEY as TARGET_KEY
 
 log = logging.getLogger("uploads")
@@ -54,7 +57,9 @@ LINEAR_MEDIAN = 0.08
 SATURATION = 0.98  # of the data's full scale
 BAND_ROWS = 512
 ID = re.compile(r"^[0-9a-f]{16}$")
-FIELDS = {"target", "title", "note", "takenAt"}
+FIELDS = {"target", "title", "note", "takenAt", "raHint", "decHint"}
+# Hints for the plate solve (the target's catalog position from the web app), degrees.
+HINTS = (("raHint", 0.0, 360.0), ("decHint", -90.0, 90.0))
 # Pillow refuses images over ~179 MP as decompression bombs; 300 MB files can be larger than that.
 Image.MAX_IMAGE_PIXELS = 400_000_000
 
@@ -352,7 +357,25 @@ def parse_fields(body, partial: bool) -> dict | str:
             out["takenAt"] = parse_time(body["takenAt"])
         except ValueError as e:
             return str(e)
+    for key, low, high in HINTS:
+        if body.get(key) not in (None, ""):
+            try:
+                value = float(body[key])
+            except (TypeError, ValueError):
+                value = math.nan
+            if not (math.isfinite(value) and low <= value <= high):
+                return f"{key}: degrees, {low:g} … {high:g}"
+            out[key] = value
     return out
+
+
+def solve_state(meta: dict) -> dict | None:
+    """An upload's plate solve for the API: `source` file (the uploaded FITS had one) or astap (our
+    own, after the upload), when, or why not (source null with the error); null while waiting."""
+    record = meta.get("solve")
+    if record:
+        return {"source": record["source"], "at": record["at"], "error": record["error"]}
+    return {"source": "file", "at": meta["createdAt"], "error": None} if meta.get("wcs") else None
 
 
 def fits_numbers(header: dict[str, str]) -> dict:
@@ -369,11 +392,13 @@ def fits_numbers(header: dict[str, str]) -> dict:
 
 
 class Uploads:
-    def __init__(self, data: str):
+    def __init__(self, data: str, scratch: str | None = None):
         self.root = os.path.join(data, "uploads")
         os.makedirs(self.root, exist_ok=True)
+        self.scratch = scratch  # ASTAP's working files; None: no plate solving
         self.lock = threading.Lock()
         self.convert_lock = threading.Lock()  # one decode at a time (memory)
+        self.solve_queue: queue.Queue[str] = queue.Queue()
         self.entries: dict[str, dict] = {}
         for name in os.listdir(self.root):
             folder = os.path.join(self.root, name)
@@ -386,6 +411,64 @@ class Uploads:
             except (OSError, ValueError) as e:
                 log.error("upload %s: %s", name, e)
         log.info("%d uploads", len(self.entries))
+
+    def start(self) -> None:
+        """The plate solving thread for uploads without a solution: new ones, and once the existing ones."""
+        if not self.scratch or not solve.available():
+            return
+        with self.lock:
+            for uid, meta in sorted(self.entries.items(), key=lambda kv: -kv[1]["createdAt"]):
+                if not meta.get("wcs") and not meta.get("solve"):
+                    self.solve_queue.put(uid)
+        threading.Thread(target=self._solver, name="upload-solver", daemon=True).start()
+
+    def _solver(self) -> None:
+        while True:
+            uid = self.solve_queue.get()
+            try:
+                self.solve(uid)
+            except Exception as e:  # noqa: BLE001 - one bad upload must not stop the thread
+                log.exception("plate solve upload %s", uid)
+                self._set_solution(uid, None, {"source": None, "at": time.time(),
+                                               "error": f"{type(e).__name__}: {e}"[:200]})
+
+    def solve(self, uid: str) -> None:
+        """ASTAP on a mono, binned copy of the pixels (solve.write_luminance), around the hint if there
+        is one, else the whole sky; the scale is unknown (crops, resizes), so ASTAP tries field heights
+        of 10° … 0.3°. The solution is moved back to the full-size pixels (rows top-down as displayed)."""
+        with self.lock:
+            meta = self.entries.get(uid)
+            if meta is None or meta.get("wcs"):
+                return
+            hint, full = meta.get("hint") or (None, None), meta["fullScale"]
+        os.makedirs(self.scratch, exist_ok=True)
+        path = os.path.join(self.scratch, f"upload-{uid}.fits")
+        now = time.time()
+        try:
+            k = solve.write_luminance(np.load(os.path.join(self.folder(uid), "pixels.npy"), mmap_mode="r"), path, full)
+            result = solve.solve(path, self.scratch, hint[0], hint[1], 0.0, solve.UPLOAD_TIMEOUT_S)
+            cards = solve.rescale(result.cards, k)
+            record = {"source": "astap", "at": now, "error": None, "seconds": round(result.seconds, 1)}
+            solution = fits.wcs(cards)
+            log.info("upload %s: plate solved (binned %d×, %s): RA %.4f Dec %.4f, %.3f\"/px (%.1f s)", uid, k,
+                     "whole sky" if result.blind else "around the hint", solution.crval[0], solution.crval[1],
+                     solution.pixel_scale_arcsec(), result.seconds)
+        except solve.SolveError as e:
+            cards, record = None, {"source": None, "at": now, "error": str(e)[:200], "seconds": round(e.seconds, 1)}
+            log.info("upload %s: not plate solved: %s (%.1f s)", uid, e, e.seconds)
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+        self._set_solution(uid, cards, record)
+
+    def _set_solution(self, uid: str, cards: dict | None, record: dict) -> None:
+        with self.lock:
+            meta = self.entries.get(uid)
+            if meta is None:
+                return  # deleted meanwhile
+            meta = {**meta, "wcs": cards, "solve": record}
+            self._save(meta)
+            self.entries[uid] = meta
 
     def folder(self, uid: str) -> str:
         return os.path.join(self.root, uid)
@@ -403,7 +486,8 @@ class Uploads:
         return {"id": uid, "target": meta["target"], "title": meta["title"], "note": meta["note"],
                 "createdAt": meta["createdAt"], "takenAt": meta["takenAt"], "published": meta["published"],
                 "width": meta["width"], "height": meta["height"], "url": f"/uploads/{uid}.jpg",
-                "smallUrl": f"/uploads/{uid}-small.jpg", "original": dict(meta["original"]), "imageKind": "upload"}
+                "smallUrl": f"/uploads/{uid}-small.jpg", "original": dict(meta["original"]), "imageKind": "upload",
+                "solve": solve_state(meta)}
 
     def list(self) -> list[dict]:
         with self.lock:
@@ -451,6 +535,8 @@ class Uploads:
                         takenAt=parsed.get("takenAt") if parsed.get("takenAt") is not None else meta.get("takenAt"),
                         original={"filename": upload["filename"], "bytes": upload["bytes"],
                                   "contentType": CONTENT_TYPES[kind]})
+            if "raHint" in parsed and "decHint" in parsed:
+                meta["hint"] = [parsed["raHint"], parsed["decHint"]]
             self._save(meta, tmp)
             os.replace(tmp, self.folder(uid))
         except BaseException:
@@ -458,6 +544,8 @@ class Uploads:
             raise
         with self.lock:
             self.entries[uid] = meta
+        if not meta["wcs"] and self.scratch and solve.available():
+            self.solve_queue.put(uid)
         log.info("upload %s: %s (%s, %.1f MB, %d×%d, %d-bit%s%s) for %s in %.1f s", uid, upload["filename"], kind,
                  upload["bytes"] / 1e6, meta["width"], meta["height"], meta["bitDepth"],
                  ", linear" if meta["linear"] else "", ", plate solved" if meta["wcs"] else "",
@@ -485,7 +573,10 @@ class Uploads:
         meta = render(pixels, folder)
         del pixels
         numbers = fits_numbers(header) if header else {"integrationS": None, "frames": None, "takenAt": None}
-        return {**meta, **numbers, "wcs": fits.wcs_cards(header) if header else None}
+        # The plate solve's hint: the FITS header's position (RA/DEC, OBJCTRA/OBJCTDEC), if any.
+        ra, dec, _ = solve.frame_hints(header)
+        return {**meta, **numbers, "wcs": fits.wcs_cards(header) if header else None,
+                "hint": [ra, dec] if ra is not None and dec is not None else None}
 
     def update(self, uid: str, fields: dict) -> dict | None:
         with self.lock:
@@ -533,6 +624,7 @@ class Uploads:
             "url": f"/uploads/{uid}.jpg", "smallUrl": f"/uploads/{uid}-small.jpg",
             "wcs": meta["wcs"], "rowsTopDown": True,
             "pixelScaleArcsec": round(solution.pixel_scale_arcsec(), 4) if solution else None,
+            "solveSource": solve_state(meta)["source"] if solution else None,
             "histogram": meta["histogram"], "stats": meta["stats"],
             "takenAt": meta["takenAt"], "integrationS": meta.get("integrationS"), "frames": meta.get("frames"),
             "measurable": meta["bitDepth"] > 8,
