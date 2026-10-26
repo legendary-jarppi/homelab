@@ -4,8 +4,8 @@ import { db, migrate } from '$lib/core/db';
 import { parseSettings } from '$lib/core/prefs';
 import { SESSION_COOKIE } from '$lib/server/session';
 
-/** Reachable without a session. */
-const PUBLIC_PATHS = ['/login', '/join/', '/about', '/healthz', '/manifest.webmanifest', '/favicon'];
+/** Reachable without a session. /share/ links are also the one path Cloudflare Access lets through (src/lib/server/share.ts). */
+const PUBLIC_PATHS = ['/login', '/join/', '/about', '/healthz', '/manifest.webmanifest', '/favicon', '/share/'];
 
 export const init: ServerInit = async () => {
 	const applied = await migrate(db(), process.env.MIGRATIONS_DIR ?? 'migrations');

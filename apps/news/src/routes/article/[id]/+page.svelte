@@ -3,6 +3,7 @@
 	import type { SubmitFunction } from '@sveltejs/kit';
 	import Blocks from '$lib/components/Blocks.svelte';
 	import Photo from '$lib/components/Photo.svelte';
+	import ShareButton from '$lib/components/ShareButton.svelte';
 	import Story from '$lib/components/Story.svelte';
 	import { fullDate, when } from '$lib/components/format';
 
@@ -60,6 +61,7 @@
 			<input type="hidden" name="on" value={saved ? '0' : '1'} />
 			<button class="button" type="submit" aria-pressed={saved}>{saved ? 'Saved' : 'Save'}</button>
 		</form>
+		<ShareButton url={data.shareUrl} title={a.headline} />
 		<form method="post" action="?/mute" use:enhance={putAway('muted')}>
 			<button class="button" type="submit" disabled={busy}>Not for me</button>
 		</form>

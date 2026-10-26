@@ -146,8 +146,19 @@ first** puts every photo behind the button; **no photos** removes them.
   The Evening Edition is out at 17:00." No infinite scroll, badges, counters, red dots or autoplay.
 - **Calm headlines by default.** The classifier's rewrite replaces clickbait; the outlet's headline is
   shown small on the article page. A setting turns it off.
-- **Reader control is one tap away.** On every article: *Save*, *Not for me* (mutes it) and *This
-  upset me* (hides it at once and queues it for admin review; no description needed).
+- **Reader control is one tap away.** On every article: *Save*, *Share*, *Not for me* (mutes it) and
+  *This upset me* (hides it at once and queues it for admin review; no description needed). *Share*
+  passes on a share link, `https://news.shillyshally.org/share/<token>` (`PUBLIC_BASE_URL`; the token is
+  the article id with an HMAC under `SHARE_SECRET`, so links cannot be made up and nothing is stored):
+  the system share sheet over https, else it copies the link (plain http has neither the share sheet
+  nor the clipboard API), else shows it to copy by hand. The Home Screen app has no address bar, so this
+  is the only way to pass an article on there. `/share/` is the one path Cloudflare Access lets through:
+  link-preview fetchers (WhatsApp, Signal, Messages, Telegram, Slack, … by User-Agent) get Open Graph
+  tags with the calm headline, the summary and a photo only if it was assessed and got no sensitivity
+  tag at all (the preview ignores every reader's settings), as JPEG; anyone else is redirected to
+  `/article/<id>`, behind Access and the site's login as before. So whoever holds a link can see that
+  preview, never the article. The recipient needs Access and an account, and sees the article only if
+  their own settings let it through. Without `SHARE_SECRET` Share passes the plain article address.
 - **Same design on every device**, reflowed: broadsheet grid on desktop, 2-3 columns on iPad, a single
   "column inch" stack on phones. Touch targets at least 44 px.
 

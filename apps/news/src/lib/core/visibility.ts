@@ -30,13 +30,23 @@ export interface Reader {
 	blockQuery: postgres.PendingQuery<postgres.Row[]> | null;
 }
 
-/** WHERE-clause fragment: article `a` is visible to `reader`. */
-export function visibleTo(sql: Sql, reader: Reader) {
+/**
+ * WHERE-clause fragment: article `a` is in the paper at all (classified, with text, not purged, not
+ * sponsored), before any reader's settings. Alone it is only for share-link previews, which show the
+ * calm headline, summary and an untagged photo to whoever holds the link.
+ */
+export function published(sql: Sql) {
 	return sql`
 		a.classify_state = 'done'
 		AND a.content_state = 'extracted'
 		AND a.body_purged_at IS NULL
-		AND a.kind <> 'sponsored'
+		AND a.kind <> 'sponsored'`;
+}
+
+/** WHERE-clause fragment: article `a` is visible to `reader`. */
+export function visibleTo(sql: Sql, reader: Reader) {
+	return sql`
+		${published(sql)}
 		AND NOT EXISTS (
 			SELECT 1 FROM article_topics t
 			JOIN user_hidden_topics h ON h.user_id = ${reader.id} AND h.topic = t.topic

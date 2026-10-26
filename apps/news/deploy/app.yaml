@@ -47,6 +47,11 @@ spec:
           envFrom:
             - configMapRef:
                 name: news-config
+            # SHARE_SECRET signs share links (/share/<token>); optional: without it Share passes the
+            # plain article address. See apps/news/README.md.
+            - secretRef:
+                name: news-share
+                optional: true
           env:
             - name: DB_PASSWORD
               valueFrom:

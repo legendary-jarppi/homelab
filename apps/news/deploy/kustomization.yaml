@@ -11,7 +11,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/news
-    newTag: "20261011-194334"
+    newTag: "20261023-201951"
 configMapGenerator:
   # Hashed name: changes roll the pods.
   - name: news-config
@@ -21,6 +21,8 @@ configMapGenerator:
       - HOST_HEADER=x-forwarded-host
       - ADDRESS_HEADER=X-Forwarded-For
       - XFF_DEPTH=1
+      # Address in shared article links (Share on the article page): the public one, which works away from home.
+      - PUBLIC_BASE_URL=https://news.shillyshally.org
       - LLM_BASE_URL=https://api.proxy.ai.supercell.dev/v1
       - LLM_MODEL=claude-sonnet-5-5
       - CLASSIFY_CONCURRENCY=4

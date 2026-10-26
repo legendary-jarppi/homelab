@@ -47,7 +47,13 @@ kubectl -n news create secret generic news-db --from-literal=POSTGRES_PASSWORD="
 # LLM key: the omp proxy key
 python3 -c "import yaml,os; print(yaml.safe_load(open(os.path.expanduser('~/.omp/agent/models.yml')))['providers']['sc-ai-proxy-anthropic']['apiKey'], end='')" > /tmp/llmkey \
   && kubectl -n news create secret generic news-llm --from-file=LLM_API_KEY=/tmp/llmkey; shred -u /tmp/llmkey
+# Share links (DESIGN.md §7.1; optional): a new value retires every link already shared
+kubectl -n news create secret generic news-share --from-literal=SHARE_SECRET="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
 ```
+
+Share-link previews need a second Cloudflare Access application, *News share links*, on
+`news.shillyshally.org` with path `share/*` and a bypass policy (*Everyone: news share links*; Include
+Everyone, action Bypass). Everything else on the host stays behind *Family*.
 
 ### Subscriber login (Helsingin Sanomat)
 
