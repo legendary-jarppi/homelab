@@ -2,10 +2,15 @@
 	import { carrierName, carrierShort } from '$lib/packages';
 	import type { Carrier } from '$lib/types';
 
-	let { carrier }: { carrier: Carrier } = $props();
+	/** null: no tracking code yet. */
+	let { carrier }: { carrier: Carrier | null } = $props();
 </script>
 
-<span class="carrier {carrier}" title={carrierName(carrier)}>{carrierShort(carrier)}</span>
+{#if carrier}
+	<span class="carrier {carrier}" title={carrierName(carrier)}>{carrierShort(carrier)}</span>
+{:else}
+	<span class="carrier none" title="No tracking code yet">?</span>
+{/if}
 
 <style>
 	.carrier {
@@ -28,6 +33,10 @@
 	.dhl {
 		color: #d40511;
 		background: #ffcc00;
+	}
+	.none {
+		color: var(--muted);
+		box-shadow: inset 0 0 0 1px var(--border);
 	}
 	.ups {
 		color: #ffb500;

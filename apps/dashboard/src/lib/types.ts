@@ -347,13 +347,20 @@ export interface PackageTracking {
 	pickup: { name: string; address: string | null; until: string | null } | null;
 }
 
+/** Sent back to the shop: all of it, or only some of what came. */
+export type PackageReturn = 'full' | 'partial';
+
 export interface TrackedPackage {
 	id: string;
-	code: string;
-	carrier: Carrier;
+	/** null for a package added before the shop sent its tracking code (it then has a label). */
+	code: string | null;
+	/** null while there is no code. */
+	carrier: Carrier | null;
 	/** Given when adding ("Shoes"); the code is shown otherwise. */
 	label: string | null;
 	addedAt: number;
+	/** Set when the tracking code was added after the package; a link-only package's time on the card counts from here. */
+	codeAddedAt: number | null;
 	checkedAt: number | null;
 	/** Last check failed (carrier unreachable, unknown code, carrier not configured). */
 	error: string | null;
@@ -364,6 +371,9 @@ export interface TrackedPackage {
 	archivedAt: number | null;
 	/** Last taken back out of the archive; the automatic archiving counts from here too. */
 	restoredAt: number | null;
+	/** Sent back: stays on the card, no longer checked, until archived by hand once the refund has come. */
+	returned: PackageReturn | null;
+	returnedAt: number | null;
 }
 
 /** GET /api/packages: the packages on the card (not archived). */

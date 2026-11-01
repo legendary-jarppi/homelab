@@ -2,8 +2,20 @@
 	import CarrierChip from './CarrierChip.svelte';
 	import Sheet from './Sheet.svelte';
 	import { dayOf, eventTime } from '$lib/dates';
-	import { CARRIERS, carrierName, detectCarrier, LINK_ONLY, linkOnlyUntil, normalizeCode, STATE_LABEL, TRACKING_URL } from '$lib/packages';
-	import type { Carrier, PackagesData, TrackedPackage } from '$lib/types';
+	import {
+		CARRIERS,
+		carrierName,
+		detectCarrier,
+		isLinkOnly,
+		LINK_ONLY,
+		linkOnlyUntil,
+		normalizeCode,
+		packageName,
+		RETURN_LABEL,
+		STATE_LABEL,
+		TRACKING_URL
+	} from '$lib/packages';
+	import type { Carrier, PackageReturn, PackagesData, TrackedPackage } from '$lib/types';
 
 	/** 'add' = add form; 'archive' = the archived packages; a package = its details. */
 	let {
@@ -22,14 +34,15 @@
 		onclose: () => void;
 		/** Added, archived, put back or deleted: the sheet moves on. */
 		onchange: () => void;
-		/** Renamed: the sheet stays on the package. */
+		/** Renamed, code added or return marked: the sheet stays on the package. */
 		onupdate: () => void;
 	} = $props();
 
 	const pkg = $derived(typeof view === 'string' ? null : view);
-	const title = $derived(view === 'add' ? 'Add a package' : view === 'archive' ? 'Archive' : (view.label ?? view.code));
+	const title = $derived(view === 'add' ? 'Add a package' : view === 'archive' ? 'Archive' : packageName(view));
 	const dateOf = (ms: number) => dayOf(new Date(ms).toISOString());
 
+	/** The code being typed: in the add form, or in the details of a package still without one. */
 	let code = $state('');
 	let label = $state('');
 	/** Explicit choice; otherwise the detected carrier is used. */
@@ -39,16 +52,25 @@
 
 	const detected = $derived(detectCarrier(code));
 	const carrier = $derived(chosen ?? detected);
+	/** A code was typed and its carrier can be used. */
+	const codeReady = $derived(code.trim() !== '' && !!carrier && carriers[carrier]);
+
+	const RETURNS: { id: PackageReturn | null; name: string }[] = [
+		{ id: null, name: 'Not returned' },
+		{ id: 'partial', name: RETURN_LABEL.partial },
+		{ id: 'full', name: RETURN_LABEL.full }
+	];
 
 	async function add(event: SubmitEvent) {
 		event.preventDefault();
 		busy = true;
 		message = null;
 		try {
+			const typed = normalizeCode(code);
 			const response = await fetch('/api/packages', {
 				method: 'POST',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ code: normalizeCode(code), label: label.trim() || null, carrier })
+				body: JSON.stringify({ code: typed || null, label: label.trim() || null, carrier: typed ? carrier : null })
 			});
 			if (!response.ok) {
 				message = ((await response.json().catch(() => null)) as { message?: string } | null)?.message ?? `Could not add (${response.status}).`;
@@ -68,24 +90,46 @@
 		onchange();
 	}
 
-	async function setArchived(archived: boolean) {
-		if (!pkg) return;
+	/** PATCHes the open package; its new state, or null with the reason in `message`. */
+	async function patch(change: Record<string, unknown>): Promise<TrackedPackage | null> {
+		if (!pkg) return null;
 		busy = true;
 		message = null;
 		try {
 			const response = await fetch(`/api/packages/${pkg.id}`, {
 				method: 'PATCH',
 				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ archived })
+				body: JSON.stringify(change)
 			});
 			if (!response.ok) {
 				message = ((await response.json().catch(() => null)) as { message?: string } | null)?.message ?? `Failed (${response.status}).`;
-				return;
+				return null;
 			}
-			onchange();
+			return (await response.json()) as TrackedPackage;
 		} finally {
 			busy = false;
 		}
+	}
+
+	async function setArchived(archived: boolean) {
+		if (await patch({ archived })) onchange();
+	}
+
+	/** Marking an archived package returned puts it back on the card: the sheet goes back to the archive list. */
+	async function setReturned(returned: PackageReturn | null) {
+		const wasArchived = pkg?.archivedAt != null;
+		const p = await patch({ returned });
+		if (!p) return;
+		if (wasArchived && p.archivedAt === null) onchange();
+		else onupdate();
+	}
+
+	async function saveCode(event: SubmitEvent) {
+		event.preventDefault();
+		if (!(await patch({ code: normalizeCode(code), carrier }))) return;
+		code = '';
+		chosen = null;
+		onupdate();
 	}
 
 	/** The name being edited; null when not renaming. */
@@ -93,24 +137,9 @@
 
 	async function saveName(event: SubmitEvent) {
 		event.preventDefault();
-		if (!pkg || renaming === null) return;
-		busy = true;
-		message = null;
-		try {
-			const response = await fetch(`/api/packages/${pkg.id}`, {
-				method: 'PATCH',
-				headers: { 'content-type': 'application/json' },
-				body: JSON.stringify({ label: renaming.trim() || null })
-			});
-			if (!response.ok) {
-				message = ((await response.json().catch(() => null)) as { message?: string } | null)?.message ?? `Failed (${response.status}).`;
-				return;
-			}
-			renaming = null;
-			onupdate();
-		} finally {
-			busy = false;
-		}
+		if (renaming === null || !(await patch({ label: renaming.trim() || null }))) return;
+		renaming = null;
+		onupdate();
 	}
 
 	/** Escape cancels a rename first. */
@@ -120,12 +149,39 @@
 	}
 </script>
 
+{#snippet codeFields(adding: boolean)}
+	<label>
+		<span>Tracking code {#if adding}<small class="muted">(can be added later)</small>{/if}</span>
+		<!-- svelte-ignore a11y_autofocus -->
+		<input bind:value={code} autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus={adding} placeholder="JJFI…, MH…, 1Z…, 00340…" />
+	</label>
+	<div class="carriers" role="radiogroup" aria-label="Carrier">
+		{#each CARRIERS as c (c.id)}
+			<button
+				type="button"
+				role="radio"
+				aria-checked={carrier === c.id}
+				class:active={carrier === c.id}
+				disabled={!carriers[c.id]}
+				title={carriers[c.id] ? '' : `${c.name} tracking is not set up yet`}
+				onclick={() => (chosen = c.id)}
+			>
+				{c.name}{#if !carriers[c.id]}<small>not set up</small>{/if}
+			</button>
+		{/each}
+	</div>
+	<p class="hint muted">
+		{#if carrier && LINK_ONLY[carrier]}{carrierName(carrier)} shares status only with business customers: the card links to its tracking page.
+		{:else if chosen}Carrier chosen by hand.{:else if detected}Detected from the code.{:else if code.length > 5}Choose the carrier.{:else}The carrier is detected from the code.{/if}
+	</p>
+{/snippet}
+
 <Sheet label={title} {onclose} {onescape}>
 	{#snippet header()}
 		{#if pkg && renaming !== null}
 			<form class="rename" onsubmit={saveName}>
 				<!-- svelte-ignore a11y_autofocus -->
-				<input bind:value={renaming} maxlength="40" placeholder={pkg.code} aria-label="Name" autocomplete="off" autofocus />
+				<input bind:value={renaming} maxlength="40" placeholder={pkg.code ?? 'Name'} aria-label="Name" autocomplete="off" autofocus />
 				<button class="button primary" disabled={busy}>Save</button>
 			</form>
 		{:else}
@@ -151,8 +207,8 @@
 						<li>
 							<button onclick={() => onopen(p.id)}>
 								<CarrierChip carrier={p.carrier} />
-								<span class="name">{p.label ?? p.code}</span>
-								<span class="muted">{LINK_ONLY.has(p.carrier) ? carrierName(p.carrier) : STATE_LABEL[p.tracking?.state ?? 'unknown']}</span>
+								<span class="name">{packageName(p)}</span>
+								<span class="muted">{p.returned ? RETURN_LABEL[p.returned] : !p.carrier ? 'No tracking code' : LINK_ONLY[p.carrier] ? carrierName(p.carrier) : STATE_LABEL[p.tracking?.state ?? 'unknown']}</span>
 								<span class="muted num when">{p.archivedAt ? dateOf(p.archivedAt) : ''}</span>
 							</button>
 						</li>
@@ -161,12 +217,20 @@
 			{/if}
 		{:else if pkg}
 			{@const t = pkg.tracking}
-			{@const linkOnly = LINK_ONLY.has(pkg.carrier)}
+			{@const linkOnly = isLinkOnly(pkg)}
 			<dl class="facts">
-				<div><dt>Status</dt><dd>{linkOnly ? `On ${carrierName(pkg.carrier)}'s website` : STATE_LABEL[t?.state ?? 'unknown']}</dd></div>
-				<div><dt>Carrier</dt><dd>{carrierName(pkg.carrier)}</dd></div>
-				<div><dt>Code</dt><dd class="num">{pkg.code}</dd></div>
-				{#if linkOnly && pkg.archivedAt === null}<div><dt>On the card until</dt><dd>{dateOf(linkOnlyUntil(pkg))}</dd></div>{/if}
+				<div>
+					<dt>Status</dt>
+					<dd>{!pkg.carrier ? 'No tracking code yet' : linkOnly ? `On ${carrierName(pkg.carrier)}'s website` : STATE_LABEL[t?.state ?? 'unknown']}</dd>
+				</div>
+				{#if pkg.carrier}
+					<div><dt>Carrier</dt><dd>{carrierName(pkg.carrier)}</dd></div>
+					<div><dt>Code</dt><dd class="num">{pkg.code}</dd></div>
+				{:else}
+					<div><dt>Added</dt><dd>{dateOf(pkg.addedAt)}</dd></div>
+				{/if}
+				{#if pkg.returned}<div><dt>{RETURN_LABEL[pkg.returned]}</dt><dd class="warn">{pkg.returnedAt ? dateOf(pkg.returnedAt) : ''}</dd></div>{/if}
+				{#if linkOnly && pkg.archivedAt === null && !pkg.returned}<div><dt>On the card until</dt><dd>{dateOf(linkOnlyUntil(pkg))}</dd></div>{/if}
 				{#if pkg.archivedAt}<div><dt>Archived</dt><dd>{dateOf(pkg.archivedAt)}</dd></div>{/if}
 				{#if t?.eta}<div><dt>Arriving</dt><dd>{dayOf(t.eta)}</dd></div>{/if}
 				{#if t?.pickup}
@@ -187,50 +251,46 @@
 					{/each}
 				</ol>
 			{/if}
+			{#if !pkg.carrier}
+				<form class="code" onsubmit={saveCode}>
+					{@render codeFields(false)}
+					<button class="button primary" disabled={busy || !codeReady}>Save the code</button>
+				</form>
+			{/if}
+			<div class="returns" role="radiogroup" aria-label="Returned">
+				{#each RETURNS as r (r.id)}
+					<button type="button" role="radio" aria-checked={pkg.returned === r.id} class:active={pkg.returned === r.id} disabled={busy} onclick={() => setReturned(r.id)}>
+						{r.name}
+					</button>
+				{/each}
+			</div>
+			<p class="hint muted">
+				{#if pkg.returned}Stays on the card until the refund has come: then <em>Refund received</em> archives it.
+				{:else}A returned package stays on the card until its refund has come.{/if}
+			</p>
 			{#if message}<p class="error">{message}</p>{/if}
 			<div class="actions">
-				<a class="button" href={TRACKING_URL[pkg.carrier](pkg.code)} target="_blank" rel="noopener noreferrer">Open at {carrierName(pkg.carrier)}</a>
+				{#if pkg.carrier && pkg.code}
+					<a class="button" href={TRACKING_URL[pkg.carrier](pkg.code)} target="_blank" rel="noopener noreferrer">Open at {carrierName(pkg.carrier)}</a>
+				{/if}
 				<span class="end">
 					{#if pkg.archivedAt}
 						<button class="button" onclick={() => setArchived(false)} disabled={busy}>Back to the card</button>
 					{:else}
-						<button class="button" onclick={() => setArchived(true)} disabled={busy}>Archive</button>
+						<button class="button" onclick={() => setArchived(true)} disabled={busy}>{pkg.returned ? 'Refund received' : 'Archive'}</button>
 					{/if}
 					<button class="button danger" onclick={remove} disabled={busy}>Delete</button>
 				</span>
 			</div>
 		{:else}
 			<form onsubmit={add}>
+				{@render codeFields(true)}
 				<label>
-					<span>Tracking code</span>
-					<!-- svelte-ignore a11y_autofocus -->
-					<input bind:value={code} autocomplete="off" autocapitalize="characters" spellcheck="false" autofocus required placeholder="JJFI…, MH…, 1Z…, 00340…" />
-				</label>
-				<label>
-					<span>Name <small class="muted">(optional)</small></span>
+					<span>Name <small class="muted">{code.trim() ? '(optional)' : '(needed without a code)'}</small></span>
 					<input bind:value={label} autocomplete="off" maxlength="40" placeholder="e.g. Shoes" />
 				</label>
-				<div class="carriers" role="radiogroup" aria-label="Carrier">
-					{#each CARRIERS as c (c.id)}
-						<button
-							type="button"
-							role="radio"
-							aria-checked={carrier === c.id}
-							class:active={carrier === c.id}
-							disabled={!carriers[c.id]}
-							title={carriers[c.id] ? '' : `${c.name} tracking is not set up yet`}
-							onclick={() => (chosen = c.id)}
-						>
-							{c.name}{#if !carriers[c.id]}<small>not set up</small>{/if}
-						</button>
-					{/each}
-				</div>
-				<p class="hint muted">
-					{#if carrier && LINK_ONLY.has(carrier)}{carrierName(carrier)} shares status only with business customers: the card links to its tracking page.
-					{:else if chosen}Carrier chosen by hand.{:else if detected}Detected from the code.{:else if code.length > 5}Choose the carrier.{:else}The carrier is detected from the code.{/if}
-				</p>
 				{#if message}<p class="error">{message}</p>{/if}
-				<button class="button primary" disabled={busy || !carrier || !carriers[carrier]}>{busy ? 'Adding…' : 'Add'}</button>
+				<button class="button primary" disabled={busy || (code.trim() ? !codeReady : !label.trim())}>{busy ? 'Adding…' : 'Add'}</button>
 			</form>
 	{/if}
 </Sheet>
@@ -301,6 +361,12 @@
 	.actions .end {
 		display: flex;
 		gap: 10px;
+		margin-left: auto;
+	}
+	/* Adding the code to a package that came without one. */
+	.code {
+		padding-top: 12px;
+		border-top: 1px solid var(--border);
 	}
 	.archived {
 		margin: 0 -10px;
@@ -349,7 +415,8 @@
 		grid-area: when;
 		font-size: 13px;
 	}
-	.carriers {
+	.carriers,
+	.returns {
 		display: grid;
 		grid-template-columns: repeat(2, 1fr);
 		gap: 4px;
@@ -357,7 +424,7 @@
 		border-radius: 14px;
 		background: rgba(255, 255, 255, 0.06);
 	}
-	.carriers button {
+	:is(.carriers, .returns) button {
 		display: grid;
 		padding: 9px 0;
 		font-size: 15px;
@@ -368,7 +435,7 @@
 		color: var(--muted);
 		cursor: pointer;
 	}
-	.carriers button.active {
+	:is(.carriers, .returns) button.active {
 		background: rgba(255, 255, 255, 0.16);
 		color: var(--text);
 	}
@@ -379,5 +446,12 @@
 	.carriers small {
 		font-size: 11px;
 		font-weight: 500;
+	}
+	.returns {
+		grid-template-columns: repeat(3, 1fr);
+	}
+	.returns button {
+		padding: 9px 4px;
+		font-size: 14px;
 	}
 </style>

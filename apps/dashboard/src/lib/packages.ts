@@ -1,5 +1,5 @@
 // Shared by the card and the server: carrier detection from the code's format, display names.
-import type { Carrier, PackageState, TrackedPackage } from '$lib/types';
+import type { Carrier, PackageReturn, PackageState, TrackedPackage } from '$lib/types';
 
 /** `short`: on the card's narrow carrier label when the name does not fit. */
 export const CARRIERS: { id: Carrier; name: string; short?: string }[] = [
@@ -28,12 +28,17 @@ export const TRACKING_URL: Record<Carrier, (code: string) => string> = {
  * Carriers whose status the dashboard cannot read: DHL gives API access to business customers only
  * and blocks automated use of its website. Their packages link to the carrier's tracking page.
  */
-export const LINK_ONLY: ReadonlySet<Carrier> = new Set(['dhl']);
-/** Nothing reports a link-only package as delivered, so it moves to the archive this long after being added (or restored). */
+export const LINK_ONLY: Record<Carrier, boolean> = { posti: false, matkahuolto: false, dhl: true, ups: false, dsv: false };
+export const isLinkOnly = (p: TrackedPackage): boolean => p.carrier !== null && LINK_ONLY[p.carrier];
+/** Nothing reports a link-only package as delivered, so it moves to the archive this long after being added (its code added, or restored). */
 const LINK_ONLY_KEEP_MS = 14 * 86_400_000;
 
 /** When a link-only package leaves the card for the archive (unix ms). */
-export const linkOnlyUntil = (p: TrackedPackage): number => Math.max(p.addedAt, p.restoredAt ?? 0) + LINK_ONLY_KEEP_MS;
+export const linkOnlyUntil = (p: TrackedPackage): number =>
+	Math.max(p.addedAt, p.codeAddedAt ?? 0, p.restoredAt ?? 0) + LINK_ONLY_KEEP_MS;
+
+/** The label, else the code (a package without a code always has a label). */
+export const packageName = (p: TrackedPackage): string => p.label ?? p.code ?? 'Package';
 
 /** Upper case, no spaces or dashes: codes are often copied with grouping. */
 export function normalizeCode(code: string): string {
@@ -65,4 +70,9 @@ export const STATE_LABEL: Record<PackageState, string> = {
 	pickup: 'Ready for pickup',
 	delivered: 'Delivered',
 	exception: 'Problem with delivery'
+};
+
+export const RETURN_LABEL: Record<PackageReturn, string> = {
+	full: 'Returned',
+	partial: 'Partly returned'
 };

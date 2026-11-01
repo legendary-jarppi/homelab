@@ -3,15 +3,18 @@
 // set up (a package becoming ready for pickup is sent through apps/notify), never more often than
 // each carrier allows.
 // Link-only carriers (DHL) are never checked; their packages just link to the carrier's page.
+// A package can be added before its tracking code (a name only, not checked); the code comes later.
 // Packages leave the card for the archive (same file, `archivedAt` set, no longer checked) when
-// archived by hand, two days after delivery, or when a link-only package's time is up.
+// archived by hand, two days after delivery, or when a link-only package's time is up. Returned
+// packages (all or part sent back) stay on the card, unchecked, until archived by hand once the
+// refund has come.
 import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { config } from '$lib/server/config';
-import { CARRIERS, carrierName, detectCarrier, LINK_ONLY, linkOnlyUntil, normalizeCode } from '$lib/packages';
+import { CARRIERS, carrierName, detectCarrier, isLinkOnly, linkOnlyUntil, normalizeCode, packageName } from '$lib/packages';
 import { dayOf } from '$lib/dates';
-import type { Carrier, PackageTracking, PackagesData, TrackedPackage } from '$lib/types';
+import type { Carrier, PackageReturn, PackageTracking, PackagesData, TrackedPackage } from '$lib/types';
 import { notify, notifyConfigured } from '$lib/server/notify';
 import { NotFoundError } from './errors';
 import { trackDsv } from './dsv';
@@ -50,9 +53,12 @@ async function load(): Promise<TrackedPackage[]> {
 	try {
 		packages = (JSON.parse(await readFile(config.packagesFile, 'utf8')) as TrackedPackage[]).map((p) => ({
 			...p,
-			// Files written before the archive existed.
+			// Files written before the archive, codes added later and returns existed.
 			archivedAt: p.archivedAt ?? null,
-			restoredAt: p.restoredAt ?? null
+			restoredAt: p.restoredAt ?? null,
+			codeAddedAt: p.codeAddedAt ?? null,
+			returned: p.returned ?? null,
+			returnedAt: p.returnedAt ?? null
 		}));
 	} catch (e) {
 		if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
@@ -98,12 +104,13 @@ function pickupText(p: TrackedPackage): string {
 	} catch {
 		until = pickup?.until ?? null;
 	}
-	return [p.label ?? p.code, [carrierName(p.carrier), pickup?.name].filter(Boolean).join(', '), until && `by ${until}`].filter(Boolean).join(' · ');
+	const carrier = p.carrier && carrierName(p.carrier);
+	return [packageName(p), [carrier, pickup?.name].filter(Boolean).join(', '), until && `by ${until}`].filter(Boolean).join(' · ');
 }
 
 async function check(p: TrackedPackage): Promise<void> {
-	const tracker = TRACKERS[p.carrier];
-	if (!tracker) return;
+	const tracker = p.carrier && TRACKERS[p.carrier];
+	if (!tracker || p.code === null) return;
 	// The first check happens while the package is being added: whoever adds it sees its state.
 	const first = p.checkedAt === null;
 	const before = p.tracking?.state ?? null;
@@ -123,20 +130,24 @@ async function check(p: TrackedPackage): Promise<void> {
 }
 
 function due(p: TrackedPackage, now: number): boolean {
-	const tracker = TRACKERS[p.carrier];
+	const tracker = p.carrier && TRACKERS[p.carrier];
 	return (
 		!!tracker &&
 		p.archivedAt === null &&
+		p.returned === null &&
 		p.deliveredAt === null &&
 		(p.checkedAt === null || now - p.checkedAt >= (p.error ? RETRY_MS : tracker.refreshMs))
 	);
 }
 
-/** Done with: delivered a while ago, or a link-only package past its time on the card. */
+/**
+ * Done with: delivered a while ago, or a link-only package past its time on the card. Never a
+ * returned package (its refund is still to be checked) or one still waiting for its code.
+ */
 const finished = (p: TrackedPackage, now: number) =>
-	LINK_ONLY.has(p.carrier)
-		? now >= linkOnlyUntil(p)
-		: p.deliveredAt !== null && now - Math.max(p.deliveredAt, p.restoredAt ?? 0) >= KEEP_DELIVERED_MS;
+	p.returned === null &&
+	p.code !== null &&
+	(isLinkOnly(p) ? now >= linkOnlyUntil(p) : p.deliveredAt !== null && now - Math.max(p.deliveredAt, p.restoredAt ?? 0) >= KEEP_DELIVERED_MS);
 
 let refreshing = false;
 
@@ -180,31 +191,43 @@ export async function listArchived(): Promise<TrackedPackage[]> {
 	return serial(async () => archivedNewestFirst(await load()));
 }
 
-export async function addPackage(input: { code: string; label?: string | null; carrier?: Carrier | null }): Promise<TrackedPackage> {
-	const code = normalizeCode(input.code ?? '');
+/** A typed or pasted code and the carrier for it (detected unless chosen); throws when either is unusable. */
+function parseCode(raw: string, chosen: Carrier | null | undefined): { code: string; carrier: Carrier } {
+	const code = normalizeCode(raw);
 	if (!/^[A-Z0-9]{8,40}$/.test(code)) throw new PackageInputError('That does not look like a tracking code.');
-	const carrier = input.carrier ?? detectCarrier(code);
+	const carrier = chosen ?? detectCarrier(code);
 	if (!carrier || !CARRIERS.some((c) => c.id === carrier)) throw new PackageInputError('Choose the carrier for this code.');
 	if (!carrierStatus()[carrier]) throw new PackageInputError(`${carrierName(carrier)} tracking is not set up yet.`);
+	return { code, carrier };
+}
+
+/** With a tracking code, or without one (then the name is required) when the code is still to come. */
+export async function addPackage(input: { code?: string | null; label?: string | null; carrier?: Carrier | null }): Promise<TrackedPackage> {
+	const label = input.label?.trim().slice(0, 40) || null;
+	const parsed = input.code?.trim() ? parseCode(input.code, input.carrier) : null;
+	if (!parsed && !label) throw new PackageInputError('Give the package a name, or its tracking code.');
 	return serial(async () => {
 		const list = await load();
-		const existing = list.find((p) => p.code === code);
+		const existing = parsed && list.find((p) => p.code === parsed.code);
 		// Adding an archived package again takes it back out of the archive.
 		if (existing?.archivedAt != null) return restore(existing, active(list).length);
 		if (existing) throw new PackageInputError('That package is already on the card.');
 		if (active(list).length >= MAX_PACKAGES) throw new PackageInputError('Too many packages; archive some first.');
 		const p: TrackedPackage = {
 			id: randomUUID(),
-			code,
-			carrier,
-			label: input.label?.trim().slice(0, 40) || null,
+			code: parsed?.code ?? null,
+			carrier: parsed?.carrier ?? null,
+			label,
 			addedAt: Date.now(),
+			codeAddedAt: null,
 			checkedAt: null,
 			error: null,
 			deliveredAt: null,
 			tracking: null,
 			archivedAt: null,
-			restoredAt: null
+			restoredAt: null,
+			returned: null,
+			returnedAt: null
 		};
 		await check(p);
 		list.unshift(p);
@@ -222,24 +245,41 @@ async function restore(p: TrackedPackage, onCard: number): Promise<TrackedPackag
 }
 
 /**
- * Changes a package: its name (empty = none, the code is shown), and/or moves it to the archive or
- * back to the card. null when there is no such package.
+ * Changes a package: its name (empty = none, the code is shown; a package without a code keeps
+ * its name), its tracking code (checked right away), whether it was returned (marking an archived
+ * package returned puts it back on the card), and/or moves it to the archive or back to the card.
+ * null when there is no such package.
  */
-export async function updatePackage(id: string, change: { label?: string | null; archived?: boolean }): Promise<TrackedPackage | null> {
+export async function updatePackage(
+	id: string,
+	change: { label?: string | null; code?: string; carrier?: Carrier | null; returned?: PackageReturn | null; archived?: boolean }
+): Promise<TrackedPackage | null> {
+	const parsed = change.code !== undefined ? parseCode(change.code, change.carrier) : null;
 	return serial(async () => {
 		const list = await load();
 		const p = list.find((x) => x.id === id);
 		if (!p) return null;
 		if (change.label !== undefined) {
-			p.label = change.label?.trim().slice(0, 40) || null;
-			await save();
+			const label = change.label?.trim().slice(0, 40) || null;
+			if (!label && p.code === null && !parsed) throw new PackageInputError('A package without a tracking code needs a name.');
+			p.label = label;
+		}
+		if (parsed && parsed.code !== p.code) {
+			if (list.some((x) => x !== p && x.code === parsed.code)) throw new PackageInputError('Another package already has that code.');
+			Object.assign(p, { ...parsed, codeAddedAt: Date.now(), checkedAt: null, error: null, deliveredAt: null, tracking: null });
+			await check(p);
+		}
+		if (change.returned !== undefined && change.returned !== p.returned) {
+			p.returned = change.returned;
+			p.returnedAt = change.returned ? Date.now() : null;
+			if (change.returned && p.archivedAt !== null) return restore(p, active(list).length);
 		}
 		if (change.archived === false && p.archivedAt !== null) return restore(p, active(list).length);
 		if (change.archived === true && p.archivedAt === null) {
 			p.archivedAt = Date.now();
 			trimArchive();
-			await save();
 		}
+		await save();
 		return p;
 	});
 }
