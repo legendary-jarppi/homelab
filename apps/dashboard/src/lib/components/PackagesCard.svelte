@@ -47,15 +47,16 @@
 		if (open?.archivedAt != null) await loadArchive();
 	}
 
-	/** Arriving soonest first: pickups and deliveries today, then the rest; delivered, then returned (refund to check) last. */
+	/** Arriving soonest first: pickups and deliveries today, then the rest; delivered last. */
 	const ORDER: Record<PackageState, number> = { pickup: 0, out: 1, exception: 2, transit: 3, info: 4, unknown: 5, delivered: 6 };
-	const packages = $derived(
-		[...(data?.packages ?? [])].sort((a, b) => {
-			const [ra, rb] = [a, b].map((p) => (p.returned ? 7 : ORDER[p.tracking?.state ?? 'unknown']));
-			return ra - rb || b.addedAt - a.addedAt;
-		})
+	const incoming = $derived(
+		(data?.packages ?? [])
+			.filter((p) => !p.returned)
+			.sort((a, b) => ORDER[a.tracking?.state ?? 'unknown'] - ORDER[b.tracking?.state ?? 'unknown'] || b.addedAt - a.addedAt)
 	);
-	const waiting = $derived(packages.filter((p) => p.tracking?.state === 'pickup').length);
+	/** Waiting for the refund longest first. */
+	const returned = $derived((data?.packages ?? []).filter((p) => p.returned).sort((a, b) => (a.returnedAt ?? 0) - (b.returnedAt ?? 0)));
+	const waiting = $derived(incoming.filter((p) => p.tracking?.state === 'pickup').length);
 
 	/** Four steps: sent, on the way, out for delivery / at the pickup point, delivered. */
 	function step(state: PackageState): number {
@@ -86,40 +87,60 @@
 	{/snippet}
 	{#if !data}
 		<p class="muted">Package tracking unavailable.</p>
-	{:else if packages.length === 0}
+	{:else if data.packages.length === 0}
 		<p class="muted empty">No packages on the way. Add one with its tracking code, or by name until the code comes.</p>
 	{:else}
-		<ul class="list">
-			{#each packages as p (p.id)}
-				{@const state = p.tracking?.state ?? 'unknown'}
-				{@const linkOnly = isLinkOnly(p)}
-				<li>
-					<button class="row {state}" class:link-only={linkOnly} class:returned={p.returned} onclick={() => (sheet = p.id)}>
-						<CarrierChip carrier={p.carrier} />
-						<span class="main">
-							<span class="line">
-								<span class="name">{packageName(p)}</span>
-								<span class="state">{p.returned ? RETURN_LABEL[p.returned] : !p.carrier ? 'No code yet' : linkOnly ? `Check at ${carrierName(p.carrier)}` : STATE_LABEL[state]}</span>
-							</span>
-							{#if p.returned}
-								<span class="detail muted">{p.returnedAt ? `Sent back ${dayOf(new Date(p.returnedAt).toISOString())} · ` : ''}check the refund</span>
-							{:else if !p.carrier}
-								<span class="detail muted">Added {dayOf(new Date(p.addedAt).toISOString())} · add the tracking code when it comes</span>
-							{:else if linkOnly}
-								<span class="detail muted">On the card until {dayOf(new Date(linkOnlyUntil(p)).toISOString())}</span>
-							{:else}
-								<span class="detail muted">{detail(p)}</span>
-								<span class="steps" aria-hidden="true">
-									{#each [1, 2, 3, 4] as s (s)}<i class:done={step(state) >= s}></i>{/each}
-								</span>
-							{/if}
-						</span>
-					</button>
-				</li>
-			{/each}
-		</ul>
+		<!-- Headings only when there are returns: otherwise the card is just the incoming list. -->
+		<div class="sections">
+			<section aria-label="Incoming">
+				{#if returned.length > 0}<h3>Incoming <span class="num">{incoming.length}</span></h3>{/if}
+				{#if incoming.length > 0}
+					<ul class="list">
+						{#each incoming as p (p.id)}{@render row(p)}{/each}
+					</ul>
+				{:else}
+					<p class="muted">Nothing on the way.</p>
+				{/if}
+			</section>
+			{#if returned.length > 0}
+				<section class="returns" aria-label="Returned">
+					<h3>Returned · refund to check <span class="num">{returned.length}</span></h3>
+					<ul class="list">
+						{#each returned as p (p.id)}{@render row(p)}{/each}
+					</ul>
+				</section>
+			{/if}
+		</div>
 	{/if}
 </Card>
+
+{#snippet row(p: TrackedPackage)}
+	{@const state = p.tracking?.state ?? 'unknown'}
+	{@const linkOnly = isLinkOnly(p)}
+	<li>
+		<button class="row {state}" class:link-only={linkOnly} class:returned={p.returned} onclick={() => (sheet = p.id)}>
+			<CarrierChip carrier={p.carrier} />
+			<span class="main">
+				<span class="line">
+					<span class="name">{packageName(p)}</span>
+					<span class="state">{p.returned ? RETURN_LABEL[p.returned] : !p.carrier ? 'No code yet' : linkOnly ? `Check at ${carrierName(p.carrier)}` : STATE_LABEL[state]}</span>
+				</span>
+				{#if p.returned}
+					<span class="detail muted">{p.returnedAt ? `Sent back ${dayOf(new Date(p.returnedAt).toISOString())} · ` : ''}check the refund</span>
+				{:else if !p.carrier}
+					<span class="detail muted">Added {dayOf(new Date(p.addedAt).toISOString())} · add the tracking code when it comes</span>
+				{:else if linkOnly}
+					<span class="detail muted">On the card until {dayOf(new Date(linkOnlyUntil(p)).toISOString())}</span>
+				{:else}
+					<span class="detail muted">{detail(p)}</span>
+					<span class="steps" aria-hidden="true">
+						{#each [1, 2, 3, 4] as s (s)}<i class:done={step(state) >= s}></i>{/each}
+					</span>
+				{/if}
+			</span>
+		</button>
+	</li>
+{/snippet}
 
 {#if data && (sheet === 'add' || sheet === 'archive' || open)}
 	<PackageSheet
@@ -169,17 +190,33 @@
 		margin: 0;
 		font-size: 14px;
 	}
-	.list {
+	.sections {
 		flex: 1;
 		min-height: 0;
 		overflow-y: auto;
+		display: grid;
+		align-content: start;
+		gap: 10px;
+		scrollbar-width: none;
+	}
+	.returns {
+		border-top: 1px solid var(--border);
+		padding-top: 10px;
+	}
+	h3 {
+		margin: 0 0 6px;
+		font-size: 12px;
+		font-weight: 600;
+		letter-spacing: 0.08em;
+		text-transform: uppercase;
+		color: var(--faint);
+	}
+	.list {
 		margin: 0 -8px;
 		padding: 0;
 		list-style: none;
 		display: grid;
-		align-content: start;
 		gap: 2px;
-		scrollbar-width: none;
 	}
 	.row {
 		width: 100%;
