@@ -1,4 +1,4 @@
-import type { CabinData, CalendarData, ListsData, LiveData, PackagesData, PresenceData, ProtectData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
+import type { CabinData, CalendarData, ListsData, LiveData, MusicData, PackagesData, PresenceData, ProtectData, SlowData, WeatherData, WorkoutSummary } from '$lib/types';
 import type { PageLoad } from './$types';
 
 /** First render with data already in place; the page polls afterwards. Failures render as empty cards. */
@@ -13,7 +13,7 @@ export const load: PageLoad = async ({ data, fetch }) => {
 		}
 		return null;
 	};
-	const [live, slow, weather, workout, calendar, packages, presence, cabin, protect, lists] = await Promise.all([
+	const [live, slow, weather, workout, calendar, packages, presence, cabin, protect, lists, music] = await Promise.all([
 		get<LiveData>('/api/live'),
 		get<SlowData>('/api/slow'),
 		data.weatherConfigured ? get<WeatherData[]>('/api/weather') : null,
@@ -23,7 +23,8 @@ export const load: PageLoad = async ({ data, fetch }) => {
 		data.presenceConfigured ? get<PresenceData>('/api/presence') : null,
 		data.cabinConfigured ? get<CabinData>('/api/cabin') : null,
 		data.protectConfigured ? get<ProtectData>('/api/protect/home') : null,
-		data.listsConfigured ? get<ListsData>('/api/lists') : null
+		data.listsConfigured ? get<ListsData>('/api/lists') : null,
+		data.musicSites.length > 0 ? get<MusicData>('/api/music') : null
 	]);
-	return { ...data, live, slow, weather, workout, calendar, packages, presence, cabin, protect, lists };
+	return { ...data, live, slow, weather, workout, calendar, packages, presence, cabin, protect, lists, music };
 };

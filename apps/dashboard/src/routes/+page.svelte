@@ -20,6 +20,7 @@
 	import SkyQualityCard from '$lib/components/SkyQualityCard.svelte';
 	import PresenceCard from '$lib/components/PresenceCard.svelte';
 	import ProtectCard from '$lib/components/ProtectCard.svelte';
+	import MusicCard from '$lib/components/MusicCard.svelte';
 	import SpeedtestCard from '$lib/components/SpeedtestCard.svelte';
 	import TelescopeSessionCard from '$lib/components/TelescopeSessionCard.svelte';
 	import TelescopeViewer from '$lib/components/TelescopeViewer.svelte';
@@ -40,6 +41,7 @@
 		DashboardTab,
 		ListsData,
 		LiveData,
+		MusicData,
 		PackagesData,
 		PresenceData,
 		ProtectData,
@@ -63,6 +65,7 @@
 	let cabin = $state<CabinData | null>(untrack(() => data.cabin));
 	let protect = $state<ProtectData | null>(untrack(() => data.protect));
 	let lists = $state<ListsData | null>(untrack(() => data.lists));
+	let music = $state<MusicData | null>(untrack(() => data.music));
 	/** Fetched after the page loads (the heat pumps answer over the VPN). */
 	let climate = $state<ClimateData | null>(null);
 	/** The cabin's Protect events, fetched after the page loads (over the VPN). */
@@ -189,6 +192,10 @@
 		if (data.climateConfigured) {
 			pollers.push({ url: '/api/climate', everyMs: 60_000, apply: (b) => (climate = b as ClimateData), due: 0 });
 		}
+		if (data.musicSites.length > 0) {
+			// Answered from the server's memory (it long-polls the players), so a short interval costs them nothing.
+			pollers.push({ url: '/api/music', everyMs: 5000, apply: (b) => (music = b as MusicData), due: music ? start + 5000 : 0 });
+		}
 		if (data.telescopeConfigured) {
 			pollers.push({
 				url: '/api/telescope',
@@ -262,6 +269,11 @@
 						{/each}
 					</div>
 				{/if}
+				{#if data.musicSites.includes('home')}
+					<div class="music">
+						<MusicCard {music} site="home" onchange={(next) => (music = next)} />
+					</div>
+				{/if}
 			</div>
 			<div class="area packages">
 				<PackagesCard data={packages} onchange={refreshPackages} />
@@ -318,6 +330,9 @@
 	{:else if tab === 'cabin'}
 		<main class="grid cabin-page">
 			<ClimateCard {climate} configured={data.climateConfigured} onchange={(next) => (climate = next)} />
+			{#if data.musicSites.includes('cabin')}
+				<MusicCard {music} site="cabin" onchange={(next) => (music = next)} />
+			{/if}
 		</main>
 	{:else if tab === 'telescope'}
 		<!-- The telescope web app at the address matching this one: lab.internal at home, its public name
@@ -451,10 +466,11 @@
 	.cameras-page > :global(*) {
 		grid-column: 1 / -1;
 	}
-	/* Cabin: the climate card across the whole width (its two devices side by side when they fit). */
+	/* Cabin: the climate card across the whole width (its two devices side by side when they fit), the music below. */
 	.grid.cabin-page {
 		grid-template-columns: minmax(0, 1fr);
 		grid-template-areas: none;
+		align-content: start;
 	}
 	.frame {
 		grid-area: img;
@@ -562,6 +578,10 @@
 		.middle .lists {
 			flex: 2 1 0;
 			min-height: 0;
+		}
+		/* Music keeps its own height under the calendar and lists. */
+		.middle .music {
+			flex: none;
 		}
 	}
 

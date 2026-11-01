@@ -27,6 +27,21 @@ const protectCameras = (value: string | undefined): ProtectCameraConfig[] =>
 		.filter(([name]) => name)
 		.map(([name, label, stream]) => ({ name, label: label || name, stream: stream ?? '' }));
 
+/** A BluOS player as configured: its site, address, and the label shown until it has answered. */
+export interface MusicPlayerConfig {
+	site: 'home' | 'cabin';
+	host: string;
+	label: string;
+}
+
+/** "home:192.168.1.63:Jauzan Luola,…" -> [{ site, host, label }], in display order; unknown sites are skipped. */
+const musicPlayers = (value: string | undefined): MusicPlayerConfig[] =>
+	(value ?? '')
+		.split(',')
+		.map((entry) => entry.split(':').map((part) => part.trim().normalize('NFC')))
+		.filter(([site, host]) => (site === 'home' || site === 'cabin') && host)
+		.map(([site, host, label]) => ({ site: site as MusicPlayerConfig['site'], host, label: label || host }));
+
 export const config = {
 	prometheusUrl: env.PROMETHEUS_URL ?? 'http://prometheus.lab.internal',
 	go2rtcUrl: env.GO2RTC_URL ?? 'http://localhost:1984',
@@ -110,5 +125,9 @@ export const config = {
 	notifyUrl: env.NOTIFY_URL ?? 'http://localhost:3000',
 	notifyToken: env.NOTIFY_TOKEN ?? '',
 	/** The dashboard's own address, opened by tapping its notifications. */
-	dashboardAppUrl: env.DASHBOARD_APP_URL ?? 'http://dashboard.lab.internal'
+	dashboardAppUrl: env.DASHBOARD_APP_URL ?? 'http://dashboard.lab.internal',
+	/** BLUOS_PLAYERS="home:192.168.1.63:Jauzan Luola,cabin:192.168.20.40:Elinan Kulma": site:address:label; the Music cards only when set. */
+	musicPlayers: musicPlayers(env.BLUOS_PLAYERS),
+	/** BLUOS_MAX_VOLUME (0–100, default 30): the highest volume the dashboard sets. */
+	musicMaxVolume: ((v) => (Number.isFinite(v) ? Math.min(100, Math.max(0, Math.round(v))) : 30))(Number(env.BLUOS_MAX_VOLUME || 30))
 };

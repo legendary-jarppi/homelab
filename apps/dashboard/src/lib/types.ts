@@ -432,3 +432,49 @@ export interface LiveCamera {
 	label: string;
 	recorded: boolean;
 }
+
+/** Where a BluOS player stands (BLUOS_PLAYERS); each site gets its own Music card. */
+export type MusicSite = 'home' | 'cabin';
+
+/** A BluOS player as GET /api/music reports it, from the server's long-poll of the player. */
+export interface MusicPlayer {
+	/** The player's address; commands go to POST /api/music/<id>. */
+	id: string;
+	/** The player's own name (BluOS app), or the configured label until it has answered. */
+	name: string;
+	site: MusicSite;
+	/** Answered its last request; false while it is off or off the network (state frozen at its last answer). */
+	online: boolean;
+	/** BluOS state: play, pause, stop, stream (a stream or input is playing), connecting. */
+	state: string;
+	playing: boolean;
+	/** Now playing: title1 (track, or the input's name), title2 (artist), title3 (album); '' when absent. */
+	title: string;
+	artist: string;
+	album: string;
+	/** The source's name: Spotify, HDMI ARC, … */
+	service: string;
+	/** Album art or the input's icon for an <img>; null for none. */
+	image: string | null;
+	/** 0–100, the player's own volume (also when grouped). */
+	volume: number;
+	mute: boolean;
+	canSkip: boolean;
+	canBack: boolean;
+	/** Sleep timer, minutes left; 0 when off. */
+	sleep: number;
+	/** Playable sources: inputs and Spotify (`input:<n>`), BluOS presets (`preset:<id>`); `active` is the one playing. */
+	sources: { id: string; label: string; active: boolean }[];
+	/** Grouping: the primary player's id when this one follows another; the followers' ids when it leads. */
+	leader: string | null;
+	followers: string[];
+}
+
+/** GET /api/music, and the answer to every POST /api/music/<id>. */
+export interface MusicData {
+	players: MusicPlayer[];
+	/** BLUOS_MAX_VOLUME: the dashboard never raises a player above this, and lowers it to this before starting playback. */
+	maxVolume: number;
+	/** The volume step of − and +. */
+	volumeStep: number;
+}

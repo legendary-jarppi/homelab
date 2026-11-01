@@ -20,5 +20,7 @@ export const load: PageServerLoad = () => ({
 	cabinProtectConfigured: config.protectUser !== '' && config.protectPass !== '' && config.cabinProtectUrl !== '',
 	listsConfigured: config.listsToken !== '',
 	listsAppUrl: config.listsAppUrl,
-	homelabAppUrl: config.homelabAppUrl
+	homelabAppUrl: config.homelabAppUrl,
+	/** Sites with BluOS players (BLUOS_PLAYERS): a Music card on Home, a Cabin music card on the Cabin tab. */
+	musicSites: [...new Set(config.musicPlayers.map((p) => p.site))]
 });
