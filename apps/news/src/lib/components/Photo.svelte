@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { useI18n } from '$lib/i18n';
 	import type { Photo } from '$lib/server/photos';
 
 	interface Props {
@@ -10,6 +11,8 @@
 	}
 
 	let { photo, ratio, caption = true, eager = false }: Props = $props();
+
+	const i = useI18n();
 
 	// Gated photos stay a neutral placeholder; their bytes are fetched only after the tap.
 	// Keyed by id so a reused component never carries a reveal over to another photo.
@@ -39,7 +42,7 @@
 				decoding="async"
 			/>
 		{:else}
-			<button type="button" class="reveal" onclick={reveal}>Show photo</button>
+			<button type="button" class="reveal" onclick={reveal}>{i.t('photoGate.show')}</button>
 		{/if}
 	</div>
 	{#if caption && shown && (photo.caption || photo.credit)}

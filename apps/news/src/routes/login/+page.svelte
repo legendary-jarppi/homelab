@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { page } from '$app/state';
+	import { useI18n } from '$lib/i18n';
 
 	let { form } = $props();
+	const i = useI18n();
 	let pending = $state(false);
 	const next = $derived(page.url.searchParams.get('next'));
 	/** Set by /login/check: the password was accepted but the browser sent no session cookie back. */
@@ -10,12 +12,12 @@
 </script>
 
 <svelte:head>
-	<title>Sign in · Shilly Shally News</title>
+	<title>{i.t('login.title')} · Shilly Shally News</title>
 </svelte:head>
 
 <section class="door">
-	<h1 class="hed hed-4">Sign in</h1>
-	<p class="note">A private paper for family and friends.</p>
+	<h1 class="hed hed-4">{i.t('login.title')}</h1>
+	<p class="note">{i.t('login.note')}</p>
 
 	<form
 		method="post"
@@ -32,21 +34,20 @@
 			<p class="error" role="alert">{form.message}</p>
 		{:else if cookieMissing}
 			<p class="error" role="alert">
-				Your password was right, but this browser didn’t keep the sign-in. On iPhone: Settings → Apps → Safari, turn off
-				<b>Block All Cookies</b>; then Advanced → Website Data, delete <b>news.lab.internal</b>, and sign in again.
+				{i.t('login.cookieLead')} <b>{i.t('login.cookieSetting')}</b>{i.t('login.cookieMid')} <b>news.lab.internal</b>{i.t('login.cookieEnd')}
 			</p>
 		{/if}
 		<div class="field">
-			<label for="username">Username</label>
+			<label for="username">{i.t('login.username')}</label>
 			<input id="username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required value={form?.username ?? ''} />
 		</div>
 		<div class="field">
-			<label for="password">Password</label>
+			<label for="password">{i.t('login.password')}</label>
 			<input id="password" name="password" type="password" autocomplete="current-password" required />
 		</div>
-		<button class="button button-primary" type="submit" disabled={pending}>Sign in</button>
+		<button class="button button-primary" type="submit" disabled={pending}>{i.t('login.submit')}</button>
 	</form>
-	<p class="aside">New here? Ask whoever invited you for an invite link.</p>
+	<p class="aside">{i.t('login.aside')}</p>
 </section>
 
 <style>

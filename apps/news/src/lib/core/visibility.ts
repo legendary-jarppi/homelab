@@ -35,31 +35,41 @@ export interface Reader {
  * sponsored), before any reader's settings. Alone it is only for share-link previews, which show the
  * calm headline, summary and an untagged photo to whoever holds the link.
  */
-export function published(sql: Sql) {
+export function published(sql: Sql, alias = 'a') {
+	const a = sql(alias);
 	return sql`
-		a.classify_state = 'done'
-		AND a.content_state = 'extracted'
-		AND a.body_purged_at IS NULL
-		AND a.kind <> 'sponsored'`;
+		${a}.classify_state = 'done'
+		AND ${a}.content_state = 'extracted'
+		AND ${a}.body_purged_at IS NULL
+		AND ${a}.kind <> 'sponsored'`;
 }
 
-/** WHERE-clause fragment: article `a` is visible to `reader`. */
-export function visibleTo(sql: Sql, reader: Reader) {
+/**
+ * WHERE-clause fragment: article `alias` (default `a`) is visible to `reader`. Another alias is for
+ * subqueries that must still see an outer `a`; it must not be t, h, o, e, x, u or m (used inside).
+ */
+export function visibleTo(sql: Sql, reader: Reader, alias = 'a') {
+	const a = sql(alias);
 	return sql`
-		${published(sql)}
+		${published(sql, alias)}
 		AND NOT EXISTS (
 			SELECT 1 FROM article_topics t
 			JOIN user_hidden_topics h ON h.user_id = ${reader.id} AND h.topic = t.topic
-			WHERE t.article_id = a.id
+			WHERE t.article_id = ${a}.id
 		)
-		AND NOT EXISTS (SELECT 1 FROM user_hidden_outlets o WHERE o.user_id = ${reader.id} AND o.outlet_id = a.outlet_id)
+		AND NOT EXISTS (SELECT 1 FROM user_hidden_outlets o WHERE o.user_id = ${reader.id} AND o.outlet_id = ${a}.outlet_id)
 		AND NOT EXISTS (
-			SELECT 1 FROM article_effective_tags e
+			-- article_effective_tags, written out so the planner looks tags up per article by the
+			-- primary key instead of scanning the view's UNION for every candidate row: a manual row
+			-- (intensity 0 = removed, never >= a threshold) replaces the AI row for its tag.
+			SELECT 1 FROM article_tags e
 			JOIN user_thresholds u ON u.user_id = ${reader.id} AND u.tag = e.tag
-			WHERE e.article_id = a.id AND e.intensity >= u.threshold
+			WHERE e.article_id = ${a}.id AND e.intensity >= u.threshold
+				AND (e.origin = 'manual' OR NOT EXISTS (
+					SELECT 1 FROM article_tags x WHERE x.article_id = e.article_id AND x.tag = e.tag AND x.origin = 'manual'))
 		)
-		AND NOT EXISTS (SELECT 1 FROM user_muted m WHERE m.user_id = ${reader.id} AND m.article_id = a.id)
-		${reader.blockQuery ? sql`AND NOT (coalesce(a.block_tsv, ''::tsvector) @@ (${reader.blockQuery}))` : sql``}
+		AND NOT EXISTS (SELECT 1 FROM user_muted m WHERE m.user_id = ${reader.id} AND m.article_id = ${a}.id)
+		${reader.blockQuery ? sql`AND NOT (coalesce(${a}.block_tsv, ''::tsvector) @@ (${reader.blockQuery}))` : sql``}
 	`;
 }
 

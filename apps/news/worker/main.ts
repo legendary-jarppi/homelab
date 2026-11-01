@@ -1,6 +1,6 @@
-// Background worker: discovery → extraction (+ photos) → classification → embedding/clustering,
-// plus edition rows. Single instance (Postgres advisory lock); coordination with the web app's
-// admin actions happens only through article/outlet columns (see DESIGN.md).
+// Background worker: discovery → extraction (+ photos) → classification → embedding/clustering →
+// entities and related stories. Single instance (Postgres advisory lock); coordination with the
+// web app's admin actions happens only through article/outlet columns (see DESIGN.md).
 //
 // Environment (defaults in brackets):
 //   DATABASE_URL                 Postgres connection string (required)
@@ -15,23 +15,28 @@
 //   CONTENT_MIN_CHARS            shorter bodies are 'skipped' [300]
 //   CLASSIFY_CONCURRENCY         parallel model calls [4]
 //   CLASSIFY_MAX_ATTEMPTS        failed classifications before 'failed' [5]
-//   CLASSIFY_PAUSE_S             pause after an auth/quota error [600]
+//   CLASSIFY_PAUSE_S             pause after an auth/quota error, classification and entities [600]
 //   CLASSIFY_MAX_IMAGES          photos sent per article [8] (classify.ts)
 //   EMBEDDING_MODEL              [text-embedding-3-small]; CLUSTER_THRESHOLD cosine [see clustering.ts]
-//   EDITIONS, EDITION_TIME_ZONE  edition slots (editions.ts)
+//   ENTITY_MODEL                 entity extraction model [claude-sonnet-5-5] (entities.ts)
+//   ENTITY_CONCURRENCY           parallel entity calls [2]
+//   ENTITY_BACKFILL_DAYS         extract entities for articles published within this many days [30]
+//   RELATED_FLOOR                cosine for a related story [0.55] (related.ts)
+//   RELATED_BACKFILL_DAYS        compute related stories for articles published within this many days [30]
 //   CRAWL_MIN_INTERVAL_MS, CRAWLER_USER_AGENT, CRAWLER_FROM: see src/lib/core/http.ts
 //   DB_POOL                      Postgres pool size [10]
 import { createServer } from 'node:http';
 import type { ReservedSql } from 'postgres';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { db, migrate } from '../src/lib/core/db.ts';
-import { ensureEdition } from '../src/lib/core/editions.ts';
 import { llmConfigFromEnv } from '../src/lib/core/llm.ts';
 import { OUTLETS, seedOutlets } from '../src/lib/core/outlets/index.ts';
 import { initSessions } from '../src/lib/core/sessions.ts';
 import { nextClassifyJob, processClassify, type ClassifyJob } from '../src/lib/core/pipeline/classification.ts';
 import { EMBEDDING_MODEL, embedPending } from '../src/lib/core/pipeline/clustering.ts';
 import { nextContentJob, processContent, type ContentJob } from '../src/lib/core/pipeline/content.ts';
+import { ENTITY_MODEL, entitiesPending, nextEntityJob, processEntities, type EntityJob } from '../src/lib/core/pipeline/entities.ts';
+import { relatedPending, relatePending } from '../src/lib/core/pipeline/related.ts';
 import { discoverDue } from '../src/lib/core/pipeline/discovery.ts';
 import { errorText, log } from '../src/lib/core/pipeline/log.ts';
 
@@ -42,6 +47,9 @@ const CONTENT_CONCURRENCY = env('CONTENT_CONCURRENCY', 4);
 const CONTENT_PER_OUTLET = env('CONTENT_PER_OUTLET', 2);
 const CLASSIFY_CONCURRENCY = env('CLASSIFY_CONCURRENCY', 4);
 const CLASSIFY_PAUSE_MS = env('CLASSIFY_PAUSE_S', 600) * 1000;
+const ENTITY_CONCURRENCY = env('ENTITY_CONCURRENCY', 2);
+/** Idle interval of the related loop; below HEALTH_MAX_AGE_S so its beat stays fresh. */
+const RELATED_INTERVAL_MS = 5 * 60_000;
 const SHUTDOWN_TIMEOUT_MS = 25_000;
 /** pg advisory lock key for the single-instance guard (migrations use 4242). */
 const LOCK_KEY = 4243;
@@ -53,6 +61,7 @@ const stop = new AbortController();
 let state: 'standby' | 'running' | 'stopping' = 'standby';
 const beats: Record<string, number> = {};
 let classifyPausedUntil = 0;
+let entitiesPausedUntil = 0;
 
 /** Sleeps unless shutdown starts first. */
 async function pause(ms: number): Promise<void> {
@@ -154,6 +163,20 @@ function embedLoop(): Promise<void> {
 	});
 }
 
+function entityQueue(): Promise<void> {
+	return runQueue<EntityJob>(
+		'entities',
+		ENTITY_CONCURRENCY,
+		async (inFlight) => (Date.now() < entitiesPausedUntil ? null : nextEntityJob(sql, inFlight.map((j) => j.id))),
+		async (job) => {
+			if ((await processEntities(sql, llm, job)) === 'paused') {
+				entitiesPausedUntil = Date.now() + CLASSIFY_PAUSE_MS;
+				log.error('entities-paused', { seconds: CLASSIFY_PAUSE_MS / 1000, hint: 'check LLM_API_KEY / proxy quota' });
+			}
+		}
+	);
+}
+
 let lastStats = 0;
 async function housekeeping(lock: ReservedSql): Promise<void> {
 	// The lock lives on this connection; if it is gone another worker may take over, so stop.
@@ -165,21 +188,37 @@ async function housekeeping(lock: ReservedSql): Promise<void> {
 		shutdown('lock-lost');
 		return;
 	}
-	if (await ensureEdition(sql)) log.info('edition-created');
 	if (Date.now() - lastStats >= 5 * 60_000) {
 		lastStats = Date.now();
 		const [q] = await sql`
 			SELECT count(*) FILTER (WHERE content_state = 'pending') AS content_pending,
 				count(*) FILTER (WHERE content_state = 'extracted' AND classify_state = 'pending') AS classify_pending,
 				count(*) FILTER (WHERE classify_state = 'done') AS classified,
-				count(*) FILTER (WHERE classify_state = 'done' AND embedding IS NULL AND kind <> 'sponsored') AS embed_pending
+				count(*) FILTER (WHERE classify_state = 'done' AND embedding IS NULL AND kind <> 'sponsored') AS embed_pending,
+				count(*) FILTER (WHERE ${entitiesPending(sql)}) AS entities_pending,
+				count(*) FILTER (WHERE ${relatedPending(sql)}) AS related_pending
 			FROM articles WHERE body_purged_at IS NULL`;
-		const [calls] = await sql`
-			SELECT count(*) AS calls, count(*) FILTER (WHERE NOT ok) AS errors,
+		// Per purpose, so entity calls do not blur the classifier's numbers.
+		const calls = await sql`
+			SELECT purpose, count(*) AS calls, count(*) FILTER (WHERE NOT ok) AS errors,
 				percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) FILTER (WHERE ok) AS p50_ms,
 				sum(input_tokens) AS input_tokens, sum(output_tokens) AS output_tokens
-			FROM llm_calls WHERE created_at > now() - interval '1 hour'`;
-		log.info('stats', { ...q, llm_calls_1h: calls.calls, llm_errors_1h: calls.errors, llm_p50_ms: calls.p50_ms, input_tokens_1h: calls.input_tokens, output_tokens_1h: calls.output_tokens });
+			FROM llm_calls WHERE created_at > now() - interval '1 hour' GROUP BY purpose`;
+		const c = calls.find((r) => r.purpose === 'classify');
+		const e = calls.find((r) => r.purpose === 'entities');
+		log.info('stats', {
+			...q,
+			llm_calls_1h: c?.calls ?? 0,
+			llm_errors_1h: c?.errors ?? 0,
+			llm_p50_ms: c?.p50_ms,
+			input_tokens_1h: c?.input_tokens,
+			output_tokens_1h: c?.output_tokens,
+			entities_calls_1h: e?.calls ?? 0,
+			entities_errors_1h: e?.errors ?? 0,
+			entities_p50_ms: e?.p50_ms,
+			entities_input_tokens_1h: e?.input_tokens,
+			entities_output_tokens_1h: e?.output_tokens
+		});
 	}
 }
 
@@ -193,7 +232,7 @@ function startHealthServer() {
 		const stale = Object.entries(beats).filter(([, at]) => now - at > HEALTH_MAX_AGE_MS).map(([name]) => name);
 		const ok = state === 'standby' || (state === 'running' && stale.length === 0);
 		res.writeHead(ok ? 200 : 503, { 'content-type': 'application/json' });
-		res.end(JSON.stringify({ state, stale, classifyPaused: now < classifyPausedUntil }));
+		res.end(JSON.stringify({ state, stale, classifyPaused: now < classifyPausedUntil, entitiesPaused: now < entitiesPausedUntil }));
 	});
 	server.listen(HEALTH_PORT);
 	return server;
@@ -230,7 +269,15 @@ async function main(): Promise<void> {
 		if (migrated.length > 0) log.info('migrated', { files: migrated.join(',') });
 		await seedOutlets(sql);
 		const sessions = await initSessions(sql, OUTLETS);
-		log.info('started', { model: llm.model, content_concurrency: CONTENT_CONCURRENCY, classify_concurrency: CLASSIFY_CONCURRENCY, health_port: HEALTH_PORT, subscriber_sessions: sessions.join(',') || 'none' });
+		log.info('started', {
+			model: llm.model,
+			entity_model: ENTITY_MODEL,
+			content_concurrency: CONTENT_CONCURRENCY,
+			classify_concurrency: CLASSIFY_CONCURRENCY,
+			entity_concurrency: ENTITY_CONCURRENCY,
+			health_port: HEALTH_PORT,
+			subscriber_sessions: sessions.join(',') || 'none'
+		});
 		await Promise.all([
 			every('discovery', 30_000, async () => {
 				await discoverDue(sql);
@@ -238,6 +285,9 @@ async function main(): Promise<void> {
 			contentQueue(),
 			classifyQueue(),
 			embedLoop(),
+			entityQueue(),
+			// After embedding: only embedded (and so clustered) articles are pending.
+			every('related', RELATED_INTERVAL_MS, async () => ((await relatePending(sql)) > 0 ? 1000 : RELATED_INTERVAL_MS)),
 			every('housekeeping', 60_000, () => housekeeping(lock))
 		]);
 	}

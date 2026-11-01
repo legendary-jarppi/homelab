@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { THRESHOLDS, type Threshold } from '$lib/core/taxonomy';
+	import { useI18n } from '$lib/i18n';
 
 	let { name, value, legend, id }: { name: string; value: Threshold | null; legend: string; id: string } = $props();
+
+	const i = useI18n();
 </script>
 
 <fieldset class="segmented">
 	<legend class="visually-hidden">{legend}</legend>
 	{#each THRESHOLDS as t (t.value)}
 		<input type="radio" id="{id}-{t.value}" {name} value={t.value} checked={value === t.value} />
-		<label for="{id}-{t.value}" title={t.hint}>{t.label}</label>
+		<label for="{id}-{t.value}" title={i.threshold(t.value).hint}>{i.threshold(t.value).label}</label>
 	{/each}
 </fieldset>
 

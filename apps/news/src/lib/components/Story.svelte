@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Card } from '$lib/server/articles';
+	import { useI18n } from '$lib/i18n';
 	import Photo from './Photo.svelte';
-	import { fullDate, when } from './format';
 
 	type Variant = 'lead' | 'secondary' | 'top' | 'standard' | 'brief';
 
@@ -11,9 +11,12 @@
 		level?: 2 | 3;
 		photo?: boolean;
 		summary?: boolean;
+		/** Relative time ("12 min ago") for the Latest column. */
+		ago?: boolean;
 	}
 
-	let { card, variant = 'standard', level = 3, photo = false, summary = false }: Props = $props();
+	let { card, variant = 'standard', level = 3, photo = false, summary = false, ago = false }: Props = $props();
+	const i = useI18n();
 
 	// Headline size per slot: [ordinary, important (importance >= 4)].
 	const SIZES: Record<Variant, [number, number]> = {
@@ -34,22 +37,22 @@
 			</div>
 		{/if}
 		<div class="text">
-			{#if card.kicker && variant !== 'brief'}<p class="kicker">{card.kicker}</p>{/if}
+			{#if card.topic && variant !== 'brief'}<p class="kicker">{i.topic(card.topic).label}</p>{/if}
 			<svelte:element this={`h${level}`} class="hed hed-{size}" lang={card.language ?? undefined}>
 				<a href="/article/{card.id}">{card.headline}</a>
 			</svelte:element>
 			{#if summary && card.summary}<p class="summary" lang={card.language ?? undefined}>{card.summary}</p>{/if}
 			<p class="byline">
-				{card.outlet}
+				<a class="paper" href="/papers/{card.outletSlug}">{card.outlet}</a>
 				<span aria-hidden="true">·</span>
-				<time datetime={card.publishedAt.toISOString()} title={fullDate(card.publishedAt)}>{when(card.publishedAt)}</time>
+				<time datetime={card.publishedAt.toISOString()} title={i.fullDate(card.publishedAt)}>{ago ? i.ago(card.publishedAt) : i.when(card.publishedAt)}</time>
 				{#if variant !== 'brief'}
 					<span aria-hidden="true">·</span>
-					{card.minutes} min read
+					{i.t('story.minutes', { n: card.minutes })}
 				{/if}
 			</p>
 			{#if card.alsoIn.length > 0}
-				<p class="also">Also in {card.alsoIn.join(', ')}</p>
+				<p class="also"><span class="also-label">{i.t('story.alsoIn')}</span> {card.alsoIn.join(', ')}</p>
 			{/if}
 		</div>
 	</div>
@@ -89,8 +92,13 @@
 	.also {
 		font-family: var(--font-ui);
 		font-size: var(--step--2);
-		color: var(--ink-3);
+		color: var(--ink-2);
 		font-style: normal;
+	}
+
+	.also-label {
+		font-weight: 600;
+		color: var(--accent);
 	}
 
 	.is-read .summary {

@@ -1,8 +1,11 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
+	import { useI18n } from '$lib/i18n';
 	import { autosubmit, keepValues } from './forms';
 
 	let { terms, maxLength }: { terms: { term: string; whole_word: boolean }[]; maxLength: number } = $props();
+
+	const i = useI18n();
 
 	let interactive = $state(false);
 	$effect(() => {
@@ -11,21 +14,22 @@
 </script>
 
 <p class="explain">
-	We hide articles where a word <em>starts with</em> what you type, so <kbd>hämähäkki</kbd> also hides <kbd>hämähäkkejä</kbd> and
-	<kbd>hämähäkeistä</kbd>. Short words may occasionally hide more than you expect; choose “Whole word only” when a short word should not
-	also catch longer words that begin with it. Headlines, summaries, the full text and photo captions are all checked.
+	{i.t('words.explainLead')} <em>{i.t('words.explainStarts')}</em>{i.t('words.explainMid')} <kbd>hämähäkki</kbd>
+	{i.t('words.explainAlso')} <kbd>hämähäkkejä</kbd> {i.t('words.explainAnd')} <kbd>hämähäkeistä</kbd>{i.t('words.explainTail', {
+		option: i.t('words.whole')
+	})}
 </p>
 
 <form class="add" method="POST" action="?/addTerm" use:enhance>
 	<div class="field">
-		<label for="new-term">Word or phrase</label>
+		<label for="new-term">{i.t('words.term')}</label>
 		<input id="new-term" name="term" required maxlength={maxLength} autocomplete="off" autocapitalize="off" spellcheck="false" />
 	</div>
 	<label class="check">
 		<input type="checkbox" name="whole_word" />
-		<span>Whole word only</span>
+		<span>{i.t('words.whole')}</span>
 	</label>
-	<button class="button">Add</button>
+	<button class="button">{i.t('words.add')}</button>
 </form>
 
 {#if terms.length > 0}
@@ -37,15 +41,15 @@
 					<input type="hidden" name="term" value={t.term} />
 					<label class="check">
 						<input type="checkbox" name="whole_word" checked={t.whole_word} />
-						<span>Whole word only</span>
+						<span>{i.t('words.whole')}</span>
 					</label>
 					{#if !interactive}
-						<button class="button">Update</button>
+						<button class="button">{i.t('words.update')}</button>
 					{/if}
 				</form>
 				<form method="POST" action="?/removeTerm" use:enhance>
 					<input type="hidden" name="term" value={t.term} />
-					<button class="button" aria-label="Remove {t.term}">Remove</button>
+					<button class="button" aria-label={i.t('words.removeTerm', { term: t.term })}>{i.t('words.remove')}</button>
 				</form>
 			</li>
 		{/each}

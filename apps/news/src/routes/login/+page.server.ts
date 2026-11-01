@@ -1,6 +1,7 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { createSession, hashPassword, verifyPassword } from '$lib/core/auth';
 import { db } from '$lib/core/db';
+import { i18n } from '$lib/i18n';
 import { safeNext } from '$lib/server/next';
 import { setSessionCookie } from '$lib/server/session';
 import type { Actions, PageServerLoad } from './$types';
@@ -19,7 +20,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 };
 
 export const actions: Actions = {
-	default: async ({ request, cookies, url, getClientAddress }) => {
+	default: async ({ request, cookies, url, getClientAddress, locals }) => {
 		const form = await request.formData();
 		const username = String(form.get('username') ?? '').trim().slice(0, 64);
 		const password = String(form.get('password') ?? '').slice(0, 1024);
@@ -27,7 +28,7 @@ export const actions: Actions = {
 		const now = Date.now();
 		const entry = failures.get(key);
 		if (entry && entry.until > now && entry.count >= MAX_FAILURES) {
-			return fail(429, { username, message: 'Too many attempts. Please wait a few minutes and try again.' });
+			return fail(429, { username, message: i18n(locals.locale).t('login.tooMany') });
 		}
 
 		const [user] = username
@@ -40,7 +41,7 @@ export const actions: Actions = {
 			const current = failures.get(key);
 			failures.set(key, current && current.until > now ? { count: current.count + 1, until: current.until } : { count: 1, until: now + WINDOW_MS });
 			console.warn(`sign-in failed for "${username}" from ${getClientAddress()}`);
-			return fail(400, { username, message: 'That username and password don’t match.' });
+			return fail(400, { username, message: i18n(locals.locale).t('login.mismatch') });
 		}
 
 		failures.delete(key);

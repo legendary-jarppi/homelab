@@ -1,23 +1,33 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import DisplayFields from '$lib/components/account/DisplayFields.svelte';
-	import { keepValues } from '$lib/components/account/forms';
+	import { autosubmit, keepValues } from '$lib/components/account/forms';
+	import LanguageFields from '$lib/components/account/LanguageFields.svelte';
 	import PresetCards from '$lib/components/account/PresetCards.svelte';
 	import SensitivityEditor from '$lib/components/account/SensitivityEditor.svelte';
 
+	import { useI18n } from '$lib/i18n';
+
 	let { data, form } = $props();
 
-	const TITLES = ['Before your first edition', 'How much would you like to see?', 'Fine-tune, if you like', 'Photos and headlines', 'Your paper is ready'];
+	const i = useI18n();
+
+	const TITLES = ['welcome.step1', 'welcome.step2', 'welcome.step3', 'welcome.step4', 'welcome.step5'] as const;
+
+	let interactive = $state(false);
+	$effect(() => {
+		interactive = true;
+	});
 </script>
 
 <svelte:head>
-	<title>Welcome · Shilly Shally News</title>
+	<title>{i.t('welcome.title')} · Shilly Shally News</title>
 </svelte:head>
 
 <article class="welcome">
 	<header>
-		<p class="kicker">Welcome · Step {data.step} of {data.steps}</p>
-		<h1 class="hed hed-5">{TITLES[data.step - 1]}</h1>
+		<p class="kicker">{i.t('welcome.kicker', { step: data.step, steps: data.steps })}</p>
+		<h1 class="hed hed-5">{i.t(TITLES[data.step - 1])}</h1>
 	</header>
 
 	{#if form?.message}
@@ -25,46 +35,47 @@
 	{/if}
 
 	{#if data.step === 1}
-		<p class="lede">
-			Shilly Shally News gathers the day’s reporting from Finnish and international papers, and you read every article in full, here.
-			Each article is read and described before it reaches you, and anything you have chosen not to see is simply left out of your paper.
-		</p>
+		<p class="lede">{i.t('welcome.intro')}</p>
+		<form method="POST" action="?/language" use:enhance={keepValues} use:autosubmit>
+			<p class="note">{i.t('welcome.language')}</p>
+			<LanguageFields language={data.language} />
+			{#if !interactive}
+				<button class="button">{i.t('language.save')}</button>
+			{/if}
+		</form>
 		<nav class="steps-nav">
-			<a class="button button-primary" href="?step=2">Begin</a>
+			<a class="button button-primary" href="?step=2">{i.t('welcome.begin')}</a>
 		</nav>
 	{:else if data.step === 2}
-		<p class="lede">Choose a starting point. You can fine-tune it on the next page, or at any time in Settings.</p>
+		<p class="lede">{i.t('welcome.preset')}</p>
 		<form method="POST" action="?/preset" use:enhance>
 			<PresetCards selected={data.preset} />
 			<nav class="steps-nav">
-				<a class="button" href="?step=1">Back</a>
-				<button class="button button-primary">Continue</button>
+				<a class="button" href="?step=1">{i.t('prefs.back')}</a>
+				<button class="button button-primary">{i.t('prefs.continue')}</button>
 			</nav>
 		</form>
 	{:else if data.step === 3}
-		<p class="lede">
-			Optional. Each group has one setting for all of its subjects; open “Single subjects” to choose for each one. Changes are saved as you
-			make them.
-		</p>
+		<p class="lede">{i.t('welcome.fineTune', { single: i.t('sensitivity.single') })}</p>
 		<SensitivityEditor thresholds={data.thresholds} saved={form?.saved ?? null} />
 		<nav class="steps-nav">
-			<a class="button" href="?step=2">Back</a>
-			<a class="button button-primary" href="?step=4">Continue</a>
+			<a class="button" href="?step=2">{i.t('prefs.back')}</a>
+			<a class="button button-primary" href="?step=4">{i.t('prefs.continue')}</a>
 		</nav>
 	{:else if data.step === 4}
 		<form method="POST" action="?/display" use:enhance={keepValues}>
 			<DisplayFields images={data.images} calmHeadlines={data.calmHeadlines} />
 			<nav class="steps-nav">
-				<a class="button" href="?step=3">Back</a>
-				<button class="button button-primary">Continue</button>
+				<a class="button" href="?step=3">{i.t('prefs.back')}</a>
+				<button class="button button-primary">{i.t('prefs.continue')}</button>
 			</nav>
 		</form>
 	{:else}
-		<p class="lede">Your choices are saved. You can change any of them later under Settings.</p>
+		<p class="lede">{i.t('welcome.done')}</p>
 		<form method="POST" action="?/finish" use:enhance>
 			<nav class="steps-nav">
-				<a class="button" href="?step=4">Back</a>
-				<button class="button button-primary">Read today’s paper</button>
+				<a class="button" href="?step=4">{i.t('prefs.back')}</a>
+				<button class="button button-primary">{i.t('welcome.read')}</button>
 			</nav>
 		</form>
 	{/if}

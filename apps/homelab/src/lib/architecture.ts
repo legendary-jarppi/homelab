@@ -206,10 +206,10 @@ export const COMPONENTS: Diagram = {
 			id: 'news',
 			label: 'news',
 			kind: 'namespace',
-			app: { kind: 'app', purpose: 'Shilly Shally News: classified articles in editions three times a day', lab: ['news.lab.internal'], public: ['news.shillyshally.org'], internal: ['web.news.svc:3000'], docs: 'apps/news/README.md' },
+			app: { kind: 'app', purpose: 'Shilly Shally News: classified articles on a live front page, in Finnish or English', lab: ['news.lab.internal'], public: ['news.shillyshally.org'], internal: ['web.news.svc:3000'], docs: 'apps/news/README.md' },
 			nodes: [
-				{ id: 'newsweb', label: 'Web', sub: 'news.lab.internal', workloads: ['news/web'], href: 'http://news.lab.internal', info: 'Shilly Shally News reader site: editions and articles filtered by each reader\'s settings. Shares the photo volume with the worker.' },
-				{ id: 'newsworker', label: 'Worker', sub: 'fetch, classify, publish', workloads: ['news/worker'], info: 'Fetches articles and photos from the outlets, has the AI proxy classify them, de-duplicates and publishes editions at 06:30, 12:00 and 17:00. Its NetworkPolicy allows the internet (80/443) but not the LAN.' },
+				{ id: 'newsweb', label: 'Web', sub: 'news.lab.internal', workloads: ['news/web'], href: 'http://news.lab.internal', info: 'Shilly Shally News reader site: a live front page, papers, articles with the same story in other papers, related stories and people and things, all filtered by each reader\'s settings. Shares the photo volume with the worker.' },
+				{ id: 'newsworker', label: 'Worker', sub: 'fetch, classify, link', workloads: ['news/worker'], info: 'Fetches articles and photos from the outlets, has the AI proxy classify them and name the people and things in them, de-duplicates across outlets and finds related stories. Its NetworkPolicy allows the internet (80/443) but not the LAN.' },
 				{ id: 'newspg', label: 'Postgres', sub: 'articles, readers', workloads: ['news/postgres'], info: 'Postgres for news; only web and worker may connect (NetworkPolicy). Dumped nightly by the backup.' }
 			]
 		},

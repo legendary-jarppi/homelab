@@ -13,6 +13,8 @@ export const Settings = z.object({
 	/** Show the classifier's calm rewrite instead of the outlet's headline (original on the article page). */
 	calmHeadlines: z.boolean().default(true),
 	theme: z.enum(['system', 'light', 'dark']).default('system'),
+	/** Interface language; null = follow the browser (resolveLocale in src/lib/i18n). Articles stay in their own language. */
+	language: z.enum(['fi', 'en']).nullable().default(null),
 	/** Last preset applied (informational; thresholds are stored per tag). */
 	preset: z.string().nullable().default(null),
 	onboarded: z.boolean().default(false)

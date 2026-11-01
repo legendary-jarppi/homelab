@@ -163,6 +163,18 @@ hr {
 	line-height: 1.4;
 }
 
+/* The paper's name in a byline opens that paper's page. */
+.byline a.paper {
+	color: var(--ink);
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.byline a.paper:hover {
+	text-decoration: underline;
+	text-decoration-color: var(--accent);
+}
+
 .rule {
 	border: 0;
 	border-top: var(--hairline);

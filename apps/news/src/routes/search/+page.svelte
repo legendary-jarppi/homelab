@@ -2,31 +2,33 @@
 	import StoryList from '$lib/components/StoryList.svelte';
 	import EndNote from '$lib/components/EndNote.svelte';
 	import PageTitle from '$lib/components/PageTitle.svelte';
+	import { useI18n } from '$lib/i18n';
 
 	let { data } = $props();
+	const i = useI18n();
 </script>
 
 <svelte:head>
-	<title>{data.query ? `${data.query} · ` : ''}Search · Shilly Shally News</title>
+	<title>{data.query ? `${data.query} · ` : ''}{i.t('searchPage.title')} · Shilly Shally News</title>
 </svelte:head>
 
-<PageTitle title="Search" />
+<PageTitle title={i.t('searchPage.title')} />
 
 <form class="search" role="search" method="get" action="/search">
 	<div class="field">
-		<label for="search-q">Words to look for</label>
+		<label for="search-q">{i.t('searchPage.label')}</label>
 		<input id="search-q" name="q" type="search" value={data.query} enterkeyhint="search" autocomplete="off" />
 	</div>
-	<button class="button button-primary" type="submit">Search</button>
-	<p class="hint">Finnish and English both work, and word endings are matched too. Put quotes around an exact phrase.</p>
+	<button class="button button-primary" type="submit">{i.t('searchPage.submit')}</button>
+	<p class="hint">{i.t('searchPage.hint')}</p>
 </form>
 
 {#if data.query}
 	{#if data.cards.length > 0}
-		<h2 class="section-head results">Best matches</h2>
+		<h2 class="section-head results">{i.t('searchPage.best')}</h2>
 		<StoryList cards={data.cards} summaries level={3} />
 	{:else}
-		<EndNote>Nothing in the paper matches “{data.query}”. Try fewer or different words.</EndNote>
+		<EndNote>{i.t('searchPage.none', { query: data.query })}</EndNote>
 	{/if}
 {/if}
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { Card } from '$lib/server/articles';
-	import { clock, dateline, fullDate, when } from './format';
+	import { useI18n } from '$lib/i18n';
 
 	interface Props {
 		cards: Card[];
@@ -12,12 +12,13 @@
 	}
 
 	let { cards, days = false, summaries = false, level = 2 }: Props = $props();
+	const i = useI18n();
 	const headlineLevel = $derived(days ? level + 1 : level);
 
 	const groups = $derived.by(() => {
 		const out: { day: string; cards: Card[] }[] = [];
 		for (const card of cards) {
-			const day = days ? dateline(card.publishedAt) : '';
+			const day = days ? i.dateline(card.publishedAt) : '';
 			const last = out.at(-1);
 			if (last && last.day === day) last.cards.push(card);
 			else out.push({ day, cards: [card] });
@@ -31,12 +32,20 @@
 	<ol class="list" class:dated={!days}>
 		{#each group.cards as card (card.id)}
 			<li class:is-read={card.read}>
-				<time class="time" datetime={card.publishedAt.toISOString()} title={fullDate(card.publishedAt)}>{days ? clock(card.publishedAt) : when(card.publishedAt)}</time>
+				<time class="time" datetime={card.publishedAt.toISOString()} title={i.fullDate(card.publishedAt)}>{days ? i.clock(card.publishedAt) : i.when(card.publishedAt)}</time>
 				<div class="text">
-					{#if card.kicker}<p class="kicker">{card.kicker}</p>{/if}
+					{#if card.topic}<p class="kicker">{i.topic(card.topic).label}</p>{/if}
 					<svelte:element this={`h${headlineLevel}`} class="hed hed-2" lang={card.language ?? undefined}><a href="/article/{card.id}">{card.headline}</a></svelte:element>
 					{#if summaries && card.summary}<p class="summary" lang={card.language ?? undefined}>{card.summary}</p>{/if}
-					<p class="byline">{card.outlet} <span aria-hidden="true">·</span> {card.minutes} min read</p>
+					<p class="byline">
+						<a class="paper" href="/papers/{card.outletSlug}">{card.outlet}</a>
+						<span aria-hidden="true">·</span>
+						{i.t('story.minutes', { n: card.minutes })}
+						{#if card.alsoIn.length > 0}
+							<span aria-hidden="true">·</span>
+							<span class="also">{i.t('story.alsoIn')} {card.alsoIn.join(', ')}</span>
+						{/if}
+					</p>
 				</div>
 			</li>
 		{/each}

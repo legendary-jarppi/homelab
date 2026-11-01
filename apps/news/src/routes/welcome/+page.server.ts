@@ -1,7 +1,8 @@
 import { fail, redirect } from '@sveltejs/kit';
 import { db } from '$lib/core/db';
 import { PRESETS } from '$lib/core/taxonomy';
-import { applyPresetFor, loadThresholds, sensitivityActions, updateSettings, userIdOf } from '$lib/server/settings';
+import { i18n } from '$lib/i18n';
+import { applyPresetFor, languageActions, loadThresholds, sensitivityActions, updateSettings, userIdOf } from '$lib/server/settings';
 import type { Actions, PageServerLoad } from './$types';
 
 const STEPS = 5;
@@ -14,6 +15,7 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 		steps: STEPS,
 		preset: locals.settings.preset ?? DEFAULT_PRESET,
 		thresholds: step === 3 ? await loadThresholds(db(), userIdOf(locals)) : {},
+		language: locals.settings.language,
 		images: locals.settings.images,
 		calmHeadlines: locals.settings.calmHeadlines
 	};
@@ -21,10 +23,11 @@ export const load: PageServerLoad = async ({ url, locals }) => {
 
 export const actions = {
 	...sensitivityActions,
+	...languageActions,
 
 	preset: async ({ request, locals }) => {
 		const preset = String((await request.formData()).get('preset') ?? '');
-		if (!PRESETS.some((p) => p.key === preset)) return fail(400, { saved: null, message: 'Choose one of the comfort levels.' });
+		if (!PRESETS.some((p) => p.key === preset)) return fail(400, { saved: null, message: i18n(locals.locale).t('prefs.error.preset') });
 		await applyPresetFor(db(), userIdOf(locals), preset);
 		redirect(303, '/welcome?step=3');
 	},
@@ -32,7 +35,7 @@ export const actions = {
 	display: async ({ request, locals }) => {
 		const form = await request.formData();
 		const images = form.get('images');
-		if (images !== 'show' && images !== 'click' && images !== 'hide') return fail(400, { saved: null, message: 'Choose how photos are shown.' });
+		if (images !== 'show' && images !== 'click' && images !== 'hide') return fail(400, { saved: null, message: i18n(locals.locale).t('prefs.error.photos') });
 		await updateSettings(db(), userIdOf(locals), { images, calmHeadlines: form.get('calmHeadlines') === 'on' });
 		redirect(303, '/welcome?step=5');
 	},

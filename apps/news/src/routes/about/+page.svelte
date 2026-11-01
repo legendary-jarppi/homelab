@@ -1,26 +1,36 @@
 <script lang="ts">
 	import PageTitle from '$lib/components/PageTitle.svelte';
+	import { useI18n } from '$lib/i18n';
+
+	const i = useI18n();
 </script>
 
 <svelte:head>
-	<title>About · Shilly Shally News</title>
+	<title>{i.t('aboutPage.title')} · Shilly Shally News</title>
 </svelte:head>
 
-<PageTitle title="About this paper" />
+<PageTitle title={i.t('aboutPage.title')} />
 
 <div class="about">
+	<p>{i.t('aboutPage.intro')}</p>
+
+	<h2 class="section-head">{i.t('aboutPage.frontHead')}</h2>
+	<p>{i.t('aboutPage.front')}</p>
+	<p>{i.t('aboutPage.latestLead')} <em>{i.t('aboutPage.latest')}</em> {i.t('aboutPage.latestTail')}</p>
+
+	<h2 class="section-head">{i.t('aboutPage.papersHead')}</h2>
 	<p>
-		Shilly Shally News gathers the day’s reporting from Finnish and international outlets into one calm paper. Every
-		reader decides what they would rather not read about, and the paper is set for them alone.
+		{i.t('aboutPage.papersLead')} <em>{i.t('aboutPage.papers')}</em>{i.t('aboutPage.papersTail')}
+		{i.t('aboutPage.articleLead')} (<em>{i.t('aboutPage.alsoIn')}</em>){i.t('aboutPage.articleTail')}
 	</p>
-	<p>
-		The front page comes out three times a day, in the morning, at midday and in the evening. Between editions,
-		<em>Latest</em> lists everything as it arrives.
-	</p>
-	<p>
-		It is a private reading room for family and friends, by invitation only. The articles belong to the outlets that
-		published them, and every article links to its original.
-	</p>
+
+	<h2 class="section-head">{i.t('aboutPage.filterHead')}</h2>
+	<p>{i.t('aboutPage.filter')}</p>
+	<p>{i.t('aboutPage.calm')}</p>
+
+	<h2 class="section-head">{i.t('aboutPage.privacyHead')}</h2>
+	<p>{i.t('aboutPage.privacy')}</p>
+	<p>{i.t('aboutPage.room')}</p>
 </div>
 
 <style>
@@ -28,5 +38,13 @@
 		display: grid;
 		gap: var(--space-4);
 		max-width: var(--measure);
+	}
+
+	.about h2 {
+		margin: var(--space-4) 0 0;
+	}
+
+	.about p {
+		margin: 0;
 	}
 </style>

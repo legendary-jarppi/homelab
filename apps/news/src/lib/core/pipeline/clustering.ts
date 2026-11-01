@@ -112,7 +112,14 @@ export async function embedPending(sql: Sql, config: EmbeddingConfig, batch = 32
 		const clusterId = found ? (found.match.cluster_id ?? Math.min(found.match.id, article.id)) : article.cluster_id;
 		await sql.begin(async (tx) => {
 			if (found && found.match.cluster_id === null) await tx`UPDATE articles SET cluster_id = ${clusterId} WHERE id = ${found.match.id}`;
-			await tx`UPDATE articles SET embedding = ${vector}::real[], cluster_id = ${clusterId} WHERE id = ${article.id}`;
+			// A re-embedded article (after re-classification) gets its related stories recomputed;
+			// pairs from the old vector go (stored both ways, so found through the primary key). A
+			// first embedding has none.
+			await tx`
+				DELETE FROM article_related WHERE (article_id, related_id) IN (
+					SELECT article_id, related_id FROM article_related WHERE article_id = ${article.id}
+					UNION ALL SELECT related_id, article_id FROM article_related WHERE article_id = ${article.id})`;
+			await tx`UPDATE articles SET embedding = ${vector}::real[], cluster_id = ${clusterId}, related_at = NULL WHERE id = ${article.id}`;
 		});
 		if (found) {
 			found.match.cluster_id = clusterId;

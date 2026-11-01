@@ -11,7 +11,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/news
-    newTag: "20261023-201951"
+    newTag: "20261101-205317"
 configMapGenerator:
   # Hashed name: changes roll the pods.
   - name: news-config
@@ -26,4 +26,4 @@ configMapGenerator:
       - LLM_BASE_URL=https://api.proxy.ai.supercell.dev/v1
       - LLM_MODEL=claude-sonnet-5-5
       - CLASSIFY_CONCURRENCY=4
-      - EDITION_TIME_ZONE=Europe/Helsinki
+      - ENTITY_MODEL=claude-sonnet-5-5

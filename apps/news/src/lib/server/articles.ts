@@ -1,12 +1,12 @@
 // Reader-facing article queries. Every query that returns articles, titles, outlet names of cluster
-// members or photos goes through visibleTo() on alias `a`; there is no other path to article data.
+// members, entities' stories or photos goes through visibleTo() on alias `a`; there is no other path
+// to article data.
 import { error } from '@sveltejs/kit';
 import type postgres from 'postgres';
 import { db, type Sql } from '$lib/core/db';
 import type { Block } from '$lib/core/blocks';
-import { currentEdition, editionSlots, latestSlot, zonedInstant, TIME_ZONE } from '$lib/core/editions';
 import type { Settings } from '$lib/core/prefs';
-import { SECTIONS, TOPICS } from '$lib/core/taxonomy';
+import { SECTIONS } from '$lib/core/taxonomy';
 import { loadReader, visibleTo, type Reader } from '$lib/core/visibility';
 import { articlePhotos, photosByIds, type Photo } from './photos';
 
@@ -36,50 +36,18 @@ export function readerContext(locals: App.Locals): Promise<ReaderContext> {
 	return ctx;
 }
 
-// ---------------------------------------------------------------------------------------------
-// Editions
-
-/** Published within this long before the cutoff to be considered for the front page. */
-const EDITION_WINDOW_HOURS = 30;
-
-export interface EditionInfo {
-	label: string;
-	cutoff: Date;
-	nextLabel: string;
-	nextAt: Date;
+/** When the newest story entered the paper (classified), for the masthead. Not reader-specific. */
+export async function lastUpdate(sql: Sql = db()): Promise<Date | null> {
+	const [row] = await sql<{ at: Date | null }[]>`SELECT max(classified_at) AS at FROM articles WHERE classify_state = 'done'`;
+	return row?.at ?? null;
 }
 
-/** The current edition (recorded by the worker, or the latest scheduled slot) and the next one. */
-export async function editionInfo(sql: Sql = db()): Promise<EditionInfo> {
-	const now = new Date();
-	const slot = latestSlot(now);
-	const recorded = await currentEdition(sql);
-	// The worker records editions as they fall due; until it has, the schedule decides.
-	const current = recorded && recorded.cutoff >= slot.cutoff ? { cutoff: recorded.cutoff, label: recorded.label } : slot;
-	const next = nextSlot(current.cutoff);
-	return { label: current.label, cutoff: current.cutoff, nextLabel: next.label, nextAt: next.at };
-}
-
-function nextSlot(after: Date): { at: Date; label: string } {
-	const slots = editionSlots();
-	const day = localDate(after);
-	for (let ahead = 0; ahead < 3; ahead++) {
-		const d = new Date(Date.UTC(day.year, day.month - 1, day.day + ahead));
-		for (const slot of slots) {
-			const at = zonedInstant(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), slot.hour, slot.minute);
-			if (at > after) return { at, label: slot.label };
-		}
-	}
-	throw new Error('no edition slots configured');
-}
-
-function localDate(instant: Date): { year: number; month: number; day: number } {
-	const parts = Object.fromEntries(
-		new Intl.DateTimeFormat('en-GB', { timeZone: TIME_ZONE, year: 'numeric', month: 'numeric', day: 'numeric' })
-			.formatToParts(instant)
-			.map((p) => [p.type, Number(p.value)])
-	);
-	return { year: parts.year, month: parts.month, day: parts.day };
+/** Enabled papers this reader has not hidden, for the navigation. */
+export async function paperLinks(sql: Sql, userId: number): Promise<{ slug: string; name: string }[]> {
+	return sql<{ slug: string; name: string }[]>`
+		SELECT o.slug, o.name FROM outlets o
+		WHERE o.enabled AND NOT EXISTS (SELECT 1 FROM user_hidden_outlets h WHERE h.user_id = ${userId} AND h.outlet_id = o.id)
+		ORDER BY o.name`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -90,10 +58,12 @@ export interface Card {
 	headline: string;
 	summary: string | null;
 	outlet: string;
+	outletSlug: string;
 	publishedAt: Date;
 	minutes: number;
 	section: string | null;
-	kicker: string | null;
+	/** Primary topic key the reader has not hidden (shown as the kicker). */
+	topic: string | null;
 	importance: number;
 	/** Article language (calm headline and summary are written in it). */
 	language: string | null;
@@ -112,7 +82,9 @@ interface CardRow {
 	body_chars: number | null;
 	section: string | null;
 	importance: number | null;
+	cluster_id: number | null;
 	outlet: string;
+	outlet_slug: string;
 	topic: string | null;
 	read: boolean;
 	lead_image_id: number | null;
@@ -120,8 +92,6 @@ interface CardRow {
 	language: string | null;
 	also_in?: string[] | null;
 }
-
-const TOPIC_LABELS: Record<string, string> = Object.fromEntries(TOPICS.map((t) => [t.key, t.label]));
 
 export function readingMinutes(chars: number | null): number {
 	return Math.max(1, Math.ceil((chars ?? 0) / 1100));
@@ -131,6 +101,9 @@ export function displayHeadline(settings: Settings, row: { title: string; calm_t
 	return settings.calmHeadlines && row.calm_title ? row.calm_title : row.title;
 }
 
+/** One key per story: the cluster, or the article itself when it has none. */
+const storyKey = (r: { id: number; cluster_id: number | null }) => r.cluster_id ?? -r.id;
+
 /**
  * Card columns over `a` (visible article) joined with outlet `o`. `cursor_ts` is the list's sort
  * timestamp (published_at, or when saved) at full precision, so cursors never skip rows.
@@ -138,8 +111,8 @@ export function displayHeadline(settings: Settings, row: { title: string; calm_t
 function cardColumns(ctx: ReaderContext, sortedBy?: postgres.PendingQuery<postgres.Row[]>) {
 	const { sql, reader } = ctx;
 	return sql`
-		a.id, a.title, a.calm_title, a.summary, a.published_at, a.body_chars, a.section, a.importance, a.language,
-		o.name AS outlet,
+		a.id, a.title, a.calm_title, a.summary, a.published_at, a.body_chars, a.section, a.importance, a.language, a.cluster_id,
+		o.name AS outlet, o.slug AS outlet_slug,
 		to_char(${sortedBy ?? sql`a.published_at`} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS cursor_ts,
 		(SELECT t.topic FROM article_topics t
 			WHERE t.article_id = a.id
@@ -147,6 +120,21 @@ function cardColumns(ctx: ReaderContext, sortedBy?: postgres.PendingQuery<postgr
 			ORDER BY t.rank LIMIT 1) AS topic,
 		EXISTS (SELECT 1 FROM user_reads r WHERE r.user_id = ${reader.id} AND r.article_id = a.id) AS read,
 		(SELECT i.id FROM images i WHERE i.article_id = a.id AND i.state = 'stored' AND i.path IS NOT NULL ORDER BY i.position LIMIT 1) AS lead_image_id`;
+}
+
+/** Outlet names of the other visible members of `cluster` (lateral join, outer alias `a`). */
+function alsoInColumn(ctx: ReaderContext) {
+	const { sql, reader } = ctx;
+	return sql`
+		LEFT JOIN LATERAL (
+			SELECT array_agg(DISTINCT o2.name ORDER BY o2.name) AS outlets
+			FROM articles cm JOIN outlets o2 ON o2.id = cm.outlet_id
+			WHERE a.cluster_id IS NOT NULL
+				AND cm.cluster_id = a.cluster_id
+				AND cm.id <> a.id
+				AND cm.outlet_id <> a.outlet_id
+				AND ${visibleTo(sql, reader, 'cm')}
+		) also ON true`;
 }
 
 /** Turns rows into cards; lead photos (if wanted) in one query for the whole list. */
@@ -158,10 +146,11 @@ async function toCards(ctx: ReaderContext, rows: CardRow[], withPhotos: (row: Ca
 		headline: displayHeadline(ctx.settings, r),
 		summary: r.summary,
 		outlet: r.outlet,
+		outletSlug: r.outlet_slug,
 		publishedAt: r.published_at,
 		minutes: readingMinutes(r.body_chars),
 		section: r.section,
-		kicker: r.topic ? (TOPIC_LABELS[r.topic] ?? null) : null,
+		topic: r.topic,
 		importance: r.importance ?? 1,
 		language: r.language,
 		read: r.read,
@@ -199,114 +188,188 @@ function page(rows: CardRow[], size: number): { rows: CardRow[]; next: string | 
 }
 
 // ---------------------------------------------------------------------------------------------
-// Front page and section fronts
+// Live ranking: front page, section fronts, a paper's top stories
 
-/** One story per cluster (best visible member), ranked by importance then recency. */
-async function editionStories(ctx: ReaderContext, edition: EditionInfo, section: string | null, limit: number): Promise<CardRow[]> {
+/** Stories published within this many hours compete for the front page and section tops. */
+export const WINDOW_HOURS = 36;
+/** One importance point is worth this many hours of age. */
+const HOURS_PER_POINT = 6;
+/** Score bonus per natural-log unit of outlets covering the story (2 outlets +0.55, 4 outlets +1.1). */
+const COVERAGE_WEIGHT = 0.8;
+
+/**
+ * One story per cluster (its most important visible member), ranked by
+ *   importance + COVERAGE_WEIGHT * ln(outlets covering it) - hours since its newest report / HOURS_PER_POINT
+ * so a big story stays up while it develops, a story many papers report rises, and everything
+ * else gives way to fresher news. Coverage counts only members this reader can see.
+ */
+async function ranked(ctx: ReaderContext, opts: { limit: number; section?: string; outletId?: number }): Promise<CardRow[]> {
 	const { sql, reader } = ctx;
 	return sql<CardRow[]>`
-		WITH cand AS (
-			SELECT a.id, a.cluster_id, a.outlet_id,
-				row_number() OVER (
-					PARTITION BY coalesce(a.cluster_id, -a.id)
-					ORDER BY a.importance DESC NULLS LAST, a.published_at DESC, a.id DESC) AS rn
-			FROM articles a
-			WHERE ${visibleTo(sql, reader)}
-				-- By publication time, not classification time: a story published before the cutoff
-				-- belongs to that edition even when classification finishes a few minutes later
-				-- (and a fresh install shows a front page at once instead of waiting for the next slot).
-				AND a.published_at <= ${edition.cutoff}
-				AND a.published_at > ${edition.cutoff}::timestamptz - make_interval(hours => ${EDITION_WINDOW_HOURS})
-				${section ? sql`AND a.section = ${section}` : sql``}
-		)
 		SELECT ${cardColumns(ctx)}, also.outlets AS also_in
-		FROM cand c
-		JOIN articles a ON a.id = c.id
+		FROM (
+			WITH vis AS (
+				SELECT a.id, a.cluster_id, a.outlet_id, a.importance, a.published_at, a.section
+				FROM articles a
+				WHERE ${visibleTo(sql, reader)}
+					AND a.published_at > now() - make_interval(hours => ${WINDOW_HOURS})
+					AND a.published_at <= now() + interval '15 minutes'
+			),
+			coverage AS (
+				SELECT coalesce(cluster_id, -id) AS story, count(DISTINCT outlet_id) AS outlets, max(published_at) AS newest
+				FROM vis GROUP BY 1
+			),
+			cand AS (
+				SELECT v.id, v.cluster_id, v.importance,
+					row_number() OVER (
+						PARTITION BY coalesce(v.cluster_id, -v.id)
+						ORDER BY v.importance DESC NULLS LAST, v.published_at DESC, v.id DESC) AS rn
+				FROM vis v
+				WHERE true
+					${opts.section ? sql`AND v.section = ${opts.section}` : sql``}
+					${opts.outletId !== undefined ? sql`AND v.outlet_id = ${opts.outletId}` : sql``}
+			)
+			SELECT c.id,
+				coalesce(c.importance, 1)
+					+ ${COVERAGE_WEIGHT} * ln(cv.outlets)
+					- greatest(0, extract(epoch FROM now() - cv.newest)) / 3600.0 / ${HOURS_PER_POINT} AS score
+			FROM cand c JOIN coverage cv ON cv.story = coalesce(c.cluster_id, -c.id)
+			WHERE c.rn = 1
+			ORDER BY score DESC, c.id DESC
+			LIMIT ${opts.limit}
+		) top
+		JOIN articles a ON a.id = top.id
 		JOIN outlets o ON o.id = a.outlet_id
-		LEFT JOIN LATERAL (
-			SELECT array_agg(DISTINCT o2.name ORDER BY o2.name) AS outlets
-			FROM articles a JOIN outlets o2 ON o2.id = a.outlet_id
-			WHERE c.cluster_id IS NOT NULL
-				AND a.cluster_id = c.cluster_id
-				AND a.id <> c.id
-				AND a.outlet_id <> c.outlet_id
-				AND ${visibleTo(sql, reader)}
-		) also ON true
-		WHERE c.rn = 1
-		ORDER BY a.importance DESC NULLS LAST, a.published_at DESC, a.id DESC
-		LIMIT ${limit}`;
+		${alsoInColumn(ctx)}
+		ORDER BY top.score DESC, a.id DESC`;
+}
+
+/** Newest visible stories, one per cluster, skipping the given stories. */
+async function newest(ctx: ReaderContext, count: number, skip: Set<number>): Promise<CardRow[]> {
+	const { sql, reader } = ctx;
+	const rows = await sql<CardRow[]>`
+		SELECT ${cardColumns(ctx)}, also.outlets AS also_in
+		FROM articles a JOIN outlets o ON o.id = a.outlet_id
+		${alsoInColumn(ctx)}
+		WHERE ${visibleTo(sql, reader)} AND a.published_at <= now() + interval '15 minutes'
+		ORDER BY a.published_at DESC, a.id DESC
+		LIMIT ${count * 4}`;
+	const seen = new Set(skip);
+	const out: CardRow[] = [];
+	for (const r of rows) {
+		if (seen.has(storyKey(r))) continue;
+		seen.add(storyKey(r));
+		out.push(r);
+		if (out.length === count) break;
+	}
+	return out;
 }
 
 export interface SectionBlock {
 	key: string;
-	label: string;
+	stories: Card[];
+}
+
+export interface PaperBlock {
+	slug: string;
+	name: string;
 	stories: Card[];
 }
 
 export interface FrontPage {
 	lead: Card | null;
 	secondary: Card[];
-	brief: Card[];
+	/** What just came in, newest first (not repeating the top stories). */
+	latest: Card[];
 	sections: SectionBlock[];
+	papers: PaperBlock[];
 }
 
 const SECONDARY_COUNT = 3;
-const BRIEF_COUNT = 8;
-const PER_SECTION = 6;
+const LATEST_COUNT = 10;
+const PER_SECTION = 5;
+const PER_PAPER = 3;
 
-export async function frontPage(ctx: ReaderContext, edition: EditionInfo): Promise<FrontPage> {
-	const rows = await editionStories(ctx, edition, null, 150);
-	const lead = rows.slice(0, 1);
-	const secondary = rows.slice(1, 1 + SECONDARY_COUNT);
-	const rest = rows.slice(1 + SECONDARY_COUNT);
-	const brief = rest
-		.filter((r) => (r.importance ?? 1) <= 2)
-		.slice(0, BRIEF_COUNT)
-		.sort((a, b) => b.published_at.getTime() - a.published_at.getTime());
-	const briefIds = new Set(brief.map((r) => r.id));
+export async function frontPage(ctx: ReaderContext): Promise<FrontPage> {
+	const [pool, papers] = await Promise.all([ranked(ctx, { limit: 200 }), paperTops(ctx, PER_PAPER)]);
+	const top = pool.slice(0, 1 + SECONDARY_COUNT);
+	const latest = await newest(ctx, LATEST_COUNT, new Set(top.map(storyKey)));
+	const taken = new Set([...top, ...latest].map((r) => r.id));
 	const bySection = new Map<string, CardRow[]>();
-	for (const r of rest) {
-		if (briefIds.has(r.id) || !r.section) continue;
+	for (const r of pool.slice(top.length)) {
+		if (taken.has(r.id) || !r.section) continue;
 		const list = bySection.get(r.section) ?? [];
 		if (list.length < PER_SECTION) list.push(r);
 		bySection.set(r.section, list);
 	}
 	const sectionTops = new Set([...bySection.values()].map((list) => list[0].id));
-	const photoWanted = new Set([...lead, ...secondary].map((r) => r.id));
-	const all = [...lead, ...secondary, ...brief, ...[...bySection.values()].flat()];
+	const photoWanted = new Set(top.map((r) => r.id));
+	const all = [...top, ...latest, ...[...bySection.values()].flat()];
 	const cards = await toCards(ctx, all, (r) => photoWanted.has(r.id) || sectionTops.has(r.id));
 	const byId = new Map(cards.map((c) => [c.id, c]));
 	const pick = (list: CardRow[]) => list.map((r) => byId.get(r.id)!);
 	return {
-		lead: lead.length ? byId.get(lead[0].id)! : null,
-		secondary: pick(secondary),
-		brief: pick(brief),
-		sections: SECTIONS.filter((s) => bySection.has(s.key)).map((s) => ({ key: s.key, label: s.label, stories: pick(bySection.get(s.key)!) }))
+		lead: top.length ? byId.get(top[0].id)! : null,
+		secondary: pick(top.slice(1)),
+		latest: pick(latest),
+		sections: SECTIONS.filter((s) => bySection.has(s.key)).map((s) => ({ key: s.key, stories: pick(bySection.get(s.key)!) })),
+		papers
 	};
 }
 
-export function sectionLabel(key: string): string | null {
-	return SECTIONS.find((s) => s.key === key)?.label ?? null;
+/**
+ * Each paper's top stories of the past day (importance, then freshness), for the front page's
+ * "By paper" block and the Papers page. Papers the reader hid, or with nothing visible, are left out.
+ */
+async function paperTops(ctx: ReaderContext, perPaper: number): Promise<PaperBlock[]> {
+	const { sql, reader } = ctx;
+	const rows = await sql<CardRow[]>`
+		SELECT ${cardColumns(ctx)}
+		FROM (
+			SELECT a.id, row_number() OVER (
+				PARTITION BY a.outlet_id
+				ORDER BY coalesce(a.importance, 1) - extract(epoch FROM now() - a.published_at) / 3600.0 / ${HOURS_PER_POINT} DESC, a.id DESC) AS rn
+			FROM articles a
+			WHERE ${visibleTo(sql, reader)}
+				AND a.published_at > now() - interval '24 hours'
+				AND a.published_at <= now() + interval '15 minutes'
+		) x
+		JOIN articles a ON a.id = x.id
+		JOIN outlets o ON o.id = a.outlet_id
+		WHERE x.rn <= ${perPaper} AND o.enabled
+		ORDER BY o.name, x.rn`;
+	const cards = await toCards(ctx, rows);
+	const blocks = new Map<string, PaperBlock>();
+	for (const card of cards) {
+		const block = blocks.get(card.outletSlug) ?? { slug: card.outletSlug, name: card.outlet, stories: [] };
+		block.stories.push(card);
+		blocks.set(card.outletSlug, block);
+	}
+	return [...blocks.values()];
 }
 
-export async function sectionFront(ctx: ReaderContext, edition: EditionInfo, section: string): Promise<Card[]> {
-	const rows = await editionStories(ctx, edition, section, 40);
+export function isSection(key: string): boolean {
+	return SECTIONS.some((s) => s.key === key);
+}
+
+export async function sectionFront(ctx: ReaderContext, section: string): Promise<Card[]> {
+	const rows = await ranked(ctx, { limit: 40, section });
 	return toCards(ctx, rows, (_, i) => i < 4);
 }
 
-/** Older section stories: published before the edition window, newest first. */
-export async function sectionEarlier(ctx: ReaderContext, edition: EditionInfo, section: string, cursor: Cursor | null) {
+/** Older section stories: published before the ranking window, newest first. */
+export async function sectionEarlier(ctx: ReaderContext, section: string, cursor: Cursor | null) {
 	const { sql, reader } = ctx;
-	const start = cursor ?? {
-		ts: new Date(edition.cutoff.getTime() - EDITION_WINDOW_HOURS * 3600_000).toISOString().replace('Z', '000Z'),
-		id: Number.MAX_SAFE_INTEGER
-	};
 	const rows = await sql<CardRow[]>`
 		SELECT ${cardColumns(ctx)}
 		FROM articles a JOIN outlets o ON o.id = a.outlet_id
 		WHERE ${visibleTo(sql, reader)}
 			AND a.section = ${section}
-			AND (a.published_at, a.id) < (${start.ts}::timestamptz, ${start.id})
+			${
+				cursor
+					? sql`AND (a.published_at, a.id) < (${cursor.ts}::timestamptz, ${cursor.id})`
+					: sql`AND a.published_at <= now() - make_interval(hours => ${WINDOW_HOURS})`
+			}
 		ORDER BY a.published_at DESC, a.id DESC
 		LIMIT ${PAGE_SIZE + 1}`;
 	const p = page(rows, PAGE_SIZE);
@@ -314,14 +377,15 @@ export async function sectionEarlier(ctx: ReaderContext, edition: EditionInfo, s
 }
 
 // ---------------------------------------------------------------------------------------------
-// Latest, search, saved
+// Latest, papers, search, saved
 
 /** Newest first; `outletId` limits it to one paper (Papers page). */
 export async function latest(ctx: ReaderContext, cursor: Cursor | null, outletId?: number) {
 	const { sql, reader } = ctx;
 	const rows = await sql<CardRow[]>`
-		SELECT ${cardColumns(ctx)}
+		SELECT ${cardColumns(ctx)}, also.outlets AS also_in
 		FROM articles a JOIN outlets o ON o.id = a.outlet_id
+		${alsoInColumn(ctx)}
 		WHERE ${visibleTo(sql, reader)}
 			${outletId !== undefined ? sql`AND a.outlet_id = ${outletId}` : sql``}
 			${cursor ? sql`AND (a.published_at, a.id) < (${cursor.ts}::timestamptz, ${cursor.id})` : sql``}
@@ -338,38 +402,30 @@ export interface Paper {
 	homepage: string;
 	/** Hidden by this reader in Settings → Papers: none of its stories are shown anywhere. */
 	hidden: boolean;
-	/** Newest story this reader can see, if any. No counts (DESIGN.md: non-disclosure, no counters). */
-	newest: { id: number; headline: string; language: string | null; publishedAt: Date } | null;
 }
 
-/** Enabled papers, alphabetically, with what this reader can see of each. */
+/** Enabled papers, alphabetically. */
 export async function papers(ctx: ReaderContext): Promise<Paper[]> {
 	const { sql, reader } = ctx;
-	const rows = await sql<{ id: number; slug: string; name: string; homepage: string; hidden: boolean; newest_id: number | null; newest_title: string | null; newest_calm_title: string | null; newest_language: string | null; newest_at: Date | null }[]>`
+	return sql<Paper[]>`
 		SELECT o.id, o.slug, o.name, o.homepage,
-			EXISTS (SELECT 1 FROM user_hidden_outlets h WHERE h.user_id = ${reader.id} AND h.outlet_id = o.id) AS hidden,
-			newest.id AS newest_id, newest.title AS newest_title, newest.calm_title AS newest_calm_title,
-			newest.language AS newest_language, newest.published_at AS newest_at
+			EXISTS (SELECT 1 FROM user_hidden_outlets h WHERE h.user_id = ${reader.id} AND h.outlet_id = o.id) AS hidden
 		FROM outlets o
-		LEFT JOIN LATERAL (
-			SELECT a.id, a.title, a.calm_title, a.language, a.published_at FROM articles a
-			WHERE a.outlet_id = o.id AND ${visibleTo(sql, reader)}
-			ORDER BY a.published_at DESC, a.id DESC
-			LIMIT 1
-		) newest ON true
 		WHERE o.enabled
 		ORDER BY o.name`;
-	return rows.map((r) => ({
-		id: r.id,
-		slug: r.slug,
-		name: r.name,
-		homepage: r.homepage,
-		hidden: r.hidden,
-		newest:
-			r.newest_id !== null && r.newest_title !== null && r.newest_at !== null
-				? { id: r.newest_id, headline: displayHeadline(ctx.settings, { title: r.newest_title, calm_title: r.newest_calm_title }), language: r.newest_language, publishedAt: r.newest_at }
-				: null
-	}));
+}
+
+/** The Papers page: every enabled paper with its top stories of the past day (no counts). */
+export async function newsstand(ctx: ReaderContext): Promise<(Paper & { stories: Card[] })[]> {
+	const [all, tops] = await Promise.all([papers(ctx), paperTops(ctx, 4)]);
+	const bySlug = new Map(tops.map((b) => [b.slug, b.stories]));
+	return all.map((p) => ({ ...p, stories: p.hidden ? [] : (bySlug.get(p.slug) ?? []) }));
+}
+
+/** A paper's most important stories right now (its own front page). */
+export async function paperFront(ctx: ReaderContext, outletId: number): Promise<Card[]> {
+	const rows = await ranked(ctx, { limit: 5, outletId });
+	return toCards(ctx, rows, (_, i) => i < 3);
 }
 
 export const SEARCH_LIMIT = 40;
@@ -410,12 +466,55 @@ export async function saved(ctx: ReaderContext, cursor: Cursor | null) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// People and things (entities)
+
+export type EntityKind = 'person' | 'organisation' | 'place' | 'other';
+
+export interface Entity {
+	id: number;
+	name: string;
+	kind: EntityKind;
+}
+
+/**
+ * An entity and its visible stories, newest first. An entity none of whose stories this reader
+ * can see answers with the same 404 as a missing one.
+ */
+export async function entityPage(ctx: ReaderContext, id: number, cursor: Cursor | null) {
+	const { sql, reader } = ctx;
+	const [entity] = await sql<Entity[]>`SELECT id, name, kind FROM entities WHERE id = ${id}`;
+	if (!entity) error(404, 'Not found');
+	const rows = await sql<CardRow[]>`
+		SELECT ${cardColumns(ctx)}, also.outlets AS also_in
+		FROM article_entities ae
+		JOIN articles a ON a.id = ae.article_id
+		JOIN outlets o ON o.id = a.outlet_id
+		${alsoInColumn(ctx)}
+		WHERE ae.entity_id = ${id}
+			AND ${visibleTo(sql, reader)}
+			${cursor ? sql`AND (a.published_at, a.id) < (${cursor.ts}::timestamptz, ${cursor.id})` : sql``}
+		ORDER BY a.published_at DESC, a.id DESC
+		LIMIT ${PAGE_SIZE + 1}`;
+	if (rows.length === 0 && !cursor) error(404, 'Not found');
+	const p = page(rows, PAGE_SIZE);
+	return { entity, cards: await toCards(ctx, p.rows, (_, i) => !cursor && i < 3), next: p.next };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Article page
 
-export interface ClusterMember {
+export interface StoryLink {
 	id: number;
-	outlet: string;
 	headline: string;
+	outlet: string;
+	outletSlug: string;
+	language: string | null;
+	publishedAt: Date;
+}
+
+export interface EntityStories extends Entity {
+	/** Other visible stories about it, newest first; not this story's cluster, not one listed under an earlier entity (may be empty). */
+	stories: StoryLink[];
 }
 
 export interface ArticleView {
@@ -426,42 +525,58 @@ export interface ArticleView {
 	summary: string | null;
 	author: string | null;
 	outlet: string;
+	outletSlug: string;
 	url: string;
 	language: string | null;
 	publishedAt: Date;
 	minutes: number;
 	section: string | null;
-	sectionLabel: string | null;
-	kicker: string | null;
+	topic: string | null;
 	blocks: Block[];
 	/** Stored, displayable photos by position (0 = lead). */
 	photos: Record<number, Photo>;
 	saved: boolean;
-	alsoIn: ClusterMember[];
-	more: Card[];
+	/** The same story in other papers (visible cluster members). */
+	alsoIn: (StoryLink & { minutes: number })[];
+	related: Card[];
+	entities: EntityStories[];
+	moreSection: Card[];
+	morePaper: Card[];
+	/** The highest-ranked story the reader has not read yet, to read next. */
+	next: Card | null;
 }
+
+const ENTITY_STORIES = 3;
 
 /** The article if visible to this reader; otherwise the same 404 as a missing id. */
 export async function article(ctx: ReaderContext, id: number): Promise<ArticleView> {
 	const { sql, reader } = ctx;
-	const [row] = await sql<
-		(CardRow & { teaser: string | null; author: string | null; url: string; body: Block[] | null; cluster_id: number | null; outlet_id: number; saved: boolean })[]
-	>`
-		SELECT ${cardColumns(ctx)}, a.teaser, a.author, a.url, a.body, a.cluster_id, a.outlet_id,
+	const [row] = await sql<(CardRow & { teaser: string | null; author: string | null; url: string; body: Block[] | null; outlet_id: number; saved: boolean })[]>`
+		SELECT ${cardColumns(ctx)}, a.teaser, a.author, a.url, a.body, a.outlet_id,
 			EXISTS (SELECT 1 FROM user_saved s WHERE s.user_id = ${reader.id} AND s.article_id = a.id) AS saved
 		FROM articles a JOIN outlets o ON o.id = a.outlet_id
 		WHERE a.id = ${id} AND ${visibleTo(sql, reader)}`;
 	if (!row) error(404, 'Not found');
+	const notThisStory = row.cluster_id === null ? sql`a.id <> ${row.id}` : sql`a.id <> ${row.id} AND a.cluster_id IS DISTINCT FROM ${row.cluster_id}`;
 
-	const [alsoIn, moreRows, photos] = await Promise.all([
+	const [alsoIn, relatedRows, entities, sectionRows, paperRows, pool, photos] = await Promise.all([
 		row.cluster_id === null
-			? Promise.resolve([] as { id: number; outlet: string; title: string; calm_title: string | null }[])
-			: sql<{ id: number; outlet: string; title: string; calm_title: string | null }[]>`
-				SELECT a.id, o.name AS outlet, a.title, a.calm_title
+			? Promise.resolve([] as CardRow[])
+			: sql<CardRow[]>`
+				SELECT ${cardColumns(ctx)}
 				FROM articles a JOIN outlets o ON o.id = a.outlet_id
 				WHERE a.cluster_id = ${row.cluster_id} AND a.id <> ${row.id} AND ${visibleTo(sql, reader)}
 				ORDER BY a.published_at DESC
-				LIMIT 8`,
+				LIMIT 12`,
+		sql<CardRow[]>`
+			SELECT ${cardColumns(ctx)}
+			FROM article_related r
+			JOIN articles a ON a.id = r.related_id
+			JOIN outlets o ON o.id = a.outlet_id
+			WHERE r.article_id = ${row.id} AND ${notThisStory} AND ${visibleTo(sql, reader)}
+			ORDER BY r.similarity DESC
+			LIMIT 12`,
+		articleEntities(ctx, row.id, notThisStory),
 		row.section === null
 			? Promise.resolve([] as CardRow[])
 			: sql<CardRow[]>`
@@ -469,12 +584,37 @@ export async function article(ctx: ReaderContext, id: number): Promise<ArticleVi
 				FROM articles a JOIN outlets o ON o.id = a.outlet_id
 				WHERE ${visibleTo(sql, reader)}
 					AND a.section = ${row.section}
-					AND a.id <> ${row.id}
-					${row.cluster_id === null ? sql`` : sql`AND a.cluster_id IS DISTINCT FROM ${row.cluster_id}`}
+					AND ${notThisStory}
 					AND a.published_at > now() - interval '3 days'
 				ORDER BY a.importance DESC NULLS LAST, a.published_at DESC
 				LIMIT 4`,
+		sql<CardRow[]>`
+			SELECT ${cardColumns(ctx)}
+			FROM articles a JOIN outlets o ON o.id = a.outlet_id
+			WHERE ${visibleTo(sql, reader)}
+				AND a.outlet_id = ${row.outlet_id}
+				AND ${notThisStory}
+			ORDER BY a.published_at DESC, a.id DESC
+			LIMIT 4`,
+		ranked(ctx, { limit: 30 }),
 		articlePhotos(ctx, row.id)
+	]);
+
+	// Related: one per story, never one already shown as "Also in".
+	const seen = new Set([storyKey(row)]);
+	const related = relatedRows
+		.filter((r) => {
+			if (seen.has(storyKey(r))) return false;
+			seen.add(storyKey(r));
+			return true;
+		})
+		.slice(0, 5);
+	const nextRow = pool.find((r) => !r.read && storyKey(r) !== storyKey(row));
+	const [relatedCards, sectionCards, paperCards, nextCards] = await Promise.all([
+		toCards(ctx, related, () => true),
+		toCards(ctx, sectionRows),
+		toCards(ctx, paperRows),
+		toCards(ctx, nextRow ? [nextRow] : [], () => true)
 	]);
 
 	return {
@@ -485,19 +625,67 @@ export async function article(ctx: ReaderContext, id: number): Promise<ArticleVi
 		summary: row.summary,
 		author: row.author,
 		outlet: row.outlet,
+		outletSlug: row.outlet_slug,
 		url: row.url,
 		language: row.language,
 		publishedAt: row.published_at,
 		minutes: readingMinutes(row.body_chars),
 		section: row.section,
-		sectionLabel: row.section ? sectionLabel(row.section) : null,
-		kicker: row.topic ? (TOPIC_LABELS[row.topic] ?? null) : null,
+		topic: row.topic,
 		blocks: row.body ?? [],
 		photos,
 		saved: row.saved,
-		alsoIn: alsoIn.map((m) => ({ id: m.id, outlet: m.outlet, headline: displayHeadline(ctx.settings, m) })),
-		more: await toCards(ctx, moreRows)
+		alsoIn: alsoIn.map((m) => ({ ...storyLink(ctx, m), minutes: readingMinutes(m.body_chars) })),
+		related: relatedCards,
+		entities,
+		moreSection: sectionCards,
+		morePaper: paperCards,
+		next: nextCards[0] ?? null
 	};
+}
+
+function storyLink(ctx: ReaderContext, r: CardRow): StoryLink {
+	return { id: r.id, headline: displayHeadline(ctx.settings, r), outlet: r.outlet, outletSlug: r.outlet_slug, language: r.language, publishedAt: r.published_at };
+}
+
+/**
+ * The article's entities, most central first, each with its newest other visible stories; a story
+ * is listed under the first entity that has it. Entities with no other visible story are left
+ * out: their page would hold only this article.
+ */
+async function articleEntities(ctx: ReaderContext, articleId: number, notThisStory: postgres.PendingQuery<postgres.Row[]>): Promise<EntityStories[]> {
+	const { sql, reader } = ctx;
+	const list = await sql<Entity[]>`
+		SELECT e.id, e.name, e.kind FROM article_entities ae JOIN entities e ON e.id = ae.entity_id
+		WHERE ae.article_id = ${articleId}
+		ORDER BY ae.rank`;
+	const perEntity = await Promise.all(
+		list.map(
+			(entity) => sql<CardRow[]>`
+				SELECT ${cardColumns(ctx)}
+				FROM article_entities ae
+				JOIN articles a ON a.id = ae.article_id
+				JOIN outlets o ON o.id = a.outlet_id
+				WHERE ae.entity_id = ${entity.id} AND ${notThisStory} AND ${visibleTo(sql, reader)}
+				ORDER BY a.published_at DESC, a.id DESC
+				LIMIT ${ENTITY_STORIES * 4}`
+		)
+	);
+	const shown = new Set<number>();
+	const out: EntityStories[] = [];
+	list.forEach((entity, n) => {
+		const rows = perEntity[n];
+		if (rows.length === 0) return;
+		const stories: StoryLink[] = [];
+		for (const r of rows) {
+			if (stories.length === ENTITY_STORIES) break;
+			if (shown.has(storyKey(r))) continue;
+			shown.add(storyKey(r));
+			stories.push(storyLink(ctx, r));
+		}
+		out.push({ ...entity, stories });
+	});
+	return out;
 }
 
 export async function markRead(ctx: ReaderContext, id: number): Promise<void> {

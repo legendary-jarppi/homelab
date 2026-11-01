@@ -34,6 +34,16 @@
 				<td class="num">{n(data.queues.due_classify)}</td>
 			</tr>
 			<tr>
+				<th scope="row">Entities</th>
+				<td class="num">{n(data.queues.pending_entities)}</td>
+				<td class="num">{n(data.queues.pending_entities)}</td>
+			</tr>
+			<tr>
+				<th scope="row">Related stories</th>
+				<td class="num">{n(data.queues.pending_related)}</td>
+				<td class="num">{n(data.queues.pending_related)}</td>
+			</tr>
+			<tr>
 				<th scope="row">Failed extraction</th>
 				<td class="num" class:warn={data.queues.failed_content > 0}>{n(data.queues.failed_content)}</td>
 				<td class="num muted">–</td>
@@ -41,6 +51,11 @@
 			<tr>
 				<th scope="row">Failed classification</th>
 				<td class="num" class:warn={data.queues.failed_classify > 0}>{n(data.queues.failed_classify)}</td>
+				<td class="num muted">–</td>
+			</tr>
+			<tr>
+				<th scope="row">Failed entities</th>
+				<td class="num" class:warn={data.queues.failed_entities > 0}>{n(data.queues.failed_entities)}</td>
 				<td class="num muted">–</td>
 			</tr>
 		</tbody>
@@ -51,13 +66,21 @@
 <dl class="facts">
 	<dt>Configured here (LLM_MODEL)</dt>
 	<dd>{data.configuredModel ?? 'not set in the web environment (the worker’s setting applies)'}</dd>
-	<dt>Last call</dt>
-	<dd>{data.lastCall ? `${data.lastCall.model}, ${when(data.lastCall.created_at)}` : 'none yet'}</dd>
+	<dt>Entity model (ENTITY_MODEL)</dt>
+	<dd>{data.entityModel}</dd>
+	{#each data.lastCalls as c (c.purpose)}
+		<dt>Last {c.purpose} call</dt>
+		<dd>{c.model}, {when(c.created_at)}</dd>
+	{:else}
+		<dt>Last call</dt>
+		<dd>none yet</dd>
+	{/each}
 </dl>
 <div class="table-wrap">
 	<table>
 		<thead>
 			<tr>
+				<th scope="col">Purpose</th>
 				<th scope="col">Model</th>
 				<th scope="col" class="num">Calls</th>
 				<th scope="col" class="num">Errors</th>
@@ -69,9 +92,10 @@
 			</tr>
 		</thead>
 		<tbody>
-			{#each data.models as m (m.model)}
+			{#each data.models as m (`${m.purpose}:${m.model}`)}
 				<tr>
-					<th scope="row">{m.model}</th>
+					<th scope="row">{m.purpose}</th>
+					<td>{m.model}</td>
 					<td class="num">{n(m.calls)}</td>
 					<td class="num" class:warn={m.errors > 0}>{n(m.errors)} ({percent(m.calls ? m.errors / m.calls : null)})</td>
 					<td class="num">{m.p50_ms === null ? '–' : `${(m.p50_ms / 1000).toFixed(1)} s`}</td>
@@ -81,7 +105,7 @@
 					<td class="num">{n(m.output_tokens)}</td>
 				</tr>
 			{:else}
-				<tr><td colspan="8" class="muted">No calls in the last 24 hours.</td></tr>
+				<tr><td colspan="9" class="muted">No calls in the last 24 hours.</td></tr>
 			{/each}
 		</tbody>
 	</table>
@@ -93,11 +117,12 @@
 {:else}
 	<div class="table-wrap">
 		<table>
-			<thead><tr><th scope="col">When</th><th scope="col">Model</th><th scope="col">Article</th><th scope="col">Error</th></tr></thead>
+			<thead><tr><th scope="col">When</th><th scope="col">Purpose</th><th scope="col">Model</th><th scope="col">Article</th><th scope="col">Error</th></tr></thead>
 			<tbody>
 				{#each data.llmErrors as e, i (i)}
 					<tr>
 						<td>{when(e.created_at)}</td>
+						<td>{e.purpose}</td>
 						<td>{e.model}</td>
 						<td>{#if e.article_id}<a href="/admin/article/{e.article_id}">#{e.article_id}</a>{/if}</td>
 						<td>{e.error}</td>
@@ -143,27 +168,3 @@
 		</table>
 	</div>
 {/if}
-
-<h2>Editions</h2>
-{#if data.editions.length === 0}
-	<p class="muted">No editions published yet.</p>
-{:else}
-	<ul class="editions">
-		{#each data.editions as e (e.id)}
-			<li>{e.label} <span class="muted">· {when(e.cutoff)}</span></li>
-		{/each}
-	</ul>
-{/if}
-
-<style>
-	.editions {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-
-	.editions li {
-		padding: var(--space-1) 0;
-		border-bottom: var(--hairline);
-	}
-</style>

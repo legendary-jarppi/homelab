@@ -1,14 +1,16 @@
 <script lang="ts">
 	import { SECTIONS } from '$lib/core/taxonomy';
+	import { useI18n } from '$lib/i18n';
 
-	let { path }: { path: string } = $props();
+	let { path, papers }: { path: string; papers: { slug: string; name: string }[] } = $props();
+	const i = useI18n();
 
-	const links = [
-		{ href: '/', label: 'Front Page' },
-		...SECTIONS.map((s) => ({ href: `/section/${s.key}`, label: s.label })),
-		{ href: '/latest', label: 'Latest' },
-		{ href: '/papers', label: 'Papers' }
-	];
+	const links = $derived([
+		{ href: '/', label: i.t('nav.front') },
+		{ href: '/latest', label: i.t('nav.latest') },
+		...SECTIONS.map((s) => ({ href: `/section/${s.key}`, label: i.section(s.key) })),
+		{ href: '/papers', label: i.t('nav.papers') }
+	]);
 	/** Current for its own page and pages under it (a paper under Papers). */
 	const current = (href: string) => path === href || (href !== '/' && path.startsWith(`${href}/`));
 
@@ -24,7 +26,7 @@
 </script>
 
 <div class="sentinel" bind:this={sentinel} aria-hidden="true"></div>
-<nav class="sections no-print" class:stuck aria-label="Sections">
+<nav class="sections no-print" class:stuck aria-label={i.t('nav.sections')}>
 	<div class="page inner">
 		<a class="mark" href="/" aria-hidden={!stuck} tabindex={stuck ? 0 : -1}>Shilly Shally News</a>
 		<ul>
@@ -36,6 +38,18 @@
 		</ul>
 	</div>
 </nav>
+{#if papers.length > 0}
+	<nav class="papers no-print" aria-label={i.t('nav.papers')}>
+		<div class="page papers-inner">
+			<a class="papers-label" href="/papers">{i.t('nav.papers')}</a>
+			<ul>
+				{#each papers as p (p.slug)}
+					<li><a href="/papers/{p.slug}" aria-current={path === `/papers/${p.slug}` ? 'page' : undefined}>{p.name}</a></li>
+				{/each}
+			</ul>
+		</div>
+	</nav>
+{/if}
 
 <style>
 	.sentinel {
@@ -132,8 +146,58 @@
 		font-weight: 700;
 	}
 
+	/* Papers: a second, quieter line of nameplates under the sections; scrolls away with the masthead. */
+	.papers {
+		border-bottom: var(--hairline);
+	}
+
+	.papers-inner {
+		display: flex;
+		align-items: center;
+		gap: var(--space-2);
+	}
+
+	.papers-label {
+		flex: none;
+		padding-right: var(--space-3);
+		border-right: var(--hairline);
+		font-family: var(--font-ui);
+		font-size: var(--step--2);
+		font-weight: 600;
+		font-variant-caps: all-small-caps;
+		letter-spacing: 0.12em;
+		color: var(--ink-2);
+		text-decoration: none;
+	}
+
+	.papers ul {
+		justify-content: center;
+	}
+
+	.papers li + li::before {
+		content: '·';
+		width: auto;
+		height: auto;
+		background: none;
+		color: var(--ink-3);
+	}
+
+	.papers li a {
+		min-height: var(--touch);
+		font-family: var(--font-head);
+		font-size: var(--step--1);
+		font-weight: 600;
+		font-variant-caps: normal;
+		letter-spacing: 0;
+	}
+
+	.papers li a[aria-current='page'] {
+		color: var(--accent);
+	}
+
 	@media (max-width: 64rem) {
-		ul {
+		ul,
+		.papers ul {
 			justify-content: flex-start;
 		}
 	}

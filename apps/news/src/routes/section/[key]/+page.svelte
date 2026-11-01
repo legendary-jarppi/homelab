@@ -3,27 +3,30 @@
 	import StoryList from '$lib/components/StoryList.svelte';
 	import EndNote from '$lib/components/EndNote.svelte';
 	import PageTitle from '$lib/components/PageTitle.svelte';
+	import { useI18n } from '$lib/i18n';
 
 	let { data } = $props();
+	const i = useI18n();
+	const label = $derived(i.section(data.key));
 	const lead = $derived(data.stories[0]);
 	const rest = $derived(data.stories.slice(1));
 </script>
 
 <svelte:head>
-	<title>{data.label} · Shilly Shally News</title>
+	<title>{label} · Shilly Shally News</title>
 </svelte:head>
 
-<PageTitle title={data.label} kicker={data.paged ? 'Earlier' : data.edition.label} />
+<PageTitle title={label} kicker={data.paged ? i.t('list.earlier') : i.t('section.kicker')} />
 
 {#if lead}
-	<section class="front" aria-label="In this edition">
+	<section class="front" aria-label={i.t('section.now', { section: label })}>
 		<div class="lead">
 			<Story card={lead} variant="lead" level={2} photo summary />
 		</div>
 		{#if rest.length > 0}
 			<div class="rest">
-				{#each rest as card, i (card.id)}
-					<Story {card} photo={i < 3} summary={i < 6} />
+				{#each rest as card, n (card.id)}
+					<Story {card} photo={n < 3} summary={n < 6} />
 				{/each}
 			</div>
 		{/if}
@@ -31,18 +34,18 @@
 {/if}
 
 {#if data.earlier.cards.length > 0}
-	{#if !data.paged}<h2 class="section-head earlier">Earlier</h2>{/if}
+	{#if !data.paged}<h2 class="section-head earlier">{i.t('list.earlier')}</h2>{/if}
 	<StoryList cards={data.earlier.cards} days level={data.paged ? 2 : 3} />
 {/if}
 
 {#if data.earlier.next}
-	<nav class="pager" aria-label="Pages">
-		<a class="button" href="/section/{data.key}?before={encodeURIComponent(data.earlier.next)}" rel="next">Earlier</a>
+	<nav class="pager" aria-label={i.t('list.pages')}>
+		<a class="button" href="/section/{data.key}?before={encodeURIComponent(data.earlier.next)}" rel="next">{i.t('list.earlier')}</a>
 	</nav>
 {:else if !lead && data.earlier.cards.length === 0}
-	<EndNote>Nothing in {data.label} just now. The {data.edition.nextLabel} may bring more.</EndNote>
+	<EndNote>{i.t('section.empty', { section: label })}</EndNote>
 {:else}
-	<EndNote>That is everything in {data.label}.</EndNote>
+	<EndNote>{i.t('section.end', { section: label })}</EndNote>
 {/if}
 
 <style>

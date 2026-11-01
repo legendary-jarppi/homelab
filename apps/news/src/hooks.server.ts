@@ -2,6 +2,7 @@ import { redirect, type Handle, type ServerInit } from '@sveltejs/kit';
 import { sessionUser } from '$lib/core/auth';
 import { db, migrate } from '$lib/core/db';
 import { parseSettings } from '$lib/core/prefs';
+import { resolveLocale } from '$lib/i18n';
 import { SESSION_COOKIE } from '$lib/server/session';
 
 /** Reachable without a session. /share/ links are also the one path Cloudflare Access lets through (src/lib/server/share.ts). */
@@ -20,6 +21,7 @@ export const handle: Handle = async ({ event, resolve }) => {
 	const user = await sessionUser(db(), event.cookies.get(SESSION_COOKIE));
 	event.locals.user = user;
 	event.locals.settings = parseSettings(user?.settings);
+	event.locals.locale = resolveLocale(event.locals.settings.language, event.request.headers.get('accept-language'));
 	const path = event.url.pathname;
 
 	if (!user && !PUBLIC_PATHS.some((p) => path === p || path.startsWith(p))) {
@@ -32,8 +34,8 @@ export const handle: Handle = async ({ event, resolve }) => {
 	if (path.startsWith('/admin') && user?.role !== 'admin') return new Response('Not found', { status: 404 });
 
 	const response = await resolve(event, {
-		// Theme class on <html> before first paint.
-		transformPageChunk: ({ html }) => html.replace('%theme%', event.locals.settings.theme)
+		// Theme class and interface language on <html> before first paint.
+		transformPageChunk: ({ html }) => html.replace('%theme%', event.locals.settings.theme).replace('%lang%', event.locals.locale)
 	});
 	response.headers.set('X-Frame-Options', 'DENY');
 	response.headers.set('X-Content-Type-Options', 'nosniff');

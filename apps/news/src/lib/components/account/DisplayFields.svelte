@@ -1,15 +1,19 @@
 <script lang="ts">
+	import { useI18n } from '$lib/i18n';
+
 	let { images, calmHeadlines }: { images: 'show' | 'click' | 'hide'; calmHeadlines: boolean } = $props();
 
-	const PHOTO_CHOICES = [
-		{ value: 'show', label: 'Show photos', hint: 'Photos that fit your choices are shown. Any other photo waits behind a “Show photo” button.' },
-		{ value: 'click', label: 'Ask first', hint: 'Every photo waits behind a “Show photo” button until you choose to see it.' },
-		{ value: 'hide', label: 'No photos', hint: 'Articles are shown with text only.' }
-	] as const;
+	const i = useI18n();
+
+	const PHOTO_CHOICES = $derived([
+		{ value: 'show', label: i.t('display.show'), hint: i.t('display.showHint') },
+		{ value: 'click', label: i.t('display.click'), hint: i.t('display.clickHint') },
+		{ value: 'hide', label: i.t('display.hide'), hint: i.t('display.hideHint') }
+	] as const);
 </script>
 
 <fieldset class="choices">
-	<legend>Photos</legend>
+	<legend>{i.t('display.photos')}</legend>
 	{#each PHOTO_CHOICES as choice (choice.value)}
 		<label class="choice">
 			<input type="radio" name="images" value={choice.value} checked={images === choice.value} />
@@ -20,11 +24,11 @@
 </fieldset>
 
 <fieldset class="choices">
-	<legend>Headlines</legend>
+	<legend>{i.t('display.headlines')}</legend>
 	<label class="choice">
 		<input type="checkbox" name="calmHeadlines" checked={calmHeadlines} />
-		<span class="label">Calm headlines</span>
-		<span class="hint">Use a plain, factual headline written for this paper instead of the outlet’s own. The original headline is still shown, in small type, on the article page.</span>
+		<span class="label">{i.t('display.calm')}</span>
+		<span class="hint">{i.t('display.calmHint')}</span>
 	</label>
 </fieldset>
 

@@ -1,31 +1,32 @@
 <script lang="ts">
-	import type { EditionInfo } from '$lib/server/articles';
-	import { clock, dateline } from './format';
+	import { useI18n } from '$lib/i18n';
 
 	interface Props {
-		edition?: EditionInfo | null;
+		/** When the newest story came in. */
+		updatedAt?: Date | null;
 		user?: { displayName: string; admin: boolean } | null;
 		query?: string;
 		minimal?: boolean;
 	}
 
-	let { edition = null, user = null, query = '', minimal = false }: Props = $props();
+	let { updatedAt = null, user = null, query = '', minimal = false }: Props = $props();
+	const i = useI18n();
 </script>
 
 <header class="masthead" class:minimal>
 	{#if user}
 		<div class="strip page no-print">
 			<form class="search" role="search" method="get" action="/search">
-				<label class="visually-hidden" for="masthead-search">Search the paper</label>
-				<input id="masthead-search" name="q" type="search" placeholder="Search" value={query} autocomplete="off" enterkeyhint="search" />
-				<button class="go" type="submit">Search</button>
+				<label class="visually-hidden" for="masthead-search">{i.t('masthead.searchLabel')}</label>
+				<input id="masthead-search" name="q" type="search" placeholder={i.t('masthead.search')} value={query} autocomplete="off" enterkeyhint="search" />
+				<button class="go" type="submit">{i.t('masthead.search')}</button>
 			</form>
-			<nav class="account" aria-label="Your account">
-				<a href="/saved">Saved</a>
-				<a href="/settings">Settings</a>
+			<nav class="account" aria-label={i.t('masthead.account')}>
+				<a href="/saved">{i.t('masthead.saved')}</a>
+				<a href="/settings">{i.t('masthead.settings')}</a>
 				{#if user.admin}<a href="/admin">Admin</a>{/if}
 				<form method="post" action="/logout">
-					<button type="submit">Sign out</button>
+					<button type="submit">{i.t('masthead.signOut')}</button>
 				</form>
 			</nav>
 		</div>
@@ -33,14 +34,15 @@
 
 	<div class="page">
 		<div class="nameplate">
-			<a href="/" class="title" aria-label="Shilly Shally News, front page">Shilly Shally News</a>
+			<a href="/" class="title" aria-label={i.t('masthead.home')}>Shilly Shally News</a>
 		</div>
-		{#if !minimal && edition}
+		{#if !minimal}
 			<p class="dateline">
-				<span>{dateline(edition.cutoff)}</span>
-				<span class="edition">{edition.label}</span>
+				<span class="date">{i.dateline(new Date())}</span>
 				<span>Espoo</span>
-				<span>Updated <time datetime={edition.cutoff.toISOString()}>{clock(edition.cutoff)}</time></span>
+				{#if updatedAt}
+					<span>{i.t('masthead.updated')} <time datetime={updatedAt.toISOString()}>{i.when(updatedAt)}</time></span>
+				{/if}
 			</p>
 		{/if}
 	</div>
@@ -174,7 +176,7 @@
 		text-wrap: balance;
 	}
 
-	.dateline .edition {
+	.dateline .date {
 		color: var(--ink);
 		font-weight: 600;
 	}

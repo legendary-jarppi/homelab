@@ -25,10 +25,10 @@ hidden.
 | Local model / provider abstraction (§4.1) | **Claude through the AI proxy only**, model chosen by benchmark (§5.4). One client (`llm.ts`) with structured JSON-schema output. | Accuracy matters more than self-hosting here; CPU-only local models on this host are too slow and too weak at the intensity judgement. The model is configuration (`LLM_MODEL`). No fallback provider: a failing call is retried later, and the article stays hidden until classified. |
 | Images are **not** assessed; gate all inline images on the reader's settings (§9.1.4) | **Every stored photo is assessed by the vision model** in the same call as the text. Per-photo tags gate each photo individually against the reader's thresholds. Unassessed photos wait behind "Show photo". | Claude reads images. Assessing them removes the spec's biggest blind spot (a cheerful spider story with a close-up photo) and lets most readers see most photos. |
 | Excerpt-only articles stay visible, with deadlines, minimum intensities and upward-only re-classification (§3.2, §4.6) | **Only fully extracted articles are classified and shown.** Paywalled, failed and skipped articles are stored for monitoring and never shown. | Idea 3: a teaser that sends the reader to the outlet is not a news item we can deliver. It also deletes a whole class of under-protection (classifying on teasers) and the machinery built to compensate for it. Outlets with a high paywall share (Länsiväylä, Kauppalehti) are simply not enabled until credentials exist. |
-| Hourly polling | Discovery every 10-20 min per outlet (respecting crawl-delay); **front page published as editions** at 06:30, 12:00 and 17:00 Helsinki time; a quiet **Latest** page for everything since. | A calm product should not change under the reader every few minutes, and a finite front page ("that is today's edition") is the opposite of an anxiety feed. |
+| Hourly polling | Discovery every 10-20 min per outlet (respecting crawl-delay); the **front page is live**, ranked from the past 36 hours (§7.1); a **Latest** column and page for everything as it arrives. | Editions (06:30, 12:00, 17:00) were tried first and dropped in November 2026: readers felt they were missing the latest news and went to the outlets' own sites instead. The page stays finite and calm (no ticker, no counts, no infinite scroll); it refreshes only when the reader comes back to it. |
 | Breaking flag + ticker (§4.2, §9.1.5) | **Dropped.** Classifier gives an **importance** 1-5 used for front-page placement. | Tickers are alarm design. Importance gives the same placement signal without urgency cues. |
-| Persons directory, trending persons (§7.3, §4.2) | **Dropped.** | Little reading value; costs prompt tokens, a normalisation problem for Finnish names, and another leak surface. |
-| Story clusters (§4.7) | **Kept, as de-duplication.** Embeddings (`text-embedding-3-small` via the proxy) of calm headline + summary; articles from different outlets within 48 h above a similarity threshold share a `cluster_id`. Front page shows one visible member per cluster with "Also in Ilta-Sanomat, MTV". | Seven Finnish outlets report the same story; without this the front page repeats itself. Cross-language works (fi/en same-story cosine 0.69 vs 0.28 unrelated). |
+| Persons directory, trending persons (§7.3, §4.2) | **People and things, without trending.** A separate worker stage names up to 6 people, organisations, places and other things central to each article; each has a page of its visible stories. No trending lists or counts. | Dropped at first (prompt tokens, Finnish name normalisation, leak surface); added in November 2026 because readers wanted to follow a story's people and places. Normalisation is solved in the prompt (base form, established Finnish names), measured in §5.5; the leak surface is the usual `visibleTo` (§6). |
+| Story clusters (§4.7) | **Kept, as de-duplication and coverage.** Embeddings (`text-embedding-3-small` via the proxy) of calm headline + summary; articles from different outlets within 48 h above a similarity threshold share a `cluster_id`. Lists show one visible member per cluster with "Also in Ilta-Sanomat, MTV"; the article page lists every version; the number of papers covering a story raises it on the front page. The same embeddings give **related stories** (§5.5). | Seven Finnish outlets report the same story; without this the front page repeats itself. Cross-language works (fi/en same-story cosine 0.69 vs 0.28 unrelated). |
 | For You, trending topics, reading statistics and streaks, unread counts, new counts (§7.1, §7.6) | **Dropped.** | Engagement mechanics. Streaks and counts create pressure; personalised ranking narrows. Reading state is kept only to dim already-read headlines. |
 | Collections, user-submitted links, export/import (§7.4-7.5, §6.4) | **Dropped for now; "Save" (one list) kept.** | Submitted links are an SSRF and cost surface for little gain in a household product. |
 | Command palette, keyboard shortcuts, preview overlay, reader-view toggle, print stylesheet (§9.1.6) | **Search box + a print stylesheet only.** | Primary devices are iPad and phone. The article page already is the reader view. |
@@ -44,7 +44,7 @@ hidden.
 flowchart LR
   subgraph cluster[namespace news]
     web[web: SvelteKit SSR] --> pg[(Postgres 17)]
-    worker[worker: discovery, extraction, photos, classification, clustering, editions] --> pg
+    worker[worker: discovery, extraction, photos, classification, clustering, entities, related stories] --> pg
     web --> imgs[(image volume)]
     worker --> imgs
   end
@@ -54,7 +54,8 @@ flowchart LR
 ```
 
 - `src/lib/core/`: shared by web and worker (relative imports only): taxonomy, db, http, outlets,
-  extraction, images, llm, classify, visibility, editions, auth, prefs.
+  extraction, images, llm, classify, visibility, auth, prefs.
+- `src/lib/i18n/`: the interface language (web only), §7.4.
 - Photos are downloaded once, stored as WebP under the image volume and served by the web app. The
   reader's browser never contacts an outlet.
 - The worker is the only component with internet egress (NetworkPolicy); web reaches only Postgres.
@@ -124,6 +125,22 @@ Clustering: `text-embedding-3-small`, cosine >= 0.70 to an article from another 
 (measured on 29 000 cross-outlet pairs: >= 0.80 same report, 0.70-0.80 same event, below 0.70 false
 pairs appear).
 
+### 5.5 People and things, related stories
+Two worker stages after classification, neither of which affects whether an article is visible:
+
+- **Entities** (`pipeline/entities.ts`): one text-only call per article (`ENTITY_MODEL`, headline,
+  standfirst and the first ~8 000 characters) names at most 6 people, organisations, places and other
+  things (events, teams, works, laws) central to it, most central first. The prompt asks for base
+  (nominative) forms and established Finnish names also for English articles ("Yhdysvallat", "Nato"),
+  so one entity has one row across outlets and languages: `entities` is unique on kind + lower-cased,
+  unaccented name. Backfills the last `ENTITY_BACKFILL_DAYS` (30), newest first. Benchmark (15 Finnish
+  + 3 NPR articles): `claude-haiku-4-5` produced a wrong base form ("Raahes") and an English event name;
+  `claude-sonnet-5-5` got every name right at ~1.5 s and ~$0.004 per article, so it is the default.
+- **Related** (`pipeline/related.ts`): the 8 nearest articles by embedding within ±7 days, outside
+  the article's own cluster, at cosine >= 0.55 (`RELATED_FLOOR`), stored in both directions. Measured
+  on 300 articles: 0.45-0.55 shares only genre or format; 0.55-0.60 the same theme; 0.60-0.70 the same
+  theme or a follow-up. At 0.55 an article gets 3 related stories on average and a third get none.
+
 ## 6. Filtering
 
 `visibility.ts` is the one SQL predicate every reader query uses. It enforces: classified and
@@ -133,7 +150,10 @@ Leak tests in `tests/visibility.test.ts` run against real Postgres.
 
 Non-disclosure: no tags on cards or pages, no counts, no "N hidden", cursor pagination only, the
 article URL of a hidden article returns the same 404 as a missing one, and the "Also in" line of a
-cluster lists only members visible to this reader.
+cluster lists only members visible to this reader. The same holds for related stories, the stories
+listed under an entity, and entity pages: an entity none of whose stories the reader can see answers
+with the 404 of a missing one. Front-page coverage (how many papers report a story) counts only
+visible members.
 
 Photos: setting **show** (default) shows a photo when it was assessed and none of its tags hit the
 reader's thresholds; anything else is behind a neutral "Show photo" button that names nothing. **Ask
@@ -142,8 +162,16 @@ first** puts every photo behind the button; **no photos** removes them.
 ## 7. Reader experience
 
 ### 7.1 Principles
-- **Finite and calm.** The front page is an edition. Below the last story: "That is the Midday Edition.
-  The Evening Edition is out at 17:00." No infinite scroll, badges, counters, red dots or autoplay.
+- **Finite and calm, but live.** The front page is ranked from the past 36 hours, one story per
+  cluster, by `importance + 0.8 · ln(papers covering it) − hours since its newest report / 6`, so a big
+  story stays up while it develops and everything else gives way to fresher news (`ranked()` in
+  `src/lib/server/articles.ts`). Beside it, *Latest* lists the ten newest stories with "12 min ago".
+  The page ends ("The front page changes as the news comes in.") instead of scrolling forever, and it
+  reloads only when the reader returns to it after five minutes, never under the reader's eyes. No
+  badges, counters, red dots or autoplay.
+- **Stay in the paper.** Every byline links to its paper's page; the article page shows the same
+  story in other papers, related stories, the people and things in it, more from the paper and the
+  section, and the next unread top story, so the outlet's site is never the only way onward.
 - **Calm headlines by default.** The classifier's rewrite replaces clickbait; the outlet's headline is
   shown small on the article page. A setting turns it off.
 - **Reader control is one tap away.** On every article: *Save*, *Share*, *Not for me* (mutes it) and
@@ -165,24 +193,25 @@ first** puts every photo behind the button; **no photos** removes them.
 ### 7.2 Pages
 | Path | Content |
 |---|---|
-| `/` | Front page of the current edition: lead story (largest headline, photo, summary), 2-3 secondary stories, "In brief" column, then one block per section. One story per cluster. |
-| `/section/<key>` | Section front: same grid, that section's stories in the edition window, then "Earlier" (cursor). |
-| `/latest` | Everything visible, newest first, published after the edition too. Plain list, cursor pagination. |
-| `/papers`, `/papers/<slug>` | One paper at a time. `/papers`: each enabled paper with its newest visible headline (no counts). `/papers/<slug>`: that paper's visible stories, newest first, every cluster member (not one per cluster), with a picker to switch papers; cursor pagination. A paper the reader hid in settings says so instead of listing anything. |
+| `/` | Live front page (§7.1): lead story (largest headline, photo, summary), 3 secondary stories and the *Latest* column (ten newest, "12 min ago"); one block per section; *By paper*: each paper's top three of the past day under its nameplate. One story per cluster, except in *By paper*. |
+| `/section/<key>` | Section front: the section's stories ranked as the front page, then "Earlier" (older than the 36-hour window, cursor). |
+| `/latest` | Everything visible, newest first. Plain list, cursor pagination. |
+| `/papers`, `/papers/<slug>` | `/papers`: each enabled paper's nameplate with its top four stories of the past day (no counts). `/papers/<slug>`: that paper's top stories now (ranked as the front page), then all its visible stories newest first, every cluster member (not one per cluster), with a picker to switch papers; cursor pagination. A paper the reader hid in settings says so instead of listing anything. Every byline's paper name links here, and a second line under the section bar lists the papers on every page. |
+| `/entity/<id>` | A person, organisation, place or other thing: its visible stories, newest first; the newest three as cards. 404 when the reader can see none of them. |
 | `/login/check` | After signing in: on to the page asked for, or back to `/login` with an explanation when the browser did not return the session cookie. |
-| `/article/<id>` | Kicker, calm headline, standfirst, byline line (outlet, time, reading time), lead photo, body with drop cap and figures, original headline and "Read at <outlet>" link, actions, "Also in" (same cluster, visible only), more from the section. |
+| `/article/<id>` | Kicker, calm headline, standfirst, byline line (outlet, time, reading time), "Also in" line linking each other paper's version, lead photo, body with drop cap and figures, original headline and "Read at <outlet>" link, actions, *Read next* (the highest-ranked unread story). Wide screens put two rails beside the text: left, every version of the story in other papers (visible members only) and more from the same paper; right, related stories, people and things (each with its newest other stories and a link to its page) and more from the section. Narrower screens stack the rails under the article. |
 | `/search` | Full-text search (Finnish and English stemming) over visible articles. |
 | `/saved` | Saved articles, still filtered (a saved article that a later settings change hides disappears). |
 | `/settings` | Comfort level, sensitivity by family and tag, topics, outlets, blocked words, photos, headlines, theme, password, sign out everywhere. |
-| `/welcome` | First-run: 1) what this is, 2) pick a comfort preset (4 cards), 3) optional fine-tuning of families, 4) photos and headlines, 5) done. Before any news is shown. |
+| `/welcome` | First-run: 1) what this is, with the interface language, 2) pick a comfort preset (4 cards), 3) optional fine-tuning of families, 4) photos and headlines, 5) done. Before any news is shown. |
 | `/login`, `/join/<code>` | Sign in; redeem invite. |
 | `/admin` | Outlets, pipeline and model health, reports with tag correction, users and invites. |
 
 ### 7.3 Visual system ("modern broadsheet")
 - Masthead: *Shilly Shally News* in UnifrakturMaguntia between hairline rules; dateline strip in
-  letterspaced small caps: weekday and date, edition name, "Espoo", "Updated 12:00".
+  letterspaced small caps: weekday and date, "Espoo", "Updated" with the time the newest story came in.
 - Section bar: one line of small-caps links with thin vertical rules, horizontally scrollable on
-  phones; condensed sticky bar on scroll.
+  phones; condensed sticky bar on scroll. Under it, a line of the papers' names in Playfair Display.
 - Type: Playfair Display (headlines, size encodes importance on a 7-step modular scale), Source Serif 4
   (body, 60-72 characters per line, `text-wrap: pretty`), Libre Franklin (kickers, bylines, captions,
   UI). All self-hosted via Fontsource, `font-display: swap`, serif fallbacks.
@@ -194,6 +223,16 @@ first** puts every photo behind the button; **no photos** removes them.
   for a print feel; aspect-ratio boxes so nothing reflows.
 - Accessibility: WCAG AA contrast, visible focus rings drawn as ink outlines, landmarks and heading
   order follow the reading order, layout survives 200 % zoom, `prefers-reduced-motion` honoured.
+
+### 7.4 Interface language
+Finnish or English, per reader (Settings → Language, also on the first welcome step): *Automatic*
+follows the browser (English when the browser prefers English to Finnish, otherwise Finnish), or a
+fixed choice. Only the interface is translated: navigation, labels, settings, taxonomy names
+(`src/lib/i18n/taxonomy.ts`; the English names in `core/taxonomy.ts` also go into the classifier
+prompt) and dates (Finnish style: "Sunnuntai 1. marraskuuta 2026", "Eilen 18.20"). Articles, calm
+headlines and summaries stay in the language they were written in. Messages live in
+`src/lib/i18n/messages/` as `{ en, fi }` pairs with the Finnish side type-checked against the English
+keys and parameters. The admin pages stay English.
 
 ## 8. Operations
 - Containers: one image, two entrypoints (`node build/index.js` web, `node build/worker.js` worker).

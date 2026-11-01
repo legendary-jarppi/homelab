@@ -7,6 +7,8 @@ import { hashPassword } from '$lib/core/auth';
 import type { Block } from '$lib/core/blocks';
 import type { Sql } from '$lib/core/db';
 import { deleteArticleImages } from '$lib/core/images';
+import { ENTITY_MAX_ATTEMPTS, ENTITY_MODEL, entitiesPending } from '$lib/core/pipeline/entities';
+import { relatedPending } from '$lib/core/pipeline/related';
 import { TAG_KEYS } from '$lib/core/taxonomy';
 
 /** The signed-in admin's id (hooks already return 404 to everyone else). */
@@ -157,6 +159,8 @@ export async function reclassifyOutlet(sql: Sql, outletId: number): Promise<numb
 // Pipeline
 
 export interface ModelStats {
+	/** What the calls were for: 'classify' or 'entities'. */
+	purpose: string;
 	model: string;
 	calls: number;
 	errors: number;
@@ -168,27 +172,42 @@ export interface ModelStats {
 }
 
 export async function pipelineStats(sql: Sql) {
-	const [[queues], models, llmErrors, articleErrors, discoveryErrors, editions, lastCall] = await Promise.all([
-		sql<{ pending_content: number; due_content: number; pending_classify: number; due_classify: number; failed_content: number; failed_classify: number }[]>`
+	const [[queues], models, llmErrors, articleErrors, discoveryErrors, lastCalls] = await Promise.all([
+		sql<
+			{
+				pending_content: number;
+				due_content: number;
+				pending_classify: number;
+				due_classify: number;
+				pending_entities: number;
+				pending_related: number;
+				failed_content: number;
+				failed_classify: number;
+				failed_entities: number;
+			}[]
+		>`
 			SELECT
 				count(*) FILTER (WHERE content_state = 'pending')::int AS pending_content,
 				count(*) FILTER (WHERE content_state = 'pending' AND content_next_at <= now())::int AS due_content,
 				count(*) FILTER (WHERE content_state = 'extracted' AND classify_state = 'pending' AND body_purged_at IS NULL)::int AS pending_classify,
 				count(*) FILTER (WHERE content_state = 'extracted' AND classify_state = 'pending' AND body_purged_at IS NULL AND classify_next_at <= now())::int AS due_classify,
+				count(*) FILTER (WHERE ${entitiesPending(sql)})::int AS pending_entities,
+				count(*) FILTER (WHERE ${relatedPending(sql)})::int AS pending_related,
 				count(*) FILTER (WHERE content_state = 'failed')::int AS failed_content,
-				count(*) FILTER (WHERE content_state = 'extracted' AND classify_state = 'failed')::int AS failed_classify
+				count(*) FILTER (WHERE content_state = 'extracted' AND classify_state = 'failed')::int AS failed_classify,
+				count(*) FILTER (WHERE entities_at IS NULL AND entities_attempts >= ${ENTITY_MAX_ATTEMPTS})::int AS failed_entities
 			FROM articles`,
 		sql<ModelStats[]>`
-			SELECT model, count(*)::int AS calls, count(*) FILTER (WHERE NOT ok)::int AS errors,
+			SELECT purpose, model, count(*)::int AS calls, count(*) FILTER (WHERE NOT ok)::int AS errors,
 				round(percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms))::int AS p50_ms,
 				round(percentile_cont(0.9) WITHIN GROUP (ORDER BY latency_ms))::int AS p90_ms,
 				coalesce(sum(input_tokens), 0)::bigint AS input_tokens,
 				coalesce(sum(output_tokens), 0)::bigint AS output_tokens,
 				coalesce(sum(cache_read_tokens), 0)::bigint AS cache_read_tokens
 			FROM llm_calls WHERE created_at > now() - interval '24 hours'
-			GROUP BY model ORDER BY calls DESC`,
-		sql<{ created_at: Date; model: string; article_id: number | null; error: string | null }[]>`
-			SELECT created_at, model, article_id, left(error, 300) AS error FROM llm_calls
+			GROUP BY purpose, model ORDER BY purpose, calls DESC`,
+		sql<{ created_at: Date; purpose: string; model: string; article_id: number | null; error: string | null }[]>`
+			SELECT created_at, purpose, model, article_id, left(error, 300) AS error FROM llm_calls
 			WHERE NOT ok ORDER BY created_at DESC LIMIT 10`,
 		sql<{ id: number; outlet: string; at: Date; stage: string; reason: string | null }[]>`
 			SELECT a.id, o.name AS outlet, coalesce(a.classified_at, a.extracted_at, a.discovered_at) AS at,
@@ -200,8 +219,12 @@ export async function pipelineStats(sql: Sql) {
 		sql<{ name: string; last_discovery_at: Date | null; last_discovery_error: string }[]>`
 			SELECT name, last_discovery_at, left(last_discovery_error, 300) AS last_discovery_error FROM outlets
 			WHERE last_discovery_error IS NOT NULL ORDER BY name`,
-		sql<{ id: number; cutoff: Date; label: string }[]>`SELECT id, cutoff, label FROM editions ORDER BY cutoff DESC LIMIT 12`,
-		sql<{ model: string; created_at: Date }[]>`SELECT model, created_at FROM llm_calls ORDER BY created_at DESC LIMIT 1`
+		sql<{ purpose: string; model: string; created_at: Date }[]>`
+			SELECT p.purpose, c.model, c.created_at
+			FROM (VALUES ('classify'), ('entities')) AS p(purpose)
+			CROSS JOIN LATERAL (
+				SELECT model, created_at FROM llm_calls WHERE purpose = p.purpose ORDER BY created_at DESC LIMIT 1
+			) c`
 	]);
 	return {
 		queues,
@@ -209,9 +232,9 @@ export async function pipelineStats(sql: Sql) {
 		llmErrors,
 		articleErrors,
 		discoveryErrors,
-		editions,
 		configuredModel: process.env.LLM_MODEL ?? null,
-		lastCall: lastCall[0] ?? null
+		entityModel: ENTITY_MODEL,
+		lastCalls
 	};
 }
 

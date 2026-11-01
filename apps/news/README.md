@@ -6,7 +6,10 @@ login; a reader invited with a `/join/` link also needs their email in *Family*)
 to avoid distressing news. Articles from Finnish outlets (and NPR) are fetched in full with their
 photos, classified by Claude (topics, sensitivity tags with intensity, per-photo tags, calm headline,
 summary, importance), de-duplicated across outlets, and shown to each reader only when they pass that
-reader's own settings. The front page is published as editions at 06:30, 12:00 and 17:00.
+reader's own settings. The front page is live: the past day's most important stories, fresher and more
+widely covered ones higher, beside the newest arrivals. Each article lists the same story in other
+papers, related stories and the people and things in it. The interface is in Finnish or English per
+reader (articles stay in their own language).
 
 Design and the reasons behind it: [DESIGN.md](DESIGN.md) (supersedes the older [SPEC.md](SPEC.md)).
 Outlet research: [docs/outlets.md](docs/outlets.md). Model choice: [docs/benchmark.md](docs/benchmark.md).
@@ -19,8 +22,9 @@ friends: keep it invite-only and never expose it publicly.
 
 | Path | What |
 |---|---|
-| `src/lib/core/` | Shared by web and worker: taxonomy, db, crawler HTTP client, outlets (one module per outlet), extraction block model, images, LLM client, classifier, visibility rule, editions, auth, preferences |
-| `src/lib/core/pipeline/` | Worker stages: discovery, content (extraction + photos), classification, embeddings/clustering |
+| `src/lib/core/` | Shared by web and worker: taxonomy, db, crawler HTTP client, outlets (one module per outlet), extraction block model, images, LLM client, classifier, visibility rule, auth, preferences |
+| `src/lib/core/pipeline/` | Worker stages: discovery, content (extraction + photos), classification, embeddings/clustering, entities (people and things), related stories |
+| `src/lib/i18n/` | Interface language: Finnish and English messages, Finnish taxonomy names, date formats |
 | `worker/main.ts` | Worker entrypoint; environment variables documented at the top |
 | `src/routes/` | Reader pages, `/welcome` onboarding, `/settings`, `/admin` |
 | `migrations/` | Versioned SQL, applied by the web pod at start |
@@ -32,12 +36,13 @@ friends: keep it invite-only and never expose it publicly.
 |---|---|
 | Invite someone | Admin page *Users & invites*, or `node --experimental-strip-types scripts/invite.ts [--role admin] --note "Name"` with `DATABASE_URL` set (prints a single-use join link, valid 14 days) |
 | Outlet health, re-run discovery, re-extract, re-classify | Admin page *Outlets* |
-| Model latency, errors, tokens; queues | Admin page *Pipeline*; `kubectl -n news logs deploy/worker` |
+| Model latency, errors, tokens; queues | Admin page *Pipeline* (model calls split by purpose: classification, entities); `kubectl -n news logs deploy/worker` |
 | First admin after a fresh install | `scripts/invite.ts --role admin` locally through the Postgres port-forward (see Develop), then open the printed link |
 | Someone cannot sign in | `kubectl -n news logs deploy/web \| grep sign` shows each attempt: `signed in`, `sign-in failed` (wrong username or password), or `sign-in cookie not returned` (the password was right but the browser did not keep the `news_session` cookie; the sign-in page then tells them to turn off Safari's *Block All Cookies* and delete the site's website data). The cookie is never Secure: the site is plain http, and a Secure cookie from an https visit (Safari upgrades the address by itself) would lock that browser out of http |
 | Misclassified article | Readers tap *This upset me* (hides it for them at once). Admin page *Reports* → correct tags (overrides the AI, survives re-classification, recorded in `tag_corrections`) |
 | Rights-holder request | Admin article page → *Purge stored text* (removes text and photo files; the article leaves every reader page) |
-| Change model | `LLM_MODEL` in `deploy/kustomization.yaml`, then `kubectl apply -k apps/news/deploy`. Re-classify from the admin page if wanted |
+| Change model | `LLM_MODEL` (classification) or `ENTITY_MODEL` (people and things, about $0.004 an article with `claude-sonnet-5-5`) in `deploy/kustomization.yaml`, then `kubectl apply -k apps/news/deploy`. Re-classify from the admin page if wanted |
+| Interface text | `src/lib/i18n/messages/` (`reader.ts`: reading pages; `account.ts`: sign-in, welcome, settings, about); Finnish taxonomy names in `src/lib/i18n/taxonomy.ts`. A missing Finnish key fails `npm run check` |
 | Add an outlet | New module in `src/lib/core/outlets/` implementing `OutletDef` (`types.ts`), register it in `outlets/index.ts`; the worker seeds it on start |
 
 Secrets (not in git):

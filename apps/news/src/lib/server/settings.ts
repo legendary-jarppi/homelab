@@ -4,6 +4,7 @@ import { hashPassword, verifyPassword } from '$lib/core/auth';
 import { db, type Sql } from '$lib/core/db';
 import { getThresholds, parseSettings, saveSettings, setThresholds, type Settings } from '$lib/core/prefs';
 import { INTENSITIES, PRESETS, presetThresholds, SENSITIVITY_TAGS, TAG_KEYS, THRESHOLDS, TOPICS, type Threshold } from '$lib/core/taxonomy';
+import { i18n, resolveLocale, type I18n } from '$lib/i18n';
 
 export const MAX_BLOCKED_TERMS = 200;
 export const MAX_TERM_LENGTH = 60;
@@ -25,7 +26,7 @@ export const sensitivityActions = {
 		const form = await request.formData();
 		const family = String(form.get('family') ?? '');
 		const threshold = parseThreshold(form.get('threshold'));
-		if (!threshold) return fail(400, { saved: null, message: 'Choose one of the options.' });
+		if (!threshold) return fail(400, { saved: null, message: i18n(locals.locale).t('prefs.error.option') });
 		await setFamilyThreshold(db(), userIdOf(locals), family, threshold);
 		return { saved: `family:${family}`, message: null };
 	},
@@ -35,6 +36,24 @@ export const sensitivityActions = {
 		const keys = SENSITIVITY_TAGS.filter((t) => t.family === family).map((t) => t.key);
 		await setTagThresholds(db(), userIdOf(locals), formThresholds(form, keys));
 		return { saved: `family:${family}`, message: null };
+	}
+};
+
+/**
+ * Interface language (Settings and the first welcome step): 'auto' follows the browser. The new
+ * language also applies to this request, so a page rendered after the action (no JavaScript) is
+ * already in it; with JavaScript, use:enhance re-runs the root layout load, which reads locals.locale.
+ */
+export const languageActions = {
+	language: async ({ request, locals }: RequestEvent) => {
+		const value = (await request.formData()).get('language');
+		if (value !== 'auto' && value !== 'fi' && value !== 'en') {
+			return fail(400, { saved: null, section: 'language', message: i18n(locals.locale).t('prefs.error.language') });
+		}
+		const language = value === 'auto' ? null : value;
+		locals.settings = await updateSettings(db(), userIdOf(locals), { language });
+		locals.locale = resolveLocale(language, request.headers.get('accept-language'));
+		return { saved: 'language', message: null };
 	}
 };
 
@@ -149,7 +168,12 @@ export async function blockedTerms(sql: Sql, userId: number): Promise<BlockedTer
 	return sql<BlockedTerm[]>`SELECT term, whole_word FROM user_blocked_terms WHERE user_id = ${userId} ORDER BY created_at, term`;
 }
 
-export class SettingsError extends Error {}
+/** A reader-facing validation error; `text` gives the message in the reader's interface language. */
+export class SettingsError extends Error {
+	constructor(readonly text: (i: I18n) => string) {
+		super(text(i18n('en')));
+	}
+}
 
 /** Normalises what the reader typed; returns null when nothing matchable remains. */
 export function normaliseTerm(raw: string): string | null {
@@ -160,9 +184,9 @@ export function normaliseTerm(raw: string): string | null {
 
 export async function addBlockedTerm(sql: Sql, userId: number, raw: string, wholeWord: boolean): Promise<void> {
 	const term = normaliseTerm(raw);
-	if (!term) throw new SettingsError('Type a word or a few words to block.');
+	if (!term) throw new SettingsError((i) => i.t('words.error.empty'));
 	const [{ n }] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM user_blocked_terms WHERE user_id = ${userId}`;
-	if (n >= MAX_BLOCKED_TERMS) throw new SettingsError(`You can block up to ${MAX_BLOCKED_TERMS} words.`);
+	if (n >= MAX_BLOCKED_TERMS) throw new SettingsError((i) => i.t('words.error.tooMany', { n: MAX_BLOCKED_TERMS }));
 	await sql`
 		INSERT INTO user_blocked_terms (user_id, term, whole_word) VALUES (${userId}, ${term}, ${wholeWord})
 		ON CONFLICT (user_id, term) DO UPDATE SET whole_word = EXCLUDED.whole_word`;
@@ -181,15 +205,15 @@ export async function removeBlockedTerm(sql: Sql, userId: number, term: string):
 
 export async function setDisplayName(sql: Sql, userId: number, raw: string): Promise<void> {
 	const name = raw.normalize('NFC').replace(/\s+/g, ' ').trim();
-	if (name.length < 1 || name.length > 60) throw new SettingsError('Use 1 to 60 characters for your name.');
+	if (name.length < 1 || name.length > 60) throw new SettingsError((i) => i.t('settings.account.nameError'));
 	await sql`UPDATE users SET display_name = ${name} WHERE id = ${userId}`;
 }
 
 /** Changes the password and ends every session of this user (the caller opens a fresh one). */
 export async function changePassword(sql: Sql, userId: number, current: string, next: string): Promise<void> {
 	const [row] = await sql<{ password_hash: string }[]>`SELECT password_hash FROM users WHERE id = ${userId}`;
-	if (!row || !(await verifyPassword(current, row.password_hash))) throw new SettingsError('The current password is not right.');
-	if (next.length < MIN_PASSWORD_LENGTH) throw new SettingsError(`Use at least ${MIN_PASSWORD_LENGTH} characters for the new password.`);
+	if (!row || !(await verifyPassword(current, row.password_hash))) throw new SettingsError((i) => i.t('settings.password.wrong'));
+	if (next.length < MIN_PASSWORD_LENGTH) throw new SettingsError((i) => i.t('settings.password.short', { n: MIN_PASSWORD_LENGTH }));
 	const hash = await hashPassword(next);
 	await sql.begin(async (tx) => {
 		await tx`UPDATE users SET password_hash = ${hash} WHERE id = ${userId}`;

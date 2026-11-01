@@ -1,9 +1,12 @@
 <script lang="ts">
+	import { useI18n } from '$lib/i18n';
+
 	/** Switch between papers on the Papers pages; `current` is the slug being read. */
 	let { papers, current }: { papers: { slug: string; name: string; hidden: boolean }[]; current?: string } = $props();
+	const i = useI18n();
 </script>
 
-<nav class="picker" aria-label="Papers">
+<nav class="picker" aria-label={i.t('nav.papers')}>
 	<ul>
 		{#each papers as p (p.slug)}
 			<li>

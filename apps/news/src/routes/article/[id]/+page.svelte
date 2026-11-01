@@ -5,10 +5,12 @@
 	import Photo from '$lib/components/Photo.svelte';
 	import ShareButton from '$lib/components/ShareButton.svelte';
 	import Story from '$lib/components/Story.svelte';
-	import { fullDate, when } from '$lib/components/format';
+	import { useI18n } from '$lib/i18n';
 
 	let { data } = $props();
+	const i = useI18n();
 	const a = $derived(data.article);
+	const KIND = { person: 'entity.kind.person', organisation: 'entity.kind.organisation', place: 'entity.kind.place', other: 'entity.kind.other' } as const;
 
 	// Optimistic state; reset whenever another article loads.
 	let saved = $derived(data.article.saved);
@@ -20,6 +22,8 @@
 	const leadInBody = $derived(a.blocks.some((b) => b.type === 'figure' && b.image === 0));
 	const lead = $derived(leadInBody ? undefined : a.photos[0]);
 	const standfirst = $derived(a.standfirst ?? a.summary);
+	/** One link per other paper in the byline; the rail lists every version. */
+	const otherPapers = $derived([...new Map(a.alsoIn.map((m) => [m.outletSlug, m])).values()]);
 
 	const toggleSave: SubmitFunction = () => {
 		const before = saved;
@@ -56,115 +60,204 @@
 </svelte:head>
 
 {#snippet actions(where: string)}
-	<div class="actions no-print" role="group" aria-label="Article actions">
+	<div class="actions no-print" role="group" aria-label={i.t('article.actions')}>
 		<form method="post" action="?/save" use:enhance={toggleSave}>
 			<input type="hidden" name="on" value={saved ? '0' : '1'} />
-			<button class="button" type="submit" aria-pressed={saved}>{saved ? 'Saved' : 'Save'}</button>
+			<button class="button" type="submit" aria-pressed={saved}>{saved ? i.t('article.saved') : i.t('article.save')}</button>
 		</form>
 		<ShareButton url={data.shareUrl} title={a.headline} />
 		<form method="post" action="?/mute" use:enhance={putAway('muted')}>
-			<button class="button" type="submit" disabled={busy}>Not for me</button>
+			<button class="button" type="submit" disabled={busy}>{i.t('article.notForMe')}</button>
 		</form>
 		<form method="post" action="?/report" use:enhance={putAway('reported')}>
-			<button class="button" type="submit" disabled={busy} aria-describedby="upset-hint-{where}">This upset me</button>
-			<span class="visually-hidden" id="upset-hint-{where}">Hides this article at once and asks an editor to look at it.</span>
+			<button class="button" type="submit" disabled={busy} aria-describedby="upset-hint-{where}">{i.t('article.upset')}</button>
+			<span class="visually-hidden" id="upset-hint-{where}">{i.t('article.upsetHint')}</span>
 		</form>
 	</div>
+{/snippet}
+
+{#snippet links(list: { id: number; headline: string; outlet: string; outletSlug: string; language: string | null; publishedAt: Date }[], showOutlet = true)}
+	<ul class="links">
+		{#each list as s (s.id)}
+			<li>
+				<a class="hed hed-1" href="/article/{s.id}" lang={s.language ?? undefined}>{s.headline}</a>
+				<p class="byline">
+					{#if showOutlet}<a class="paper" href="/papers/{s.outletSlug}">{s.outlet}</a> <span aria-hidden="true">·</span>{/if}
+					<time datetime={s.publishedAt.toISOString()} title={i.fullDate(s.publishedAt)}>{i.when(s.publishedAt)}</time>
+				</p>
+			</li>
+		{/each}
+	</ul>
 {/snippet}
 
 {#if removed}
 	<section class="removed" aria-live="polite">
 		{#if removed === 'reported'}
-			<h1 class="hed hed-3">Thank you for telling us.</h1>
-			<p>This article is gone from your paper, and an editor will look at it. You don’t need to do anything else.</p>
+			<h1 class="hed hed-3">{i.t('article.reportedTitle')}</h1>
+			<p>{i.t('article.reportedText')}</p>
 		{:else}
-			<h1 class="hed hed-3">Put away.</h1>
-			<p>This article won’t appear in your paper again.</p>
+			<h1 class="hed hed-3">{i.t('article.mutedTitle')}</h1>
+			<p>{i.t('article.mutedText')}</p>
 			<form method="post" action="?/unmute" use:enhance={undo}>
-				<button class="button" type="submit" disabled={busy}>Undo</button>
+				<button class="button" type="submit" disabled={busy}>{i.t('article.undo')}</button>
 			</form>
 		{/if}
-		<p><a class="button button-primary" href="/">Back to the front page</a></p>
+		<p><a class="button button-primary" href="/">{i.t('article.backToFront')}</a></p>
 	</section>
 {:else}
-	<article class="article">
-		<header class="head">
-			{#if a.kicker}
-				<p class="kicker">
-					{#if a.section && a.sectionLabel}<a href="/section/{a.section}">{a.kicker}</a>{:else}{a.kicker}{/if}
+	<div class="layout">
+		<article class="article">
+			<header class="head">
+				{#if a.topic}
+					<p class="kicker">
+						{#if a.section}<a href="/section/{a.section}">{i.topic(a.topic).label}</a>{:else}{i.topic(a.topic).label}{/if}
+					</p>
+				{/if}
+				<h1 class="hed hed-6 headline" lang={a.language ?? undefined}>{a.headline}</h1>
+				{#if standfirst}<p class="standfirst" lang={a.language ?? undefined}>{standfirst}</p>{/if}
+				<p class="byline">
+					{#if a.author}<span lang={a.language ?? undefined}>{a.author}</span> <span aria-hidden="true">·</span>{/if}
+					<a class="paper" href="/papers/{a.outletSlug}">{a.outlet}</a>
+					<span aria-hidden="true">·</span>
+					<time datetime={a.publishedAt.toISOString()} title={i.fullDate(a.publishedAt)}>{i.when(a.publishedAt)}</time>
+					<span aria-hidden="true">·</span>
+					{i.t('story.minutes', { n: a.minutes })}
 				</p>
+				{#if otherPapers.length > 0}
+					<p class="also-line">
+						<span class="also-label">{i.t('story.alsoIn')}</span>
+						{#each otherPapers as m, n (m.id)}<a href="/article/{m.id}">{m.outlet}</a>{#if n < otherPapers.length - 1}<span aria-hidden="true">,</span>{/if}{/each}
+					</p>
+				{/if}
+				{@render actions('top')}
+			</header>
+
+			{#if lead}
+				<div class="lead-figure">
+					<Photo photo={lead} eager />
+				</div>
 			{/if}
-			<h1 class="hed hed-6 headline" lang={a.language ?? undefined}>{a.headline}</h1>
-			{#if standfirst}<p class="standfirst" lang={a.language ?? undefined}>{standfirst}</p>{/if}
-			<p class="byline">
-				{#if a.author}<span lang={a.language ?? undefined}>{a.author}</span> <span aria-hidden="true">·</span>{/if}
-				{a.outlet}
-				<span aria-hidden="true">·</span>
-				<time datetime={a.publishedAt.toISOString()} title={fullDate(a.publishedAt)}>{when(a.publishedAt)}</time>
-				<span aria-hidden="true">·</span>
-				{a.minutes} min read
-			</p>
-			{@render actions('top')}
-		</header>
 
-		{#if lead}
-			<div class="lead-figure">
-				<Photo photo={lead} eager />
+			<div class="body-wrap">
+				<Blocks blocks={a.blocks} photos={a.photos} lang={a.language ?? undefined} />
 			</div>
-		{/if}
 
-		<div class="body-wrap">
-			<Blocks blocks={a.blocks} photos={a.photos} lang={a.language ?? undefined} />
-		</div>
+			<footer class="source">
+				<p class="original">
+					{i.t('article.originally', { outlet: a.outlet })} <q lang={a.language ?? undefined}>{a.originalTitle}</q>
+				</p>
+				<p><a href={a.url} rel="noreferrer noopener" target="_blank">{i.t('article.readAt', { outlet: a.outlet })}</a></p>
+				{@render actions('bottom')}
+			</footer>
 
-		<footer class="source">
-			<p class="original">
-				Originally published by {a.outlet} as <q lang={a.language ?? undefined}>{a.originalTitle}</q>
-			</p>
-			<p><a href={a.url} rel="noreferrer noopener" target="_blank">Read at {a.outlet}</a></p>
-			{@render actions('bottom')}
-		</footer>
-	</article>
+			{#if a.next}
+				<section class="next no-print" aria-labelledby="read-next">
+					<h2 class="section-head" id="read-next">{i.t('article.next')}</h2>
+					<Story card={a.next} variant="secondary" photo summary />
+				</section>
+			{/if}
+		</article>
 
-	{#if a.alsoIn.length > 0}
-		<section class="also" aria-labelledby="also-in">
-			<h2 class="section-head" id="also-in">Also in</h2>
-			<ul>
-				{#each a.alsoIn as m (m.id)}
-					<li>
-						<span class="kicker">{m.outlet}</span>
-						<a class="hed hed-1" href="/article/{m.id}">{m.headline}</a>
-					</li>
-				{/each}
-			</ul>
-		</section>
-	{/if}
+		<aside class="rail rail-left no-print" aria-label={i.t('article.coverage')}>
+			{#if a.alsoIn.length > 0}
+				<section class="box also" aria-labelledby="also-in">
+					<h2 class="section-head" id="also-in">{i.t('article.alsoInTitle')}</h2>
+					<p class="hint">{i.t('article.alsoInHint')}</p>
+					<ul class="links">
+						{#each a.alsoIn as m (m.id)}
+							<li>
+								<a class="paper-name" href="/papers/{m.outletSlug}">{m.outlet}</a>
+								<a class="hed hed-1" href="/article/{m.id}" lang={m.language ?? undefined}>{m.headline}</a>
+								<p class="byline">
+									<time datetime={m.publishedAt.toISOString()} title={i.fullDate(m.publishedAt)}>{i.when(m.publishedAt)}</time>
+									<span aria-hidden="true">·</span>
+									{i.t('story.minutes', { n: m.minutes })}
+								</p>
+							</li>
+						{/each}
+					</ul>
+				</section>
+			{/if}
+			{#if a.morePaper.length > 0}
+				<section class="box" aria-labelledby="more-paper">
+					<h2 class="section-head" id="more-paper"><a href="/papers/{a.outletSlug}">{i.t('article.morePaper', { paper: a.outlet })}</a></h2>
+					{@render links(a.morePaper, false)}
+				</section>
+			{/if}
+		</aside>
 
-	{#if a.more.length > 0}
-		<section class="more no-print" aria-labelledby="more-from">
-			<h2 class="section-head" id="more-from">
-				<a href="/section/{a.section}">More from {a.sectionLabel ?? 'the paper'}</a>
-			</h2>
-			<div class="more-grid">
-				{#each a.more as card (card.id)}
-					<Story {card} summary />
-				{/each}
-			</div>
-		</section>
-	{/if}
+		<aside class="rail rail-right no-print" aria-label={i.t('article.around')}>
+			{#if a.related.length > 0}
+				<section class="box" aria-labelledby="related">
+					<h2 class="section-head" id="related">{i.t('article.related')}</h2>
+					<div class="related">
+						{#each a.related as card (card.id)}
+							<Story {card} variant="brief" photo />
+						{/each}
+					</div>
+				</section>
+			{/if}
+			{#if a.entities.length > 0}
+				<section class="box" aria-labelledby="entities">
+					<h2 class="section-head" id="entities">{i.t('article.entities')}</h2>
+					{#each a.entities as e (e.id)}
+						<section class="entity" aria-labelledby="entity-{e.id}">
+							<h3 class="entity-name" id="entity-{e.id}">
+								<a href="/entity/{e.id}">{e.name}</a>
+								<span class="entity-kind">{i.t(KIND[e.kind])}</span>
+							</h3>
+							{#if e.stories.length > 0}{@render links(e.stories)}{/if}
+							<p class="more"><a href="/entity/{e.id}">{i.t('article.allAbout', { name: e.name })}</a></p>
+						</section>
+					{/each}
+				</section>
+			{/if}
+			{#if a.moreSection.length > 0 && a.section}
+				<section class="box" aria-labelledby="more-section">
+					<h2 class="section-head" id="more-section"><a href="/section/{a.section}">{i.t('article.moreSection', { section: i.section(a.section) })}</a></h2>
+					{@render links(a.moreSection)}
+				</section>
+			{/if}
+		</aside>
+	</div>
 {/if}
 
 <style>
+	/* Phones and iPads: the article, then the rails below it. Wide screens: rails either side. */
+	.layout {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr);
+		grid-template-areas: 'main' 'left' 'right';
+		gap: var(--space-7) var(--gutter);
+		margin-top: var(--space-6);
+	}
+
 	.article {
+		grid-area: main;
 		--column: min(100%, 44rem);
 		display: grid;
 		justify-items: center;
-		margin-top: var(--space-6);
+		align-content: start;
+	}
+
+	.rail-left {
+		grid-area: left;
+	}
+
+	.rail-right {
+		grid-area: right;
+	}
+
+	.rail {
+		display: grid;
+		align-content: start;
+		gap: var(--space-6);
 	}
 
 	.head,
 	.body-wrap,
-	.source {
+	.source,
+	.next {
 		width: var(--column);
 	}
 
@@ -190,6 +283,31 @@
 	.head .byline {
 		padding-top: var(--space-3);
 		border-top: var(--hairline);
+	}
+
+	.also-line {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		column-gap: 0.35em;
+		font-family: var(--font-ui);
+		font-size: var(--step--1);
+		color: var(--ink-2);
+	}
+
+	.also-line span[aria-hidden] {
+		margin-left: -0.35em;
+	}
+
+	.also-line a {
+		color: var(--ink);
+		font-weight: 600;
+	}
+
+	.also-label {
+		margin-right: var(--space-1);
+		font-weight: 600;
+		color: var(--accent);
 	}
 
 	.actions {
@@ -232,45 +350,141 @@
 		font-weight: 600;
 	}
 
-	.also,
-	.more {
+	.next {
 		margin-top: var(--space-7);
 	}
 
-	.also {
-		width: min(100%, 44rem);
-		margin-inline: auto;
+	.box .section-head {
+		margin-bottom: var(--space-3);
 	}
 
-	.also ul {
+	.hint {
+		margin-bottom: var(--space-2);
+		font-family: var(--font-ui);
+		font-size: var(--step--1);
+		color: var(--ink-2);
+	}
+
+	.links {
 		margin: 0;
 		padding: 0;
 		list-style: none;
 	}
 
-	.also li {
+	.links li {
 		display: grid;
 		gap: var(--space-1);
 		padding: var(--space-3) 0;
 		border-top: var(--hairline);
 	}
 
-	.also li:first-child {
+	.links li:first-child {
 		border-top: 0;
+		padding-top: 0;
 	}
 
-	.also .hed {
+	.links .hed {
 		text-decoration: none;
 	}
 
-	.also .hed:hover {
+	.links .hed:hover {
 		text-decoration: underline;
 	}
 
-	.more-grid {
-		columns: 4 14rem;
-		column-gap: var(--gutter);
-		column-rule: var(--hairline);
+	/* "Also in": each paper's name as a small nameplate over its headline. */
+	.also .paper-name {
+		font-family: var(--font-head);
+		font-size: var(--step-0);
+		font-weight: 700;
+		color: var(--ink);
+		text-decoration: none;
+	}
+
+	.also .paper-name:hover {
+		text-decoration: underline;
+		text-decoration-color: var(--accent);
+	}
+
+	.also {
+		padding: var(--space-4);
+		background: var(--paper-2);
+	}
+
+	.related {
+		display: grid;
+		gap: var(--space-3);
+	}
+
+	.related > :global(.story + .story) {
+		padding-top: var(--space-3);
+		border-top: var(--hairline);
+	}
+
+	/* Related: a small photo beside the headline, so the rail stays a list. */
+	.related :global(.story.has-photo .inner) {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 30%;
+		gap: var(--space-3);
+	}
+
+	.related :global(.story.has-photo .art) {
+		grid-column: 2;
+		grid-row: 1;
+		margin: 0.2em 0 0;
+	}
+
+	.related :global(.story.has-photo .text) {
+		grid-column: 1;
+		grid-row: 1;
+	}
+
+	.entity {
+		display: grid;
+		gap: var(--space-2);
+		padding: var(--space-3) 0 var(--space-4);
+	}
+
+	.entity + .entity {
+		border-top: 1px solid var(--ink);
+	}
+
+	.entity-name {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: baseline;
+		gap: var(--space-1) var(--space-2);
+		font-family: var(--font-head);
+		font-size: var(--step-1);
+		font-weight: 700;
+		line-height: 1.2;
+	}
+
+	.entity-name a {
+		text-decoration: none;
+	}
+
+	.entity-name a:hover {
+		text-decoration: underline;
+		text-decoration-color: var(--accent);
+	}
+
+	.entity-kind {
+		font-family: var(--font-ui);
+		font-size: var(--step--2);
+		font-weight: 600;
+		letter-spacing: 0.12em;
+		text-transform: uppercase;
+		color: var(--ink-3);
+	}
+
+	.more {
+		font-family: var(--font-ui);
+		font-size: var(--step--1);
+		font-weight: 600;
+	}
+
+	.more a {
+		text-decoration-color: var(--accent);
 	}
 
 	.removed {
@@ -281,7 +495,58 @@
 		margin: var(--space-8) auto;
 	}
 
+	/* iPad landscape: rails side by side under the article. */
+	@media (min-width: 48rem) and (max-width: 79.99rem) {
+		.layout {
+			grid-template-columns: repeat(2, minmax(0, 1fr));
+			grid-template-areas: 'main main' 'left right';
+		}
+	}
+
+	/* Wide screens: the coverage rail left of the article, the context rail right of it. */
+	@media (min-width: 80rem) {
+		.layout {
+			grid-template-columns: minmax(14rem, 17rem) minmax(0, 44rem) minmax(15rem, 19rem);
+			grid-template-areas: 'left main right';
+			justify-content: center;
+		}
+
+		.article {
+			--column: 100%;
+		}
+
+		.lead-figure {
+			width: 100%;
+		}
+
+		.rail-left,
+		.rail-right {
+			position: relative;
+		}
+
+		.rail-left::after,
+		.rail-right::before {
+			content: '';
+			position: absolute;
+			top: 0;
+			bottom: 0;
+			border-left: var(--hairline);
+		}
+
+		.rail-left::after {
+			right: calc(var(--gutter) / -2);
+		}
+
+		.rail-right::before {
+			left: calc(var(--gutter) / -2);
+		}
+	}
+
 	@media print {
+		.layout {
+			display: block;
+		}
+
 		.article {
 			--column: 100%;
 		}

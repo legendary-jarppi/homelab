@@ -1,16 +1,19 @@
 <script lang="ts">
 	import { PRESETS } from '$lib/core/taxonomy';
+	import { useI18n } from '$lib/i18n';
 
 	let { selected }: { selected: string | null } = $props();
+
+	const i = useI18n();
 </script>
 
 <fieldset class="presets">
-	<legend class="visually-hidden">Comfort level</legend>
+	<legend class="visually-hidden">{i.t('prefs.comfortLevel')}</legend>
 	{#each PRESETS as preset (preset.key)}
 		<label class="preset">
 			<input type="radio" name="preset" value={preset.key} checked={selected === preset.key} required />
-			<span class="name">{preset.label}</span>
-			<span class="description">{preset.description}</span>
+			<span class="name">{i.preset(preset.key).label}</span>
+			<span class="description">{i.preset(preset.key).description}</span>
 		</label>
 	{/each}
 </fieldset>

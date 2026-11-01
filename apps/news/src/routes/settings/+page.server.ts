@@ -2,6 +2,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { createSession } from '$lib/core/auth';
 import { db } from '$lib/core/db';
 import { PRESETS, TOPICS } from '$lib/core/taxonomy';
+import { i18n } from '$lib/i18n';
 import { clearSessionCookie, setSessionCookie } from '$lib/server/session';
 import {
 	addBlockedTerm,
@@ -9,6 +10,7 @@ import {
 	blockedTerms,
 	changePassword,
 	hiddenTopics,
+	languageActions,
 	loadThresholds,
 	MAX_TERM_LENGTH,
 	MIN_PASSWORD_LENGTH,
@@ -52,12 +54,13 @@ const failed = (section: string, message: string) => fail(400, { saved: null, se
 
 export const actions = {
 	...sensitivityActions,
+	...languageActions,
 
 	/** Two steps: the first post asks for confirmation, because a preset replaces every per-subject choice. */
 	preset: async ({ request, locals }) => {
 		const form = await request.formData();
 		const preset = String(form.get('preset') ?? '');
-		if (!PRESETS.some((p) => p.key === preset)) return failed('comfort', 'Choose one of the comfort levels.');
+		if (!PRESETS.some((p) => p.key === preset)) return failed('comfort', i18n(locals.locale).t('prefs.error.preset'));
 		if (form.get('confirm') !== 'yes') return { confirmPreset: preset, saved: null, message: null };
 		await applyPresetFor(db(), userIdOf(locals), preset);
 		return saved('comfort');
@@ -90,7 +93,7 @@ export const actions = {
 		try {
 			await addBlockedTerm(db(), userIdOf(locals), String(form.get('term') ?? ''), form.get('whole_word') === 'on');
 		} catch (e) {
-			if (e instanceof SettingsError) return failed('words', e.message);
+			if (e instanceof SettingsError) return failed('words', e.text(i18n(locals.locale)));
 			throw e;
 		}
 		return saved('words');
@@ -111,14 +114,14 @@ export const actions = {
 	display: async ({ request, locals }) => {
 		const form = await request.formData();
 		const images = form.get('images');
-		if (images !== 'show' && images !== 'click' && images !== 'hide') return failed('display', 'Choose how photos are shown.');
+		if (images !== 'show' && images !== 'click' && images !== 'hide') return failed('display', i18n(locals.locale).t('prefs.error.photos'));
 		await updateSettings(db(), userIdOf(locals), { images, calmHeadlines: form.get('calmHeadlines') === 'on' });
 		return saved('display');
 	},
 
 	theme: async ({ request, locals }) => {
 		const theme = (await request.formData()).get('theme');
-		if (theme !== 'system' && theme !== 'light' && theme !== 'dark') return failed('theme', 'Choose a theme.');
+		if (theme !== 'system' && theme !== 'light' && theme !== 'dark') return failed('theme', i18n(locals.locale).t('settings.theme.error'));
 		await updateSettings(db(), userIdOf(locals), { theme });
 		return saved('theme');
 	},
@@ -127,7 +130,7 @@ export const actions = {
 		try {
 			await setDisplayName(db(), userIdOf(locals), String((await request.formData()).get('displayName') ?? ''));
 		} catch (e) {
-			if (e instanceof SettingsError) return failed('account', e.message);
+			if (e instanceof SettingsError) return failed('account', e.text(i18n(locals.locale)));
 			throw e;
 		}
 		return saved('name');
@@ -136,12 +139,12 @@ export const actions = {
 	password: async ({ request, locals, cookies }) => {
 		const form = await request.formData();
 		const next = String(form.get('next') ?? '');
-		if (next !== String(form.get('confirm') ?? '')) return failed('password', 'The two new passwords do not match.');
+		if (next !== String(form.get('confirm') ?? '')) return failed('password', i18n(locals.locale).t('settings.password.differ'));
 		const userId = userIdOf(locals);
 		try {
 			await changePassword(db(), userId, String(form.get('current') ?? ''), next);
 		} catch (e) {
-			if (e instanceof SettingsError) return failed('password', e.message);
+			if (e instanceof SettingsError) return failed('password', e.text(i18n(locals.locale)));
 			throw e;
 		}
 		// Every session ended with the old password; this device continues with a fresh one.

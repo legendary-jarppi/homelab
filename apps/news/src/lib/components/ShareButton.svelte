@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { onMount, tick } from 'svelte';
+	import { useI18n } from '$lib/i18n';
 
 	/**
 	 * Shares an article's address: the system share sheet where there is one (Safari and Chrome over
@@ -8,6 +9,8 @@
 	 * this is the only way to pass an article on there. Needs JavaScript: not rendered without it.
 	 */
 	let { url, title }: { url: string; title: string } = $props();
+
+	const i = useI18n();
 
 	let mounted = $state(false);
 	let status = $state<'idle' | 'copied' | 'manual'>('idle');
@@ -60,10 +63,10 @@
 </script>
 
 {#if mounted}
-	<button class="button" type="button" onclick={share} aria-live="polite">{status === 'copied' ? 'Link copied' : 'Share'}</button>
+	<button class="button" type="button" onclick={share} aria-live="polite">{status === 'copied' ? i.t('shareButton.copied') : i.t('shareButton.share')}</button>
 	{#if status === 'manual'}
 		<label class="manual">
-			<span class="visually-hidden">Article link</span>
+			<span class="visually-hidden">{i.t('shareButton.link')}</span>
 			<input bind:this={field} readonly value={url} onfocus={(e) => e.currentTarget.select()} />
 		</label>
 	{/if}
