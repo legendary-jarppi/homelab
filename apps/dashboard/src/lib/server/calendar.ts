@@ -1,11 +1,11 @@
 // Family calendar: through the Google Calendar API when a service account is set up (then events
-// can also be added), otherwise from the calendar's "secret address in iCal format"
+// can also be added, edited and deleted), otherwise from the calendar's "secret address in iCal format"
 // (CALENDAR_ICS_URL, read-only), whose recurring events are expanded here (with their exceptions and
 // cancellations). Either way over the days the card shows: today through the end of next week.
 import ICAL from 'ical.js';
 import { config } from '$lib/server/config';
-import { googleCalendarConfigured, insertEvent, listEvents, type GoogleEvent, type GoogleTime } from '$lib/server/google-calendar';
-import type { CalendarData, CalendarEvent, NewCalendarEvent } from '$lib/types';
+import { deleteEvent, GoogleCalendarError, googleCalendarConfigured, insertEvent, listEvents, patchEvent, type GoogleEvent, type GoogleTime } from '$lib/server/google-calendar';
+import type { CalendarData, CalendarEvent, CalendarEventChange, EventTiming, NewCalendarEvent } from '$lib/types';
 
 /** Day boundaries are the household's, whatever zone the calendar itself is set to. */
 export const TIME_ZONE = 'Europe/Helsinki';
@@ -46,7 +46,7 @@ export function parseCalendar(ics: string, from: Date, to: Date, color: string):
 	const windowEnd = ICAL.Time.fromJSDate(to, true);
 	const events: CalendarEvent[] = [];
 
-	const add = (item: ICAL.Event, start: ICAL.Time, end: ICAL.Time, recurrence: string) => {
+	const add = (item: ICAL.Event, start: ICAL.Time, end: ICAL.Time, recurrence: string, recurring: boolean) => {
 		if (item.component.getFirstPropertyValue('status') === 'CANCELLED') return;
 		if (end.compare(windowStart) <= 0 || start.compare(windowEnd) >= 0) return;
 		const allDay = start.isDate;
@@ -66,23 +66,24 @@ export function parseCalendar(ics: string, from: Date, to: Date, color: string):
 			location: location || null,
 			description: description || null,
 			calendar,
-			color
+			color,
+			recurring
 		});
 	};
 
 	for (const event of masters.values()) {
 		if (!event.isRecurring()) {
-			add(event, event.startDate, event.endDate, event.startDate.toString());
+			add(event, event.startDate, event.endDate, event.startDate.toString(), false);
 			continue;
 		}
 		const iterator = event.iterator();
 		for (let i = 0, next = iterator.next(); next && i < MAX_OCCURRENCES_PER_EVENT; i++, next = iterator.next()) {
 			if (next.compare(windowEnd) >= 0) break;
 			const occurrence = event.getOccurrenceDetails(next);
-			add(occurrence.item, occurrence.startDate, occurrence.endDate, next.toString());
+			add(occurrence.item, occurrence.startDate, occurrence.endDate, next.toString(), true);
 		}
 	}
-	for (const ex of orphans) add(ex, ex.startDate, ex.endDate, ex.recurrenceId.toString());
+	for (const ex of orphans) add(ex, ex.startDate, ex.endDate, ex.recurrenceId.toString(), true);
 
 	events.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 	return { timeZone: TIME_ZONE, events, updatedAt: Date.now(), writable: false };
@@ -113,11 +114,12 @@ export function fromGoogle(e: GoogleEvent, calendar: string, color: string): Cal
 		title: (e.summary ?? '').trim() || '(no title)',
 		start: isoOf(e.start),
 		end: isoOf(e.end),
-		allDay: e.start.date !== undefined,
+		allDay: typeof e.start.date === 'string',
 		location: (e.location ?? '').trim() || null,
 		description: description || null,
 		calendar,
-		color
+		color,
+		recurring: e.recurringEventId !== undefined
 	};
 }
 
@@ -164,31 +166,85 @@ function wallPlus(date: string, time: string, minutes: number): string {
 	return `${t.getUTCFullYear()}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}T${pad(t.getUTCHours())}:${pad(t.getUTCMinutes())}:00`;
 }
 
+function checkTitle(raw: string | undefined): string {
+	const title = raw?.trim().slice(0, 200);
+	if (!title) throw new CalendarInputError('Give the event a name.');
+	return title;
+}
+
+/** Google start and end for the entered timing; the unused kind is null, so a patch can switch all-day and timed. */
+function googleTimes(timing: EventTiming): { start: GoogleTime; end: GoogleTime } {
+	if (!/^\d{4}-\d{2}-\d{2}$/.test(timing.date ?? '') || Number.isNaN(Date.parse(timing.date))) throw new CalendarInputError('Choose a date.');
+	if (timing.allDay) {
+		const days = timing.days ?? 1;
+		if (!Number.isInteger(days) || days < 1 || days > 31) throw new CalendarInputError('An all-day event lasts 1 to 31 days.');
+		return {
+			start: { date: timing.date, dateTime: null, timeZone: null },
+			end: { date: wallPlus(timing.date, '00:00', days * 1440).slice(0, 10), dateTime: null, timeZone: null }
+		};
+	}
+	if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(timing.time ?? '')) throw new CalendarInputError('Choose a start time.');
+	const minutes = timing.minutes ?? 60;
+	if (!Number.isInteger(minutes) || minutes < 5 || minutes > 7 * 1440) throw new CalendarInputError('Choose how long it lasts.');
+	const time = timing.time as string;
+	return {
+		start: { date: null, dateTime: `${timing.date}T${time}:00`, timeZone: TIME_ZONE },
+		end: { date: null, dateTime: wallPlus(timing.date, time, minutes), timeZone: TIME_ZONE }
+	};
+}
+
+const text = (s: string | null | undefined, max: number) => s?.trim().slice(0, max) ?? '';
+
 /** Adds an event to the family calendar (Google Calendar API only) and returns it as the card shows it. */
 export async function addEvent(input: NewCalendarEvent): Promise<CalendarEvent> {
 	if (!googleCalendarConfigured()) throw new CalendarInputError('Adding events is not set up.');
-	const title = input.title?.trim().slice(0, 200);
-	if (!title) throw new CalendarInputError('Give the event a name.');
-	if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date ?? '') || Number.isNaN(Date.parse(input.date))) throw new CalendarInputError('Choose a date.');
-	const text = (s: string | null, max: number) => s?.trim().slice(0, max) || undefined;
-	const base = { summary: title, location: text(input.location, 200), description: text(input.description, 2000) };
-	let event: Omit<GoogleEvent, 'id' | 'status'>;
-	if (input.allDay) {
-		const days = input.days ?? 1;
-		if (!Number.isInteger(days) || days < 1 || days > 31) throw new CalendarInputError('An all-day event lasts 1 to 31 days.');
-		event = { ...base, start: { date: input.date }, end: { date: wallPlus(input.date, '00:00', days * 1440).slice(0, 10) } };
-	} else {
-		if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(input.time ?? '')) throw new CalendarInputError('Choose a start time.');
-		const minutes = input.minutes ?? 60;
-		if (!Number.isInteger(minutes) || minutes < 5 || minutes > 7 * 1440) throw new CalendarInputError('Choose how long it lasts.');
-		const time = input.time as string;
-		event = {
-			...base,
-			start: { dateTime: `${input.date}T${time}:00`, timeZone: TIME_ZONE },
-			end: { dateTime: wallPlus(input.date, time, minutes), timeZone: TIME_ZONE }
-		};
-	}
-	const created = await insertEvent(event);
+	const summary = checkTitle(input.title);
+	const { start, end } = googleTimes(input);
+	const created = await insertEvent({
+		summary,
+		location: text(input.location, 200) || undefined,
+		description: text(input.description, 2000) || undefined,
+		// A new event has no date/dateTime to clear.
+		start: Object.fromEntries(Object.entries(start).filter(([, v]) => v !== null)),
+		end: Object.fromEntries(Object.entries(end).filter(([, v]) => v !== null))
+	});
 	cache = null;
 	return fromGoogle(created, 'Calendar', config.calendarColor) as CalendarEvent;
+}
+
+/** Google event ids, and occurrence ids of repeating events (`<id>_20261105T120000Z`). */
+const EVENT_ID = /^[A-Za-z0-9_-]{1,1024}$/;
+
+/**
+ * Changes the given parts of an event (Google Calendar API only). An occurrence of a repeating
+ * event changes alone; the series stays. Parts not given stay as they are in Google, so editing the
+ * name never flattens a formatted description. An empty location or description clears it.
+ */
+export async function updateEvent(id: string, change: CalendarEventChange): Promise<CalendarEvent> {
+	if (!googleCalendarConfigured()) throw new CalendarInputError('Editing events is not set up.');
+	if (!EVENT_ID.test(id)) throw new CalendarInputError('No such event.');
+	const patch: Parameters<typeof patchEvent>[1] = {};
+	if (change.title !== undefined) patch.summary = checkTitle(change.title);
+	if (change.timing !== undefined) Object.assign(patch, googleTimes(change.timing));
+	if (change.location !== undefined) patch.location = text(change.location, 200);
+	if (change.description !== undefined) patch.description = text(change.description, 2000);
+	if (Object.keys(patch).length === 0) throw new CalendarInputError('Nothing to change.');
+	const updated = await patchEvent(id, patch);
+	cache = null;
+	return fromGoogle(updated, 'Calendar', config.calendarColor) as CalendarEvent;
+}
+
+/**
+ * Deletes an event (Google Calendar API only); an occurrence of a repeating event goes alone.
+ * Already gone (deleted elsewhere meanwhile) counts as done.
+ */
+export async function removeEvent(id: string): Promise<void> {
+	if (!googleCalendarConfigured()) throw new CalendarInputError('Deleting events is not set up.');
+	if (!EVENT_ID.test(id)) throw new CalendarInputError('No such event.');
+	try {
+		await deleteEvent(id);
+	} catch (e) {
+		if (!(e instanceof GoogleCalendarError && (e.status === 404 || e.status === 410))) throw e;
+	}
+	cache = null;
 }

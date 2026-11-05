@@ -289,7 +289,7 @@ export interface CalendarData {
 	timeZone: string;
 	events: CalendarEvent[];
 	updatedAt: number;
-	/** Events can be added from the dashboard (POST /api/calendar). */
+	/** Events can be added, edited and deleted from the dashboard (POST /api/calendar, PATCH and DELETE /api/calendar/<id>). */
 	writable: boolean;
 }
 
@@ -306,11 +306,12 @@ export interface CalendarEvent {
 	/** Whose calendar or which shared calendar; `color` is a CSS colour for it. */
 	calendar: string;
 	color: string;
+	/** One occurrence of a repeating event: editing it changes only this occurrence. */
+	recurring: boolean;
 }
 
-/** POST /api/calendar: wall-clock date and time in CalendarData.timeZone. */
-export interface NewCalendarEvent {
-	title: string;
+/** When an event happens, as entered: wall-clock date and time in CalendarData.timeZone. */
+export interface EventTiming {
 	/** "YYYY-MM-DD" */
 	date: string;
 	allDay: boolean;
@@ -320,8 +321,21 @@ export interface NewCalendarEvent {
 	minutes: number | null;
 	/** All-day events: how many days. */
 	days: number | null;
+}
+
+/** POST /api/calendar. */
+export interface NewCalendarEvent extends EventTiming {
+	title: string;
 	location: string | null;
 	description: string | null;
+}
+
+/** PATCH /api/calendar/<id>: only the parts that changed (Google keeps the rest, e.g. a formatted description). */
+export interface CalendarEventChange {
+	title?: string;
+	timing?: EventTiming;
+	location?: string | null;
+	description?: string | null;
 }
 
 export type Carrier = 'posti' | 'matkahuolto' | 'dhl' | 'ups' | 'dsv';

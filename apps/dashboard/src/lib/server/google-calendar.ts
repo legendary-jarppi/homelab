@@ -13,11 +13,14 @@ interface ServiceAccount {
 	token_uri: string;
 }
 
-/** Start or end: `date` for all-day events (end exclusive), otherwise `dateTime` (RFC 3339). */
+/**
+ * Start or end: `date` for all-day events (end exclusive), otherwise `dateTime` (RFC 3339). In a
+ * patch, null clears a field (an all-day event becoming timed drops its `date`).
+ */
 export interface GoogleTime {
-	date?: string;
-	dateTime?: string;
-	timeZone?: string;
+	date?: string | null;
+	dateTime?: string | null;
+	timeZone?: string | null;
 }
 
 export interface GoogleEvent {
@@ -28,6 +31,17 @@ export interface GoogleEvent {
 	location?: string;
 	start: GoogleTime;
 	end: GoogleTime;
+	/** Set on an occurrence of a repeating event (listed with singleEvents). */
+	recurringEventId?: string;
+}
+
+export class GoogleCalendarError extends Error {
+	constructor(
+		readonly status: number,
+		message: string
+	) {
+		super(message);
+	}
 }
 
 export const googleCalendarConfigured = () => config.googleServiceAccount !== '' && config.calendarId !== '';
@@ -55,7 +69,7 @@ async function accessToken(): Promise<string> {
 	return token.value;
 }
 
-async function call<T>(method: 'GET' | 'POST', path: string, body?: object): Promise<T> {
+async function call<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: object): Promise<T> {
 	const response = await fetch(`${API}/calendars/${encodeURIComponent(config.calendarId)}${path}`, {
 		method,
 		headers: { authorization: `Bearer ${await accessToken()}`, ...(body ? { 'content-type': 'application/json' } : {}) },
@@ -63,8 +77,9 @@ async function call<T>(method: 'GET' | 'POST', path: string, body?: object): Pro
 		signal: AbortSignal.timeout(10_000)
 	});
 	if (response.status === 401) token = null;
-	if (!response.ok) throw new Error(`Google Calendar: HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
-	return (await response.json()) as T;
+	if (!response.ok) throw new GoogleCalendarError(response.status, `Google Calendar: HTTP ${response.status} ${(await response.text()).slice(0, 200)}`);
+	// DELETE answers 204 with no body.
+	return (response.status === 204 ? undefined : await response.json()) as T;
 }
 
 /** Occurrences overlapping [from, to), recurring events expanded by Google; `summary` is the calendar's name. */
@@ -85,4 +100,14 @@ export async function listEvents(from: Date, to: Date): Promise<{ summary: strin
 
 export async function insertEvent(event: Omit<GoogleEvent, 'id' | 'status'>): Promise<GoogleEvent> {
 	return call<GoogleEvent>('POST', '/events', event);
+}
+
+/** Changes only the given fields; on an occurrence id, only that occurrence of a repeating event. */
+export async function patchEvent(id: string, patch: Partial<Omit<GoogleEvent, 'id' | 'status' | 'recurringEventId'>>): Promise<GoogleEvent> {
+	return call<GoogleEvent>('PATCH', `/events/${encodeURIComponent(id)}`, patch);
+}
+
+/** Deletes an event; on an occurrence id, only that occurrence (Google cancels it in the series). */
+export async function deleteEvent(id: string): Promise<void> {
+	await call<void>('DELETE', `/events/${encodeURIComponent(id)}`);
 }

@@ -176,8 +176,9 @@
 		view={sheet}
 		zone={zone}
 		showCalendar={severalCalendars}
+		writable={calendar.writable}
 		onclose={() => (sheet = null)}
-		onadded={() => {
+		onsaved={() => {
 			sheet = null;
 			onchange();
 		}}
