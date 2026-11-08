@@ -1,5 +1,5 @@
 // Validates the list and item forms into what lists.ts stores; messages are shown above the form.
-import { DASHBOARD_COUNTS, SORTS, type List, type ListSort, type Person } from '$lib/domain';
+import { canonicalService, DASHBOARD_COUNTS, OTHER_SERVICE, SORTS, type List, type ListSort, type Person } from '$lib/domain';
 import type { ItemInput, ListInput } from './lists';
 
 export class FormError extends Error {}
@@ -48,7 +48,9 @@ export function parseItem(form: FormData, list: List, everyone: Person[]): ItemI
 	}
 	let service: string | null = null;
 	if (list.useService) {
-		service = optional(form, 'service');
+		const chosen = optional(form, 'service');
+		const typed = chosen === OTHER_SERVICE ? optional(form, 'otherService') : chosen;
+		service = typed && canonicalService(typed);
 		if (service && service.length > 60) throw new FormError('The service can be at most 60 characters.');
 	}
 	let link: string | null = null;

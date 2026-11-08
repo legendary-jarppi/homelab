@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { enhance } from '$app/forms';
 	import { untrack, type Snippet } from 'svelte';
-	import { personColor, SERVICE_SUGGESTIONS, type Item, type List, type Person } from '$lib/domain';
+	import { OTHER_SERVICE, personColor, SERVICES, type Item, type List, type Person } from '$lib/domain';
 
 	interface Props {
 		list: List;
@@ -24,14 +24,26 @@
 	let title = $state(initial?.title ?? '');
 	let chosen = $state<number[]>(initial?.people ?? []);
 	let day = $state(initial ? (initial.day ?? '') : untrack(() => props.today));
-	let service = $state(initial?.service ?? '');
+	/** The service select: '' (none), one of the offered services, or OTHER_SERVICE with `otherService` typed in. */
+	let service = $state('');
+	let otherService = $state('');
 	let link = $state(initial?.link ?? '');
 	let note = $state(initial?.note ?? '');
 	let more = $state(false);
 	let submitting = $state(false);
 
-	const suggestions = $derived([...new Set([...props.services, ...SERVICE_SUGGESTIONS])]);
-	const listId = $derived(`services-${props.list.id}`);
+	/** Services typed in before in this list that are not in SERVICES: offered too, so they need no retyping. */
+	const usedBefore = $derived(props.services.filter((s) => !SERVICES.some((o) => o.toLowerCase() === s.toLowerCase())));
+	// The item's own value is always one of the options (it is among the list's used services).
+	const offered = untrack(() => [...SERVICES, ...usedBefore]);
+	if (initial?.service) {
+		const match = offered.find((o) => o.toLowerCase() === initial.service!.toLowerCase());
+		if (match) service = match;
+		else {
+			service = OTHER_SERVICE;
+			otherService = initial.service;
+		}
+	}
 </script>
 
 <form
@@ -47,6 +59,7 @@
 			if (result.type === 'success' && props.quick) {
 				title = '';
 				service = '';
+				otherService = '';
 				link = '';
 				note = '';
 			}
@@ -82,11 +95,24 @@
 			{#if props.list.useService}
 				<label class="field">
 					<span>Service</span>
-					<input name="service" bind:value={service} list={listId} maxlength="60" autocomplete="off" placeholder="Netflix, Yle Areena…" />
-					<datalist id={listId}>
-						{#each suggestions as s (s)}<option value={s}></option>{/each}
-					</datalist>
+					<select name="service" bind:value={service}>
+						<option value="">—</option>
+						{#each SERVICES as s (s)}<option value={s}>{s}</option>{/each}
+						{#if usedBefore.length > 0}
+							<optgroup label="Used before">
+								{#each usedBefore as s (s)}<option value={s}>{s}</option>{/each}
+							</optgroup>
+						{/if}
+						<option value={OTHER_SERVICE}>Other…</option>
+					</select>
 				</label>
+				{#if service === OTHER_SERVICE}
+					<label class="field">
+						<span>Other service</span>
+						<!-- svelte-ignore a11y_autofocus -->
+						<input name="otherService" bind:value={otherService} maxlength="60" autocomplete="off" autofocus={!initial?.service} placeholder="e.g. Library" />
+					</label>
+				{/if}
 			{/if}
 		</div>
 	{/if}

@@ -22,7 +22,7 @@ Every item has a title. Each list switches on the optional fields it uses:
 |---|---|
 | People | Any combination of the people (Jari, Elina, Anna-Linnea, Jussi), shown as coloured initials |
 | Date | With the list's own label ("Watched", "Read", …); new items default to today (Europe/Helsinki) |
-| Service | Free text with suggestions (Netflix, Yle Areena, HBO Max, …, plus what the list used before) |
+| Service | Chosen from a list (Netflix, Prime Video, Disney+, Yle Areena, HBO Max, Apple TV+, Viaplay, MTV Katsomo, Ruutu, SkyShowtime, Elisa Viihde, Cinema, Blu-ray / DVD; `SERVICES` in `src/lib/domain.ts`), then *Used before* (anything else the list already has), or *Other…* to type a new one. A typed name that is one of the listed services apart from case is stored in the list's spelling. `migrations/002_services.sql` brought the earlier free-text values to these names ("Amazon Prime" and "prime" → Prime Video, "Disney" → Disney+, "Yle areena" → Yle Areena) |
 | Link | Web address; `https://` is added when missing |
 | Note | Free text |
 

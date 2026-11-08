@@ -47,8 +47,21 @@ export interface Item {
 
 export const DASHBOARD_COUNTS = [0, 3, 5, 10] as const;
 
-/** Offered for the service field (any text is accepted; values used before in the list are offered too). */
-export const SERVICE_SUGGESTIONS = ['Netflix', 'Yle Areena', 'HBO Max', 'Disney+', 'Prime Video', 'Apple TV+', 'Viaplay', 'MTV Katsomo', 'Ruutu', 'SkyShowtime', 'Elisa Viihde', 'Cinema', 'Blu-ray / DVD'];
+/**
+ * The service field's choices, in this spelling. Anything else can be typed in (*Other…*); a typed
+ * value that matches one of these apart from case is stored in this spelling. Existing values were
+ * brought to it by migrations/002_services.sql.
+ */
+export const SERVICES = ['Netflix', 'Prime Video', 'Disney+', 'Yle Areena', 'HBO Max', 'Apple TV+', 'Viaplay', 'MTV Katsomo', 'Ruutu', 'SkyShowtime', 'Elisa Viihde', 'Cinema', 'Blu-ray / DVD'];
+
+/** The service select's *Other…* choice: the value is then the form's `otherService` text. */
+export const OTHER_SERVICE = '__other__';
+
+/** The listed spelling of `service` when it is one of SERVICES apart from case and spacing, else the value itself. */
+export function canonicalService(service: string): string {
+	const key = service.trim().replace(/\s+/g, ' ').toLowerCase();
+	return SERVICES.find((s) => s.toLowerCase() === key) ?? service.trim();
+}
 
 /** Two letters per person: "Jari" → "Ja", "Anna-Linnea" → "AL". */
 export function initials(name: string): string {

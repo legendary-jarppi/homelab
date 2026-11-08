@@ -11,7 +11,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/lists
-    newTag: "20261016-120235"
+    newTag: "20261108-171744"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: lists-config
