@@ -21,7 +21,9 @@ export class ModbusSession {
 	private transaction = 0;
 	private pending: { id: number; resolve: (pdu: Buffer) => void; reject: (e: Error) => void } | null = null;
 	private failure: Error | null = null;
+	/** Settles on connect, or with the first failure (error, timeout or close before connecting). */
 	private readonly ready: Promise<void>;
+	private rejectReady: (e: Error) => void = () => {};
 
 	private readonly unit: number;
 
@@ -30,7 +32,8 @@ export class ModbusSession {
 		this.socket = net.connect(port, host);
 		this.ready = new Promise((resolve, reject) => {
 			this.socket.once('connect', () => resolve());
-			this.socket.once('error', reject);
+			// A connect that times out is destroyed without an 'error' event: fail() rejects it.
+			this.rejectReady = reject;
 		});
 		this.socket.setTimeout(timeoutMs, () => this.fail(new Error(`no answer from ${host}:${port}`)));
 		this.socket.on('error', (e) => this.fail(e));
@@ -113,6 +116,8 @@ export class ModbusSession {
 		const pending = this.pending;
 		this.pending = null;
 		pending?.reject(e);
+		// No-op once connected (the promise has settled).
+		this.rejectReady(this.failure);
 		this.socket.destroy();
 	}
 }

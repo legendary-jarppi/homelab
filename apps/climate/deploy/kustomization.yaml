@@ -9,7 +9,7 @@ resources:
   - networkpolicy.yaml
 images:
   - name: localhost/climate
-    newTag: "20261017-155055"
+    newTag: "20261113-132939"
 configMapGenerator:
   # Hashed name: changes roll the pod.
   - name: climate-config

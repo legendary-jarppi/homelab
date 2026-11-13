@@ -21,6 +21,13 @@ interface Entry<T> {
 	state: T | null;
 }
 
+/**
+ * A read or change that has not finished by then is abandoned and counts as failed, so one request
+ * that never settles cannot hold up the device's queue (stale state and dead controls for days, as
+ * on 2026-10-29). Generous: a NIBE read takes about 1.5 s, a change plus read about 3 s.
+ */
+const TASK_DEADLINE_MS = 30_000;
+
 /** One device: reads and changes run one at a time; the last good state is kept when a read fails. */
 class Device<T> {
 	readonly entry: Entry<T> = { ok: false, error: null, updatedAt: null, state: null };
@@ -34,7 +41,7 @@ class Device<T> {
 	}
 
 	private serial<R>(task: () => Promise<R>): Promise<R> {
-		const run = this.queue.then(task, task);
+		const run = this.queue.then(() => withDeadline(task()), () => withDeadline(task()));
 		this.queue = run.catch(() => {});
 		return run;
 	}
@@ -54,7 +61,7 @@ class Device<T> {
 
 	private async read(): Promise<void> {
 		try {
-			this.entry.state = await this.reader();
+			this.entry.state = await withDeadline(this.reader());
 			if (!this.entry.ok && this.entry.updatedAt !== null) console.log(`${this.name}: answering again`);
 			Object.assign(this.entry, { ok: true, error: null, updatedAt: Date.now() });
 		} catch (e) {
@@ -63,6 +70,14 @@ class Device<T> {
 			Object.assign(this.entry, { ok: false, error });
 		}
 	}
+}
+
+function withDeadline<R>(work: Promise<R>): Promise<R> {
+	let timer: NodeJS.Timeout | undefined;
+	const deadline = new Promise<never>((_, reject) => {
+		timer = setTimeout(() => reject(new Error(`no result in ${TASK_DEADLINE_MS / 1000} s`)), TASK_DEADLINE_MS);
+	});
+	return Promise.race([work, deadline]).finally(() => clearTimeout(timer));
 }
 
 const nibe = new Nibe(env.NIBE_HOST ?? '192.168.20.49');

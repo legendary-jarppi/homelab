@@ -13,7 +13,7 @@ Node 22 running the TypeScript sources directly (type stripping); no runtime dep
 
 Registers come from NIBE's *Modbus S-series* (M12676EN), checked against this installation: the VVM S320's own registers plus the outdoor unit as slave 2 (frequency 1803, defrost 1805, starts 1489, hours 1491). A register the installation lacks answers Modbus exception 1 and is shown as missing. NIBE takes at most 20 registers per query and 100 a second; registers are read one by one (about 1.5 s per poll over the VPN). A full register list for the installation: *menu 7.5.9 → Export all registers* to a USB stick.
 
-Both are polled every `POLL_S` (60 s); a change is applied and the device read again before the answer, so the dashboard shows what the device now reports. Changes and reads of one device run one at a time. A device that stops answering keeps its last reading (`ok: false`, `updatedAt` of the last good one).
+Both are polled every `POLL_S` (60 s); a change is applied and the device read again before the answer, so the dashboard shows what the device now reports. Changes and reads of one device run one at a time, each with a 30 s deadline: one that has not finished by then counts as failed, so a request that never settles cannot hold up the device (on 2026-10-29 a NIBE connection attempt that timed out before connecting never settled; the NIBE kept its reading of 01:16 and ignored every change for two weeks). A device that stops answering keeps its last reading (`ok: false`, `updatedAt` of the last good one).
 
 ## API
 
